@@ -36,40 +36,31 @@ describe('StatusIndicator', () => {
     expect(screen.getByLabelText('API connectivity status')).toBeInTheDocument();
   });
 
-  it('shows GPS detail dialog when GPS icon is clicked', async () => {
+  it('shows GPS toast when GPS icon is clicked with showGpsDetails', async () => {
     render(<StatusIndicator showGpsDetails={true} />);
     
     const gpsIcon = screen.getByLabelText('GPS status');
     fireEvent.click(gpsIcon);
     
     await waitFor(() => {
-      expect(screen.getByText('Location Status Details')).toBeInTheDocument();
+      // Toast shows permission message since permissionState is null
+      expect(screen.getByText('Location permission needed. Click to enable.')).toBeInTheDocument();
     });
   });
 
-  it('shows API detail dialog when API icon is clicked', async () => {
+  it('shows API toast when API icon is clicked', async () => {
     render(<StatusIndicator />);
     
     const apiIcon = screen.getByLabelText('API connectivity status');
     fireEvent.click(apiIcon);
     
     await waitFor(() => {
-      expect(screen.getByText('Connection Status Details')).toBeInTheDocument();
+      // Toast shows connected message with response time
+      expect(screen.getByText('Connected (150ms)')).toBeInTheDocument();
     });
   });
 
-  it('displays actionable tooltips on hover', async () => {
-    render(<StatusIndicator />);
-    
-    const gpsIcon = screen.getByLabelText('GPS status');
-    fireEvent.mouseEnter(gpsIcon);
-    
-    await waitFor(() => {
-      expect(screen.getByText(/Click for details/)).toBeInTheDocument();
-    });
-  });
-
-  it('calls requestLocation when GPS icon is clicked and no position available', () => {
+  it('calls requestLocation when GPS icon is clicked', () => {
     render(<StatusIndicator />);
     
     const gpsIcon = screen.getByLabelText('GPS status');
@@ -81,11 +72,9 @@ describe('StatusIndicator', () => {
   it('handles network events properly', () => {
     render(<StatusIndicator />);
     
-    // Simulate offline event
     fireEvent(window, new Event('offline'));
     expect(mockStatusStore.setNetworkStatus).toHaveBeenCalledWith(false);
     
-    // Simulate online event
     fireEvent(window, new Event('online'));
     expect(mockStatusStore.setNetworkStatus).toHaveBeenCalledWith(true);
   });

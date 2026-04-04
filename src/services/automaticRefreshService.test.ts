@@ -1,82 +1,12 @@
 // Automatic Refresh Service Tests
-// Tests for automatic refresh timers and app lifecycle management
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Create mock functions that persist across test runs
-const mockLoadFromStorage = vi.fn();
-const mockRefreshData = vi.fn();
-const mockIsDataFresh = vi.fn(() => false);
-const mockSubscribe = vi.fn(() => vi.fn()); // Return unsubscribe function
+const mockRefreshData = vi.fn().mockResolvedValue({ success: true, errors: [], refreshedStores: [], skippedStores: [] });
+const mockIsNetworkAvailable = vi.fn(() => true);
+const mockSubscribe = vi.fn(() => vi.fn());
 
-// Mock the stores
-vi.mock('../stores/vehicleStore', () => ({
-  useVehicleStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000, // 10 seconds ago
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage,
-      refreshData: mockRefreshData
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
-vi.mock('../stores/stationStore', () => ({
-  useStationStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000,
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
-vi.mock('../stores/routeStore', () => ({
-  useRouteStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000,
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
-vi.mock('../stores/shapeStore', () => ({
-  useShapeStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000,
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
-vi.mock('../stores/stopTimeStore', () => ({
-  useStopTimeStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000,
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
-vi.mock('../stores/tripStore', () => ({
-  useTripStore: {
-    getState: vi.fn(() => ({
-      lastUpdated: Date.now() - 10000,
-      isDataFresh: mockIsDataFresh,
-      loadFromStorage: mockLoadFromStorage
-    })),
-    subscribe: mockSubscribe
-  }
-}));
-
+// Mock stores
 vi.mock('../stores/statusStore', () => ({
   useStatusStore: {
     getState: vi.fn(() => ({
@@ -87,22 +17,30 @@ vi.mock('../stores/statusStore', () => ({
   }
 }));
 
-// Mock the manual refresh service
+// Mock manual refresh service
 vi.mock('./manualRefreshService', () => ({
   manualRefreshService: {
     refreshData: mockRefreshData,
-    isNetworkAvailable: vi.fn(() => true)
+    isNetworkAvailable: mockIsNetworkAvailable,
+    isRefreshInProgress: vi.fn(() => false)
   }
 }));
 
+// Mock app context - isContextReady returns true
+vi.mock('../context/appContext', () => ({
+  isContextReady: vi.fn(() => true)
+}));
+
 describe('AutomaticRefreshService', () => {
-  // Import the service after mocks are set up
   let automaticRefreshService: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    
-    // Import the service fresh for each test
+    vi.useFakeTimers();
+    mockRefreshData.mockResolvedValue({ success: true, errors: [], refreshedStores: [], skippedStores: [] });
+    mockIsNetworkAvailable.mockReturnValue(true);
+
+    // Fresh import each test
     const module = await import('./automaticRefreshService');
     automaticRefreshService = module.automaticRefreshService;
   });
@@ -111,6 +49,7 @@ describe('AutomaticRefreshService', () => {
     if (automaticRefreshService) {
       automaticRefreshService.destroy();
     }
+    vi.useRealTimers();
   });
 
   describe('initialization', () => {
@@ -119,7 +58,11 @@ describe('AutomaticRefreshService', () => {
     });
 
     it('should start background refresh on startup', async () => {
+      automaticRefreshService.destroy();
       await automaticRefreshService.initialize();
+      
+      // startBackgroundRefresh is fire-and-forget, give it a tick to resolve
+      await vi.advanceTimersByTimeAsync(0);
       
       expect(mockRefreshData).toHaveBeenCalled();
     });
@@ -165,15 +108,12 @@ describe('AutomaticRefreshService', () => {
     it('should handle visibility change events without errors', async () => {
       await automaticRefreshService.initialize();
       
-      // Simulate app going to background
       Object.defineProperty(document, 'hidden', { value: true, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
       
-      // Simulate app coming to foreground
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
       
-      // Should not throw errors
       expect(true).toBe(true);
     });
   });

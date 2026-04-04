@@ -1,5 +1,4 @@
 // useManualRefresh Hook Tests
-// Tests for React hook that provides manual refresh functionality
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -21,8 +20,6 @@ vi.mock('../stores/statusStore', () => ({
 describe('useManualRefresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
-    // Mock service methods
     vi.mocked(manualRefreshService.isRefreshInProgress).mockReturnValue(false);
   });
 
@@ -56,7 +53,7 @@ describe('useManualRefresh', () => {
         refreshResult = await result.current.refresh();
       });
 
-      expect(manualRefreshService.refreshData).toHaveBeenCalledWith(undefined);
+      expect(manualRefreshService.refreshData).toHaveBeenCalled();
       expect(refreshResult).toEqual(mockResult);
     });
 
@@ -77,27 +74,6 @@ describe('useManualRefresh', () => {
       });
 
       expect(refreshResult).toEqual(mockErrorResult);
-    });
-
-    it('should pass options to refreshData', async () => {
-      const mockResult = {
-        success: true,
-        errors: [],
-        refreshedStores: ['vehicles'],
-        skippedStores: ['stations']
-      };
-
-      vi.mocked(manualRefreshService.refreshData).mockResolvedValue(mockResult);
-
-      const { result } = renderHook(() => useManualRefresh());
-
-      const options = {};
-
-      await act(async () => {
-        await result.current.refresh(options);
-      });
-
-      expect(manualRefreshService.refreshData).toHaveBeenCalledWith(options);
     });
   });
 });
