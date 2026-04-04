@@ -1,63 +1,55 @@
 # Documentation Guidelines
 
-## 📁 Root Directory Policy
+## Documentation Placement
 
-**❌ NEVER create markdown files in project root (except README.md)**
-**✅ ALWAYS use docs/ folder for documentation**
-**✅ ALWAYS use temporary/ folder for intermediate files, testing artifacts**
+Three tiers, each with a clear purpose:
 
-## 📝 Content Guidelines
+| Tier | Purpose | Consumer | Update pattern |
+|------|---------|----------|----------------|
+| **Code** (`src/`) | Implementation details, type definitions, inline comments | Agents reading code | Updated with code changes |
+| **Docs** (`docs/`) | Architecture decisions, user guides, troubleshooting | Humans + agents needing context beyond code | Manually maintained |
+| **Steering** (`.kiro/steering/`) | Cross-cutting rules, conventions, principles | Agents on every interaction | Updated when conventions change |
+| **Specs** (`.kiro/specs/`) | Feature designs, requirements, task lists | Agents during feature work | Created per feature, archived when done |
 
-### Writing Style
-- **Human-friendly** - Write for actual users, not just developers
-- **Practical focus** - Include actionable steps and real examples
-- **Comprehensive but concise** - Cover everything needed without redundancy
+### Decision Framework
 
-### Update Process
-1. **Identify the right document** - Use existing consolidated docs
-2. **Update existing sections** - Don't create new files
-3. **Cross-reference** - Link between related sections
-4. **Update changelog** - Document what changed and why
+Before writing documentation, ask:
 
-### File Size Management (AI-Optimized)
-- **Optimal**: Under 300 lines (fast AI processing)
-- **Good**: 300-400 lines (safe for AI processing)
-- **Warning**: 400-500 lines (review for splitting)
-- **Critical**: Over 500 lines (split immediately)
+1. **Is this readable from code?** → Don't document it. Code is the source of truth for implementation.
+2. **Is this a convention or principle?** → Steering file.
+3. **Is this a feature design?** → Spec.
+4. **Is this architecture, user-facing, or troubleshooting?** → Docs.
+5. **Is this a one-time artifact (migration, benchmark, verification)?** → Don't write it. Git history is enough.
+6. **Is this a restatement of library/vendor docs?** → Link to the official source. Document only our decisions on top.
 
-## 🚫 Anti-Bloating Enforcement
+## Content Rules
 
-### FORBIDDEN Practices
-❌ **NEVER create new .md files** - Update existing files instead
-❌ **NEVER create implementation docs** - Keep technical details minimal
-❌ **NEVER create step-by-step guides over 20 lines** - Summarize instead
-❌ **NEVER leave temporary files in root** - Use temporary/ folder
+- NEVER create markdown files in project root (except README.md)
+- Update existing files, don't create new ones
+- Keep files under 300 lines
+- Prefer tables over prose for reference data
+- Prefer code paths over code examples (e.g., "see `src/utils/core/constants.ts`" not copying constants)
+- Keep docs scannable: short sections, clear headers, no emoji walls
+- Every `docs/` subdirectory must have a README.md index as a table of `| Document | Description |`
 
-### MANDATORY Practices
-✅ **ALWAYS update existing files** - Never create new ones
-✅ **ALWAYS keep entries under 5 lines** - Problem + Solution format
-✅ **ALWAYS delete old content** - Move detailed history to archive
-✅ **ALWAYS check file sizes** - Monitor with `wc -l docs/*.md`
+## What NOT to Document
 
-### Content Quality Rules
+- Implementation details readable from code (hook internals, store logic, component props)
+- One-time migration artifacts or verification results (use git history)
+- Performance benchmarks without automated SDLC integration
+- Feature backlogs or deferred ideas (use specs or issue tracker)
+- Content already in `.kiro/steering/` or `.kiro/specs/`
+- Tutorials for public libraries (link to official docs, document only our delta)
+- Temporal artifacts (investigation notes, spike results) — use `temporary/` folder
 
-**For Bug Fixes/Issues:**
-- **Format**: `**Problem**: Brief description **Solution**: One-line fix`
-- **Length**: Maximum 3 lines per issue
+## Changelog
 
-**For Features:**
-- **Format**: `**Feature**: What it does **Usage**: How to use it`
-- **Length**: Maximum 2 lines per feature
+- Keep last 2 weeks only, git handles history
+- Format: one line per change, `**TYPE**: Description`
+- Archive by deleting
 
-**For Changes:**
-- **Format**: `**Date**: Brief change description`
-- **Length**: Maximum 1 line per change
-- **Archive**: Move entries older than 3 months
+## Troubleshooting Entries
 
-## 🎯 AI Assistant Guidelines
-
-1. **Never create new markdown files** - Update existing consolidated docs
-2. **Use the main documents** - All information goes into appropriate existing files
-3. **Keep it consolidated** - Don't fragment information across multiple files
-4. **Update changelog** - Always document significant changes
-5. **USE TEMPORARY FOLDER** - Always use temporary/ for intermediate files
+- Format: `**Problem**: Brief description` / `**Solution**: One-line fix`
+- Max 3 lines per issue
+- Mark resolved issues with `(FIXED)` and delete after 1 month

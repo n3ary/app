@@ -33,21 +33,3 @@ const stops = await stationService.getStops('agency_id');
 ## Error Handling
 
 All services include integrated error handling with status tracking. Location service includes retry logic with exponential backoff for GPS operations.
-
-## Support
-
-For additional support and documentation:
-
-- **Developer Guide**: [../developer-guide.md](../developer-guide.md)
-- **Troubleshooting**: [../troubleshooting/](../troubleshooting/)
-- **Performance Analysis**: [../performance/](../performance/)
-
-## Changelog
-
-### Version 1.0.0 (Current)
-
-- Initial release of VehicleTransformationService API documentation
-- Complete transformation pipeline documentation
-- Performance benchmark documentation
-- Integration patterns and best practices
-- Comprehensive troubleshooting guide
