@@ -10,7 +10,6 @@ import { getTripStopSequence, findStopInSequence, getIntermediateStopData } from
 import { estimateVehicleProgressWithShape, estimateVehicleProgressWithStops } from './vehicleProgressUtils.ts';
 import { ARRIVAL_CONFIG } from '../core/constants.ts';
 import type {
-  TranzyVehicleResponse,
   TranzyStopResponse,
   TranzyTripResponse,
   TranzyStopTimeResponse,
@@ -23,17 +22,16 @@ import { ARRIVAL_STATUS_SORT_ORDER } from '../../types/arrivalTime.ts';
 
 /**
  * Calculate arrival time for a single vehicle to a target stop
- * Supports both original and enhanced vehicle data with position predictions
+ * Uses enhanced vehicle data with predicted position and speed
  */
 export function calculateVehicleArrivalTime(
-  vehicle: TranzyVehicleResponse | EnhancedVehicleData,
+  vehicle: EnhancedVehicleData,
   targetStop: TranzyStopResponse,
   trips: TranzyTripResponse[],
   stopTimes: TranzyStopTimeResponse[],
   stops: TranzyStopResponse[],
   routeShape?: RouteShape
 ): ArrivalTimeResult {
-  // Use predicted coordinates if available (enhanced vehicle), otherwise use API coordinates
   const vehiclePosition = { lat: vehicle.latitude, lon: vehicle.longitude };
   const stopPosition = { lat: targetStop.stop_lat, lon: targetStop.stop_lon };
   
@@ -44,10 +42,11 @@ export function calculateVehicleArrivalTime(
     ? calculateDistanceAlongShape(vehiclePosition, stopPosition, routeShape)
     : calculateDistanceViaStops(vehiclePosition, stopPosition, intermediateData.coordinates);
 
-  // Calculate time estimate
+  // Calculate time estimate using predicted speed from enhanced vehicle
   const estimatedMinutes = calculateArrivalTime(
     distanceResult.totalDistance,
-    intermediateData.count
+    intermediateData.count,
+    vehicle.speed > 0 ? vehicle.speed : undefined
   );
 
   // Get status (determines both display and sort order)
@@ -69,10 +68,10 @@ export function calculateVehicleArrivalTime(
 
 /**
  * Calculate arrival times for multiple vehicles
- * Supports both original and enhanced vehicle data with position predictions
+ * Uses enhanced vehicle data with predicted positions and speeds
  */
 export function calculateMultipleArrivals(
-  vehicles: (TranzyVehicleResponse | EnhancedVehicleData)[],
+  vehicles: EnhancedVehicleData[],
   targetStop: TranzyStopResponse,
   trips: TranzyTripResponse[],
   stopTimes: TranzyStopTimeResponse[],
@@ -120,10 +119,9 @@ export function sortVehiclesByArrival(results: ArrivalTimeResult[]): ArrivalTime
 
 /**
  * Determine target stop relationship using enhanced vehicle progress estimation
- * Supports both original and enhanced vehicle data with position predictions
  */
 export function determineTargetStopRelation(
-  vehicle: TranzyVehicleResponse | EnhancedVehicleData,
+  vehicle: EnhancedVehicleData,
   targetStop: TranzyStopResponse,
   trips: TranzyTripResponse[],
   stopTimes: TranzyStopTimeResponse[],
@@ -164,10 +162,9 @@ export function determineTargetStopRelation(
 
 /**
  * Check if vehicle is off-route based on route_id, trip_id, timestamp age, and distance threshold
- * Supports both original and enhanced vehicle data with position predictions
  */
 export function isVehicleOffRoute(
-  vehicle: TranzyVehicleResponse | EnhancedVehicleData,
+  vehicle: EnhancedVehicleData,
   routeShape?: RouteShape
 ): boolean {
   // No route ID or trip ID means off-route
