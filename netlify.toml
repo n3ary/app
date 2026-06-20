@@ -9,6 +9,15 @@
   status = 200
   force = true
 
+# Serve the GTFS schedule payload from Netlify Blobs.
+# Netlify Blobs have no built-in public URL, so /data/schedule.json is rewritten
+# to the schedule-serve function, which reads the blob and returns it as JSON.
+# Must come BEFORE the SPA catch-all so it is not swallowed by /* -> /index.html.
+[[redirects]]
+  from = "/data/schedule.json"
+  to = "/.netlify/functions/schedule-serve"
+  status = 200
+
 # SPA redirect for client-side routing
 [[redirects]]
   from = "/*"
@@ -28,3 +37,11 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache the GTFS schedule payload at the edge for 1 hour.
+# The schedule-serve function also sets this header on its response, since
+# netlify.toml headers are not reliably applied to function/rewrite responses.
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

@@ -7,7 +7,8 @@ import {
   Typography, 
   Button, 
   Card,
-  CardContent
+  CardContent,
+  Link
 } from '@mui/material';
 import { ThemeToggle } from '../../theme/ThemeToggle';
 import { useConfigStore } from '../../../stores/configStore';
@@ -58,6 +59,27 @@ export const SettingsView: FC<SettingsViewProps> = ({ onNavigateToSetup }) => {
           >
             Reconfigure
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined" sx={{ mt: 2 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Data Attribution
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Schedule data is derived from the Cluj public transit GTFS feed
+            (external.gtfs.ro), licensed under{' '}
+            <Link
+              href="https://creativecommons.org/licenses/by-sa/4.0/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              CC-BY-SA-4.0
+            </Link>
+            . Real-time vehicle, route, and station data is provided by the
+            Tranzy API.
+          </Typography>
         </CardContent>
       </Card>
     </Box>

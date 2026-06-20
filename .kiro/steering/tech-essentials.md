@@ -24,11 +24,24 @@ src/
 ├── services/        # API services
 ├── hooks/           # Custom hooks
 ├── utils/           # Pure utilities
-└── types/           # TypeScript types
+├── types/           # TypeScript types
+└── test/            # ALL tests, mirroring the source path + shared setup/fixtures
 ```
+
+## Testing
+- **Location**: Tests live under `src/test/`, NOT co-located next to source. Mirror the source path: a test for `src/utils/schedule/foo.ts` goes in `src/test/utils/schedule/foo.test.ts`.
+- **Shared infra**: `src/test/setup.ts`, `src/test/testConstants.ts` hold shared setup/fixtures.
+- **Naming**: `*.test.ts` for example/unit tests; `*.property.test.ts` for fast-check property tests (min 100 runs).
+- Note: some pre-existing tests are still co-located; migrate them to `src/test/` when touched.
+
+## Store Persistence
+- Use Zustand `persist`. For large persisted payloads, use the shared **`createCompressedStorage`** adapter (`src/utils/core/compressedStorage.ts`, gzip via `compressionUtils`) wrapped in `createJSONStorage`.
+- Do NOT introduce a new storage mechanism (e.g. a bespoke IndexedDB adapter) without justification and a steering update — reuse the compressed-localStorage approach.
 
 ## Key Rules
 - **Test timeout**: Cancel tests after 1 minute
+- **Test location**: Under `src/test/` mirroring source path (see Testing)
 - **File size**: Split at 300 lines with clear boundaries
 - **API source**: Tranzy API for all transit data
 - **Import paths**: Use existing patterns from codebase
+- **Persistence**: Reuse `createCompressedStorage` for large persisted stores (see Store Persistence)

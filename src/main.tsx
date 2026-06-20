@@ -17,6 +17,7 @@ import { useAutoLocation } from './hooks/useAutoLocation';
 import { setupAppContext } from './context/contextInitializer';
 import { automaticRefreshService } from './services/automaticRefreshService';
 import { useConfigStore } from './stores/configStore';
+import { useScheduleStore } from './stores/scheduleStore';
 
 // Error boundary for context initialization failures
 interface ErrorBoundaryState {
@@ -104,6 +105,14 @@ function App() {
     return () => {
       automaticRefreshService.destroy();
     };
+  }, []);
+
+  // Load GTFS schedule data on app start (additive-only, non-blocking).
+  // Schedule data enhances GPS-based tracking but is never required: loadSchedule
+  // handles its own errors internally and never throws, so a failure here cannot
+  // break startup or delay GPS/Tranzy data loading. Fire-and-forget by design.
+  useEffect(() => {
+    void useScheduleStore.getState().loadSchedule();
   }, []);
   
   // Listen for navigation events from error handlers

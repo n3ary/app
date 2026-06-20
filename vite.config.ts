@@ -11,6 +11,23 @@ export default defineConfig({
     minify: 'terser',
     sourcemap: false,
     rollupOptions: {
+      // Suppress the benign "dynamically imported but also statically imported"
+      // advisory. Several stores/services are intentionally lazy-imported at
+      // runtime (inside action functions, e.g. configStore) to break
+      // store<->service circular dependencies. Because those modules are also
+      // statically imported by components, they already live in the main chunk,
+      // so the dynamic import provides no additional code-splitting and Rollup
+      // simply notes it. This is an intentional pattern; deeper decoupling so the
+      // imports can be made consistent is tracked in issue #25.
+      onwarn(warning, defaultHandler) {
+        if (
+          typeof warning.message === 'string' &&
+          warning.message.includes('dynamic import will not move module into another chunk')
+        ) {
+          return;
+        }
+        defaultHandler(warning);
+      },
       output: {
         // Simple chunk splitting
         manualChunks: (id) => {

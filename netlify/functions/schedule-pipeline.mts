@@ -1,0 +1,232 @@
+/**
+ * GTFS Schedule Pipeline — Netlify scheduled function.
+ *
+ * Runs daily to fetch the public Cluj GTFS static feed, extract the relevant
+ * CSV files in-memory, transform them into a compact JSON payload, and store
+ * the result in Netlify Blobs for CDN delivery at `/data/schedule.json`.
+ *
+ * Design reference: .kiro/specs/gtfs-schedule-integration/design.md
+ *   (Server-Side: Schedule Pipeline)
+ *
+ * This file is the SCAFFOLD only. It implements:
+ *   - The scheduled function configuration (`@daily`)
+ *   - GTFS ZIP fetching with a size guard
+ *   - In-memory ZIP decompression via `fflate`
+ *   - All-or-nothing error handling (previous blob is retained on failure)
+ *
+ * Downstream tasks fill the marked TODO seams:
+ *   - Task 2.2: CSV parsing + transformation into `SchedulePayload`
+ *   - Task 2.3: Netlify Blobs storage of the compact JSON
+ */
+
+import { getStore } from '@netlify/blobs';
+import { unzipSync } from 'fflate';
+import type { SchedulePayload } from '../../src/types/schedule';
+import { transformToPayload } from '../../src/utils/schedule/pipelineTransform';
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/** Netlify scheduled function configuration — runs once per day. */
+export const config = {
+  schedule: '@daily',
+};
+
+/** Public Cluj GTFS static feed (CC-BY-SA-4.0). */
+const GTFS_FEED_URL = 'https://external.gtfs.ro/cluj/CLUJ.zip';
+
+/**
+ * Maximum allowed size of the GTFS ZIP archive (50 MB).
+ * Guards against memory exhaustion in the serverless environment.
+ */
+const MAX_ZIP_SIZE_BYTES = 50 * 1024 * 1024;
+
+/** GTFS CSV files the pipeline extracts from the archive. */
+const REQUIRED_GTFS_FILES = [
+  'stop_times.txt',
+  'calendar.txt',
+  'calendar_dates.txt',
+  'trips.txt',
+] as const;
+
+/**
+ * Netlify Blobs store + key holding the compact schedule payload.
+ *
+ * These two literals are the single source of truth for where the payload
+ * lives. They MUST stay in sync with the serving function
+ * (`netlify/functions/schedule-serve.mts`), which reads the same store/key and
+ * exposes it at the public `/data/schedule.json` URL via a netlify.toml rewrite.
+ */
+const SCHEDULE_BLOB_STORE = 'schedule';
+const SCHEDULE_BLOB_KEY = 'current';
+
+const LOG_PREFIX = '[SchedulePipeline]';
+
+// ============================================================================
+// Handler
+// ============================================================================
+
+export default async function handler(): Promise<Response> {
+  try {
+    // 1. Fetch the GTFS ZIP archive.
+    const zipBytes = await fetchGtfsZip();
+
+    // 2. Decompress the archive in-memory and pull out the required CSVs.
+    const csvFiles = extractRequiredFiles(zipBytes);
+
+    // 3. Transform the CSVs into the compact payload.
+    //    Parses stop_times.txt, calendar.txt, calendar_dates.txt, and the
+    //    service_id column of trips.txt, converts HH:MM:SS times to
+    //    minutes-since-midnight integers, and assembles the SchedulePayload.
+    //    Pure transform logic lives in src/utils/schedule/pipelineTransform.ts
+    //    so it can be unit- and property-tested independently of this runtime.
+    const payload: SchedulePayload = transformToPayload(csvFiles);
+
+    if (!payload || Object.keys(payload.stopTimes).length === 0) {
+      // All-or-nothing: nothing is written unless transformation yields trips.
+      throw new Error('Transformation produced an empty payload');
+    }
+
+    // 4. Persist the compact JSON.
+    //    Writes `payload` to Netlify Blobs (served at `/data/schedule.json`).
+    //    Only reached after a fully successful fetch + transform, so the
+    //    previous valid blob is retained on any earlier failure.
+    await persistPayload(payload);
+
+    return jsonResponse(200, {
+      ok: true,
+      version: payload.version,
+      tripCount: Object.keys(payload.stopTimes).length,
+    });
+  } catch (error) {
+    // All-or-nothing write strategy: on any failure we do NOT touch the blob
+    // store, so the previously published schedule.json remains available.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} pipeline run failed, retaining previous blob:`, message);
+
+    return jsonResponse(500, {
+      ok: false,
+      error: message,
+      note: 'Previous schedule blob retained (all-or-nothing write).',
+    });
+  }
+}
+
+// ============================================================================
+// Fetching
+// ============================================================================
+
+/**
+ * Fetches the GTFS ZIP archive and enforces the size guard.
+ * Throws if the request fails or the archive exceeds {@link MAX_ZIP_SIZE_BYTES}.
+ */
+async function fetchGtfsZip(): Promise<Uint8Array> {
+  console.log(`${LOG_PREFIX} fetching GTFS feed: ${GTFS_FEED_URL}`);
+
+  const response = await fetch(GTFS_FEED_URL);
+
+  if (!response.ok) {
+    throw new Error(`GTFS fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  // Early guard using the advertised content length when present.
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_ZIP_SIZE_BYTES) {
+    throw new Error(
+      `GTFS archive too large: ${contentLength} bytes exceeds ${MAX_ZIP_SIZE_BYTES} byte limit`,
+    );
+  }
+
+  const buffer = new Uint8Array(await response.arrayBuffer());
+
+  // Authoritative guard against the actual downloaded size (headers can lie or
+  // be absent for chunked responses).
+  if (buffer.byteLength > MAX_ZIP_SIZE_BYTES) {
+    throw new Error(
+      `GTFS archive too large: ${buffer.byteLength} bytes exceeds ${MAX_ZIP_SIZE_BYTES} byte limit`,
+    );
+  }
+
+  console.log(`${LOG_PREFIX} fetched ${buffer.byteLength} bytes`);
+  return buffer;
+}
+
+// ============================================================================
+// Decompression
+// ============================================================================
+
+/**
+ * Decompresses the ZIP archive in-memory and returns the decoded text of each
+ * required GTFS CSV file, keyed by filename. Throws if any required file is
+ * missing from the archive.
+ */
+function extractRequiredFiles(zipBytes: Uint8Array): Record<string, string> {
+  const unzipped = unzipSync(zipBytes, {
+    filter: (file) => REQUIRED_GTFS_FILES.includes(file.name as (typeof REQUIRED_GTFS_FILES)[number]),
+  });
+
+  const decoder = new TextDecoder('utf-8');
+  const files: Record<string, string> = {};
+
+  for (const name of REQUIRED_GTFS_FILES) {
+    const bytes = unzipped[name];
+    if (!bytes) {
+      throw new Error(`Required GTFS file missing from archive: ${name}`);
+    }
+    files[name] = decoder.decode(bytes);
+  }
+
+  console.log(`${LOG_PREFIX} extracted ${REQUIRED_GTFS_FILES.length} CSV files`);
+  return files;
+}
+
+// ============================================================================
+// Transformation
+// ============================================================================
+//
+// CSV parsing and compaction into the SchedulePayload lives in the shared,
+// testable module `src/utils/schedule/pipelineTransform.ts` (imported above as
+// `transformToPayload`). Keeping it out of this runtime file lets task 2.4's
+// property test exercise the transform directly.
+
+// ============================================================================
+// Persistence
+// ============================================================================
+
+/**
+ * Persists the compact JSON payload to Netlify Blobs.
+ *
+ * All-or-nothing semantics: this is only invoked after a fully successful
+ * fetch + transform (the handler throws before reaching here on any failure or
+ * on an empty payload). A single overwrite of the `current` key in the
+ * `schedule` store replaces the previously published data atomically — if this
+ * run never gets here, the prior blob stays untouched and continues serving.
+ *
+ * Serving mechanism: Netlify Blobs are NOT publicly addressable on their own —
+ * they are only reachable through the SDK from a function or edge runtime.
+ * To expose the payload at the CDN URL `/data/schedule.json` (which the client
+ * `scheduleStore` fetches), a companion serving function
+ * (`netlify/functions/schedule-serve.mts`) reads this same store/key and a
+ * netlify.toml rewrite maps `/data/schedule.json` → that function. We use a
+ * rewrite-to-function rather than any "built-in" blob URL because Netlify Blobs
+ * does not provide direct public HTTP access.
+ */
+async function persistPayload(payload: SchedulePayload): Promise<void> {
+  const store = getStore(SCHEDULE_BLOB_STORE);
+  await store.setJSON(SCHEDULE_BLOB_KEY, payload);
+  console.log(
+    `${LOG_PREFIX} wrote payload to blobs store "${SCHEDULE_BLOB_STORE}" key "${SCHEDULE_BLOB_KEY}" (version ${payload.version})`,
+  );
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function jsonResponse(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}

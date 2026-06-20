@@ -69,6 +69,13 @@ export interface EnhancementOptions {
   // Speed prediction options (always enabled)
   nearbyVehicles?: TranzyVehicleResponse[];
   stationDensityCenter?: Coordinates;
+
+  // Start station prediction suppression (Requirements 9.1, 9.4).
+  // When true, forward position prediction is suppressed and the vehicle is
+  // shown at its current/API position. Defaults to off, so existing behavior is
+  // unchanged when schedule data is unavailable. Callers compute this via
+  // `isPredictionSuppressed` in `scheduleVehicleIntegration.ts`.
+  suppressForwardPrediction?: boolean;
 }
 
 // ============================================================================
@@ -93,7 +100,9 @@ export function enhanceVehicle(
     vehicle,
     options.routeShape,
     options.stopTimes,
-    options.stops
+    options.stops,
+    undefined,
+    options.suppressForwardPrediction
   );
   
   // 2. Check if vehicle is at station FIRST (before speed prediction)

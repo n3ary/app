@@ -61,10 +61,30 @@ export function predictVehiclePosition(
   routeShape?: RouteShape,
   stopTimes?: TranzyStopTimeResponse[],
   stops?: TranzyStopResponse[],
-  enhancedVehicle?: { predictionMetadata?: { predictedSpeed?: number } }
+  enhancedVehicle?: { predictionMetadata?: { predictedSpeed?: number } },
+  suppressForwardPrediction?: boolean
 ): PositionPredictionResult {
   // Parse timestamp and calculate age
   const timestampAge = calculateTimestampAge(vehicle.timestamp);
+
+  // Start station suppression (Requirements 9.1, 9.4):
+  // When a caller has determined (via schedule data) that this vehicle is
+  // waiting at its start station before its scheduled departure, show it at its
+  // current/API position without forward movement. The flag defaults to off, so
+  // when schedule data is absent ALL existing callers and behavior are unchanged.
+  if (suppressForwardPrediction) {
+    return {
+      predictedPosition: { lat: vehicle.latitude, lon: vehicle.longitude },
+      metadata: {
+        predictedDistance: 0,
+        stationsEncountered: 0,
+        totalDwellTime: 0,
+        method: 'fallback',
+        success: false,
+        timestampAge
+      }
+    };
+  }
   
   // If timestamp age is zero or negative, return original coordinates
   if (timestampAge <= 0) {
