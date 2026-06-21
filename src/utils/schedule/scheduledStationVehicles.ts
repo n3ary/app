@@ -440,6 +440,7 @@ function synthesizeStationVehicle(candidate: Candidate, deps: SynthDeps): Statio
   });
   enhanced.isScheduled = true;
   enhanced.scheduledDepartureMinutes = candidate.minutesUntil;
+  enhanced.isGhost = candidate.departed;
 
   const trip: TranzyTripResponse = {
     trip_id: candidate.tripId,

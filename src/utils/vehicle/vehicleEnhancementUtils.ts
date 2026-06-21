@@ -31,6 +31,12 @@ export interface EnhancedVehicleData extends TranzyVehicleResponse {
   isScheduled?: boolean;
   /** Minutes from now until the scheduled departure (only when isScheduled). */
   scheduledDepartureMinutes?: number;
+  /**
+   * For a scheduled vehicle, whether it has DEPARTED and is moving (a "ghost":
+   * interpolated position, averaged speed) vs a FUTURE departure waiting at its
+   * start station (speed 0). Only meaningful when `isScheduled` is true.
+   */
+  isGhost?: boolean;
   
   // Override speed with predicted value
   speed: number;     // Predicted speed (or original if no prediction)

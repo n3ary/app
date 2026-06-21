@@ -7,7 +7,7 @@ import { memo, useState, useMemo } from 'react';
 import { 
   Card, CardContent, Typography, Chip, Stack, Box, Avatar, IconButton,
   Collapse, List, ListItem, ListItemText, Tooltip, CircularProgress, ClickAwayListener,
-  Snackbar, Alert
+  Snackbar, Alert, Button
 } from '@mui/material';
 import { 
   AccessibleForward as WheelchairIcon,
@@ -228,6 +228,8 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
   const [mapDialogOpen, setMapDialogOpen] = useState(false);
   const [dataToastOpen, setDataToastOpen] = useState(false);
   const [arrivalToastOpen, setArrivalToastOpen] = useState(false);
+  // Placeholder for the upcoming today/tomorrow schedule views.
+  const [scheduleView, setScheduleView] = useState<null | 'today' | 'tomorrow'>(null);
   
   // Calculate data age for freshness indicator
   const dataAgeResult = vehicleRefreshTimestamp 
@@ -248,6 +250,10 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
   // (future) or interpolated along the route (ghost). Rendered through this same
   // card so it looks/behaves like a normal vehicle (Req 6, 12).
   const isScheduled = vehicle.isScheduled === true;
+  // A future scheduled departure waits at its start station; a ghost has
+  // departed and is moving. Future ones swap the GPS detail row (speed/id/
+  // accessibility) for schedule-view buttons.
+  const isFutureScheduled = isScheduled && vehicle.isGhost !== true;
 
   // Check if current station is the end station for this vehicle's trip.
   // Scheduled vehicles are departures (never drop-off only).
@@ -306,6 +312,21 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
 
   const routeShortName = route?.route_short_name || vehicle.route_id?.toString() || '?';
   const headsign = trip?.trip_headsign || 'Unknown Destination';
+
+  // Stop times to feed the map dialog. Scheduled trips are not in the Tranzy
+  // stop-time store, so the map's station filter would fall back to showing
+  // EVERY station. Synthesize Tranzy-shaped rows for this trip from the schedule
+  // so the map shows only THIS trip's stations.
+  const mapStopTimes = isScheduled && vehicle.trip_id
+    ? [
+        ...stopTimes,
+        ...(scheduleData?.stopTimes?.[vehicle.trip_id] ?? []).map((st) => ({
+          trip_id: vehicle.trip_id as string,
+          stop_id: st.s,
+          stop_sequence: st.q,
+        })),
+      ]
+    : stopTimes;
 
   return (
     <Card 
@@ -378,52 +399,78 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
           spacing={{ xs: 1.5, sm: 2 }} 
           sx={{ mb: 1.5, flexWrap: 'wrap' }}
         >
-          {vehicle.label ? (
-            <Chip
-              label={`${vehicle.label}`}
-              size="small"
-              variant="outlined"
-              sx={{
-                fontSize: '0.7rem',
-                height: { xs: 20, sm: 24 },
-                flexShrink: 0
-              }}
-            />
-          ) : null}
-          {/* Speed */}
-          <Box display="flex" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
-            <SpeedIcon fontSize="small" color="action" />
-            <Typography 
-              variant="caption"
-              sx={{ 
-                fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {formatSpeed(vehicle.speed)}
-            </Typography>
-          </Box>
-          
-          {/* Accessibility information */}
-          {getAccessibilityFeatures(vehicle.wheelchair_accessible, vehicle.bike_accessible).map(feature => (
-            <Box key={feature.type} display="flex" alignItems="center" gap={0.25} sx={{ flexShrink: 0 }}>
-              {feature.type === 'wheelchair' ? (
-                <WheelchairIcon fontSize="small" color="primary" />
-              ) : (
-                <BikeIcon fontSize="small" color="primary" />
-              )}
-              <Typography 
-                variant="caption" 
-                color="primary"
-                sx={{ 
-                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                  whiteSpace: 'nowrap'
-                }}
+          {isFutureScheduled ? (
+            <>
+              {/* Placeholders for upcoming schedule views (today / tomorrow AM). */}
+              <Button
+                size="small"
+                variant="outlined"
+                color="info"
+                onClick={() => setScheduleView('today')}
+                sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, textTransform: 'none', py: 0.25 }}
               >
-                {feature.label}
-              </Typography>
-            </Box>
-          ))}
+                Today schedule
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="info"
+                onClick={() => setScheduleView('tomorrow')}
+                sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, textTransform: 'none', py: 0.25 }}
+              >
+                Tomorrow schedule
+              </Button>
+            </>
+          ) : (
+            <>
+              {vehicle.label ? (
+                <Chip
+                  label={`${vehicle.label}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    fontSize: '0.7rem',
+                    height: { xs: 20, sm: 24 },
+                    flexShrink: 0
+                  }}
+                />
+              ) : null}
+              {/* Speed */}
+              <Box display="flex" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
+                <SpeedIcon fontSize="small" color="action" />
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {formatSpeed(vehicle.speed)}
+                </Typography>
+              </Box>
+
+              {/* Accessibility information */}
+              {getAccessibilityFeatures(vehicle.wheelchair_accessible, vehicle.bike_accessible).map(feature => (
+                <Box key={feature.type} display="flex" alignItems="center" gap={0.25} sx={{ flexShrink: 0 }}>
+                  {feature.type === 'wheelchair' ? (
+                    <WheelchairIcon fontSize="small" color="primary" />
+                  ) : (
+                    <BikeIcon fontSize="small" color="primary" />
+                  )}
+                  <Typography
+                    variant="caption"
+                    color="primary"
+                    sx={{
+                      fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {feature.label}
+                  </Typography>
+                </Box>
+              ))}
+            </>
+          )}
           
           {/* Favorite route indicator */}
           {isRouteFavorite && (
@@ -444,7 +491,11 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
           <Box display="flex" alignItems="center" gap={1} sx={{ mb: 1.5 }}>
             <Chip
               icon={<ArrivalIcon />}
-              label={formatArrivalTime(arrivalTime)}
+              label={
+                (vehicle.scheduledDepartureMinutes ?? arrivalTime.estimatedMinutes) < 1
+                  ? (isFutureScheduled ? 'Departing now' : 'Arriving now')
+                  : arrivalTime.statusMessage
+              }
               color="info"
               variant="filled"
               size="small"
@@ -600,8 +651,20 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
         routes={routes}
         stations={stops}
         trips={isScheduled && trip ? [...trips, trip] : trips}
-        stopTimes={stopTimes}
+        stopTimes={mapStopTimes}
       />
+
+      {/* Schedule view placeholder (today / tomorrow) */}
+      <Snackbar
+        open={scheduleView !== null}
+        autoHideDuration={3000}
+        onClose={() => setScheduleView(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setScheduleView(null)} severity="info" variant="filled" sx={{ width: '100%' }}>
+          {scheduleView === 'today' ? "Today's schedule" : "Tomorrow's morning schedule"} view is coming soon.
+        </Alert>
+      </Snackbar>
       
       {/* Data Age Toast */}
       <Snackbar
