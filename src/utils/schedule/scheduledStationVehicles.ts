@@ -43,6 +43,14 @@ import type { Coordinates } from '../location/distanceUtils';
 /** Default look-ahead window for scheduled departures/arrivals, in minutes. */
 const DEFAULT_WINDOW_MINUTES = 90;
 
+/**
+ * How long (minutes) a just-departed scheduled run keeps showing as "Departed"
+ * at a stop it has left — mirrors a live GPS bus lingering as "Departed" right
+ * after it pulls out, so the most-recent departure is still visible at its
+ * start/terminus station.
+ */
+const DEPARTED_GHOST_WINDOW_MINUTES = 10;
+
 /** stop_id -> the trips serving it, with that stop's stop-time entry. */
 export type ScheduleStopIndex = Map<
   number,
@@ -173,6 +181,8 @@ interface Candidate {
   routeId: number;
   serviceId: string;
   minutesUntil: number;
+  /** Lifecycle phase at THIS station: upcoming departure, approaching, or just departed. */
+  kind: 'future' | 'approaching' | 'departed';
   departed: boolean;
   position: { lat: number; lon: number };
   lastKnownMin: number;
@@ -307,7 +317,7 @@ export function buildScheduledStationVehicles(
     // run with no GPS plus the next upcoming one), and keying by direction stops
     // an arriving inbound run from masking the outbound departure at a station
     // that is a start for one direction and a terminus for the other.
-    const perKey = new Map<string, { future?: Candidate; ghost?: Candidate }>();
+    const perKey = new Map<string, { future?: Candidate; approaching?: Candidate; departed?: Candidate }>();
 
     for (const { tripId, entry } of entries) {
       const routeId = routeMap[tripId];
@@ -343,16 +353,27 @@ export function buildScheduledStationVehicles(
           routeId,
           serviceId,
           minutesUntil,
+          kind: 'future',
           departed: false,
           position: { lat: startStop.stop_lat, lon: startStop.stop_lon },
           lastKnownMin: nowMin,
           headsign: resolveHeadsign(scheduleData, tripId, stopsById, bounds.last.s),
         };
       } else {
-        // Ghost: trip is en route. Show at not-yet-passed stops only.
+        // Ghost: trip is en route (departed its start, not yet finished).
         if (nowMin > lastArr) continue; // trip already finished
-        const minutesUntil = entry.a - nowMin;
-        if (minutesUntil < 0 || minutesUntil > windowMinutes) continue;
+
+        // This stop is either AHEAD (approaching) or recently BEHIND (just
+        // departed this stop — shown as "Departed", mirroring a live GPS bus
+        // that just left). Skip stops passed longer ago than the window.
+        const ahead = entry.a >= nowMin;
+        const minutesUntil = ahead ? entry.a - nowMin : entry.d - nowMin; // negative when behind
+        if (ahead) {
+          if (minutesUntil > windowMinutes) continue;
+        } else {
+          if (nowMin - entry.d > DEPARTED_GHOST_WINDOW_MINUTES) continue;
+        }
+
         const pos = interpolateGhostPosition(stopTimes, stopsById, nowMin);
         if (!pos) continue;
 
@@ -370,6 +391,7 @@ export function buildScheduledStationVehicles(
           routeId,
           serviceId,
           minutesUntil,
+          kind: ahead ? 'approaching' : 'departed',
           departed: true,
           position: { lat: pos.lat, lon: pos.lon },
           lastKnownMin: pos.lastDepartedMin,
@@ -381,9 +403,14 @@ export function buildScheduledStationVehicles(
       const dirKey = parseDirection(tripId) ?? candidate.headsign;
       const key = `${routeId}:${dirKey}`;
       const slot = perKey.get(key) ?? {};
-      if (candidate.departed) {
-        if (!slot.ghost || candidate.minutesUntil < slot.ghost.minutesUntil) {
-          slot.ghost = candidate;
+      if (candidate.kind === 'departed') {
+        // Most-recent departure (largest entry.d, i.e. minutesUntil closest to 0).
+        if (!slot.departed || candidate.minutesUntil > slot.departed.minutesUntil) {
+          slot.departed = candidate;
+        }
+      } else if (candidate.kind === 'approaching') {
+        if (!slot.approaching || candidate.minutesUntil < slot.approaching.minutesUntil) {
+          slot.approaching = candidate;
         }
       } else if (!slot.future || candidate.minutesUntil < slot.future.minutesUntil) {
         slot.future = candidate;
@@ -395,8 +422,11 @@ export function buildScheduledStationVehicles(
 
     const stationVehicles: StationVehicle[] = [];
     for (const slot of perKey.values()) {
-      // Emit the departed ghost AND the next future departure (Req: show both).
-      const candidates = [slot.ghost, slot.future].filter((c): c is Candidate => !!c);
+      // Show the just-departed ghost, the approaching ghost, AND the next future
+      // departure (mirrors live GPS: a recently-departed bus + upcoming ones).
+      const candidates = [slot.departed, slot.approaching, slot.future].filter(
+        (c): c is Candidate => !!c,
+      );
       for (const candidate of candidates) {
         stationVehicles.push(
           synthesizeStationVehicle(candidate, {
@@ -494,11 +524,13 @@ function synthesizeStationVehicle(candidate: Candidate, deps: SynthDeps): Statio
       // "Scheduled" badge marks it as schedule-derived. (No "(est.)": the time
       // is the exact scheduled time, not a prediction.)
       statusMessage:
-        candidate.minutesUntil < 1
-          ? candidate.departed
-            ? 'Arriving now'
-            : 'Departing now'
-          : generateStatusMessage('in_minutes', candidate.minutesUntil),
+        candidate.kind === 'departed'
+          ? generateStatusMessage('departed', candidate.minutesUntil)
+          : candidate.minutesUntil < 1
+            ? candidate.kind === 'approaching'
+              ? 'Arriving now'
+              : 'Departing now'
+            : generateStatusMessage('in_minutes', candidate.minutesUntil),
       confidence: 'low',
       calculationMethod: 'schedule',
     },

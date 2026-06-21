@@ -114,9 +114,11 @@ export const MANUAL_REFRESH_DEBOUNCE_MS = API_CACHE_DURATION.VEHICLES; // 60s
  * Configurable values for arrival time estimation (Requirements 2.3, 2.5)
  */
 export const ARRIVAL_CONFIG = {
-  // Average bus speed for time calculations (km/h)
-  // Reduced from 25 to 18 for more realistic urban conditions
-  AVERAGE_SPEED: 18,
+  // Average urban travel speed used for ETA to OTHER stations when no live
+  // moving speed is available (e.g. the vehicle is momentarily dwelling at a
+  // stop, where its current speed is 0). Aligned with SPEED_PREDICTION_CONFIG
+  // .FALLBACK_SPEED (25) so a vehicle's ETA doesn't jump when it stops/starts.
+  AVERAGE_SPEED: 25,
   
   // Dwell time per intermediate stop (seconds)
   // Increased from 30 to 60 for more realistic stop times
