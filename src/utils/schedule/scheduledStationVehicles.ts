@@ -35,11 +35,12 @@ import {
   type EnhancedVehicleData,
 } from '../vehicle/vehicleEnhancementUtils';
 import { calculateStationDensityCenter } from '../vehicle/stationDensityUtils';
-import { minutesSinceMidnight } from './activeServiceUtils';
+import { minutesSinceMidnight, resolveActiveServices as resolveActiveServicesForDate } from './activeServiceUtils';
 import { computeHeadwayMinutes, shouldSuppressGhost, claimRunsAtStart, type RunStart, type GpsVehicleLite } from './ghostSuppression';
 import { generateStatusMessage } from '../arrival/statusUtils';
 import { calculateDistance, type Coordinates } from '../location/distanceUtils';
 import { GHOST_VEHICLE_MATCH } from '../core/constants';
+import { formatBoardTime } from './stationScheduleBoard';
 
 /** Default look-ahead window for scheduled departures/arrivals, in minutes. */
 const DEFAULT_WINDOW_MINUTES = 90;
@@ -191,6 +192,12 @@ interface Candidate {
   position: { lat: number; lon: number };
   lastKnownMin: number;
   headsign: string;
+  /**
+   * When this is a "tomorrow" placeholder (no more today departures at a start
+   * station), holds the departure minute-of-day for the label "Tomorrow HH:MM".
+   * Undefined for all normal today candidates.
+   */
+  tomorrowDepartureMin?: number;
 }
 
 export interface ScheduledVehiclesParams {
@@ -366,7 +373,11 @@ export function buildScheduledStationVehicles(
         // Future departure: only surface it at the trip's START station.
         if (!isStart) continue;
         const minutesUntil = firstDep - nowMin;
-        if (minutesUntil < 0 || minutesUntil > windowMinutes) continue;
+        if (minutesUntil < 0) continue;
+        // At a start station, ALWAYS show the next scheduled future departure
+        // regardless of how far away it is — the rider needs to know when the
+        // next bus leaves from here. The 90-min window only applies to ghosts
+        // at intermediate stops (where showing a bus 6 hours away is noise).
         const startStop = stopsById.get(stopId);
         if (!startStop) continue;
         candidate = {
@@ -466,7 +477,69 @@ export function buildScheduledStationVehicles(
     if (perKey.size === 0) continue;
 
     const stationVehicles: StationVehicle[] = [];
-    for (const slot of perKey.values()) {
+    for (const [key, slot] of perKey.entries()) {
+      // At a start station without a future departure (no more trips today),
+      // look up tomorrow's first departure and synthesize a placeholder so the
+      // rider knows when service resumes. This only fires when `slot.future`
+      // is absent and the station IS a start for this (route, direction).
+      if (!slot.future && (slot.departed || slot.approaching)) {
+        const [routeIdStr, dirKeyStr] = key.split(':');
+        const slotRouteId = Number(routeIdStr);
+        // Check whether this stop is actually a start station for this route.
+        // We do this by checking if any future trip for this (route, direction)
+        // has its first stop at this stopId (i.e. the slot HAD candidates with
+        // isStart). We already know it does because only start stations generate
+        // future candidates — if we have departed/approaching but no future, it
+        // means the last bus already left and there are none remaining today.
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+        const tomorrowActive = resolveActiveServicesForDate(
+          scheduleData.calendar,
+          scheduleData.calendarExceptions,
+          tomorrow,
+        );
+        // Find the earliest trip tomorrow for this (route, direction) starting at this stop.
+        let earliestTomorrow: { tripId: string; startMin: number; headsign: string } | null = null;
+        for (const [tripId, sts] of Object.entries(scheduleData.stopTimes)) {
+          const tripRouteId = routeMap[tripId];
+          if (tripRouteId !== slotRouteId) continue;
+          const tripDir = parseDirection(tripId);
+          const dirMatch = dirKeyStr === '0' || dirKeyStr === '1'
+            ? tripDir === Number(dirKeyStr)
+            : true; // non-numeric dirKey = headsign-based, less strict
+          if (!dirMatch) continue;
+          const svcId = scheduleData.tripServiceMap[tripId] ?? '';
+          if (!tomorrowActive.has(svcId)) continue;
+          const b = tripBounds(sts);
+          if (!b || b.first.s !== stopId) continue;
+          if (!earliestTomorrow || b.first.d < earliestTomorrow.startMin) {
+            earliestTomorrow = {
+              tripId,
+              startMin: b.first.d,
+              headsign: resolveHeadsign(scheduleData, tripId, stopsById, b.last.s),
+            };
+          }
+        }
+        if (earliestTomorrow) {
+          const startStop = stopsById.get(stopId);
+          if (startStop) {
+            // Synthesize a placeholder future card: "Tomorrow HH:MM"
+            const tomorrowCandidate: Candidate = {
+              tripId: earliestTomorrow.tripId,
+              routeId: slotRouteId,
+              serviceId: scheduleData.tripServiceMap[earliestTomorrow.tripId] ?? '',
+              minutesUntil: (24 * 60 - nowMin) + earliestTomorrow.startMin, // rough — just for sort order
+              kind: 'future',
+              departed: false,
+              position: { lat: startStop.stop_lat, lon: startStop.stop_lon },
+              lastKnownMin: nowMin,
+              headsign: earliestTomorrow.headsign,
+              tomorrowDepartureMin: earliestTomorrow.startMin,
+            };
+            slot.future = tomorrowCandidate;
+          }
+        }
+      }
+
       // Show the just-departed ghost, the approaching ghost, AND the next future
       // departure (mirrors live GPS: a recently-departed bus + upcoming ones).
       const candidates = [slot.departed, slot.approaching, slot.future].filter(
@@ -571,11 +644,15 @@ function synthesizeStationVehicle(candidate: Candidate, deps: SynthDeps): Statio
       statusMessage:
         candidate.kind === 'departed'
           ? generateStatusMessage('departed', candidate.minutesUntil)
-          : candidate.minutesUntil < 1
-            ? candidate.kind === 'approaching'
-              ? 'Arriving now'
-              : 'Departing now'
-            : generateStatusMessage('in_minutes', candidate.minutesUntil),
+          : candidate.tomorrowDepartureMin != null
+            // Tomorrow candidate: show "Tomorrow HH:MM" instead of a
+            // meaningless "In 840 minutes".
+            ? `Tomorrow ${formatBoardTime(candidate.tomorrowDepartureMin)}`
+            : candidate.minutesUntil < 1
+              ? candidate.kind === 'approaching'
+                ? 'Arriving now'
+                : 'Departing now'
+              : generateStatusMessage('in_minutes', candidate.minutesUntil),
       confidence: 'low',
       calculationMethod: 'schedule',
     },
