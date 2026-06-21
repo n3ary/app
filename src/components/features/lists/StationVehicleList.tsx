@@ -417,7 +417,16 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
             onClick={() => setDataToastOpen(true)}
           >
             {isScheduled
-              ? <AccessTimeIcon fontSize="small" sx={{ color: 'info.main' }} />
+              ? <AccessTimeIcon
+                  fontSize="small"
+                  sx={{
+                    // Ghost (en-route schedule estimate, no live GPS) is RED
+                    // to signal "this is estimated, treat with caution".
+                    // Future (waiting at start) stays the existing blue, which
+                    // matches the "Scheduled" pill on those rows.
+                    color: vehicle.isGhost === true ? 'error.main' : 'info.main',
+                  }}
+                />
               : (dataAgeResult && <DataAgeIcon status={dataAgeResult.status} />)}
           </Box>
         </Stack>
