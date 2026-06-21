@@ -16,6 +16,14 @@ npm run analyze      # Codebase analysis
 npm run test:performance  # Performance testing
 ```
 
+## Deployment
+- **NEVER deploy manually from local** (`netlify deploy --prod` is forbidden).
+- Production deployments happen automatically via GitHub Actions when a PR is merged to `main`.
+- The workflow (`.github/workflows/deploy-production.yml`) runs tests, bumps the patch version, builds, deploys to Netlify, and pushes the version-bump commit back to main with `[skip ci]`.
+- To deploy: merge your PR to main. That's it.
+- Secrets required: `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` (already configured in repo settings).
+- `main` is branch-protected: PRs required, no direct pushes, no force pushes.
+
 ## File Organization
 ```
 src/
