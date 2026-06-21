@@ -177,4 +177,64 @@ describe('groupVehiclesForDisplay', () => {
     expect(result.displayed[1].arrivalTime?.statusMessage).toBe('In 1 minute');
     expect(result.displayed[2].arrivalTime?.statusMessage).toBe('In 2 minutes');
   });
+
+  it('demotes drop-off-only vehicles below all pickup rows in display order', () => {
+    // Vehicles 1 + 3 are drop-off-only (terminate here). Even though vehicle 1
+    // is "At stop" — the highest-priority status — it must come AFTER every
+    // pickup row in the displayed list.
+    const vehicles: StationVehicle[] = [
+      createMockStationVehicle(1, 1, 'trip1', 'At stop', 0),
+      createMockStationVehicle(2, 2, 'trip2', 'In 5 minutes', 5),
+      createMockStationVehicle(3, 3, 'trip3', 'In 1 minute', 1),
+      createMockStationVehicle(4, 4, 'trip4', 'In 3 minutes', 3),
+      createMockStationVehicle(5, 5, 'trip5', 'In 4 minutes', 4),
+      createMockStationVehicle(6, 6, 'trip6', 'In 6 minutes', 6),
+    ];
+
+    const result = groupVehiclesForDisplay(vehicles, {
+      maxVehicles: 5,
+      routeCount: 6,
+      dropOffOnlyIds: new Set([1, 3]),
+    });
+
+    expect(result.groupingApplied).toBe(true);
+    expect(result.displayed).toHaveLength(5);
+
+    // Pickup vehicles (2, 4, 5, 6) take the first 4 slots, sorted by ETA. The
+    // drop-off-only partition then fills the leftover slot — within drop-off
+    // status priority still applies, so the at-stop vehicle 1 wins over the
+    // in_minutes vehicle 3.
+    const displayedIds = result.displayed.map((v) => v.vehicle.id);
+    expect(displayedIds.slice(0, 4)).toEqual([4, 5, 2, 6]);
+    expect(displayedIds[4]).toBe(1);
+
+    // Vehicle 3 is hidden (the second drop-off-only didn't fit).
+    expect(result.hidden.some((v) => v.vehicle.id === 3)).toBe(true);
+  });
+
+  it('drop-off-only rows still order pickup-then-dropoff in the hidden list', () => {
+    // 1 pickup that doesn't fit + 2 drop-off-only rows. Hidden order must keep
+    // pickup before drop-off so "More N vehicles" reveals more useful rows
+    // first.
+    const vehicles: StationVehicle[] = [
+      createMockStationVehicle(1, 1, 'trip1', 'In 1 minute', 1),
+      createMockStationVehicle(2, 2, 'trip2', 'In 2 minutes', 2),
+      createMockStationVehicle(3, 3, 'trip3', 'In 3 minutes', 3),
+      createMockStationVehicle(4, 4, 'trip4', 'In 4 minutes', 4),
+      createMockStationVehicle(5, 5, 'trip5', 'In 5 minutes', 5), // hidden pickup
+      createMockStationVehicle(6, 6, 'trip6', 'In 6 minutes', 6), // drop-off, hidden
+      createMockStationVehicle(7, 7, 'trip7', 'In 7 minutes', 7), // drop-off, hidden
+    ];
+
+    const result = groupVehiclesForDisplay(vehicles, {
+      maxVehicles: 4,
+      routeCount: 7,
+      dropOffOnlyIds: new Set([6, 7]),
+    });
+
+    const hiddenIds = result.hidden.map((v) => v.vehicle.id);
+    // Pickup (5) comes before drop-off (6, 7) in the hidden list.
+    expect(hiddenIds.indexOf(5)).toBeLessThan(hiddenIds.indexOf(6));
+    expect(hiddenIds.indexOf(5)).toBeLessThan(hiddenIds.indexOf(7));
+  });
 });
