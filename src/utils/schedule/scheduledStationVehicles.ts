@@ -38,7 +38,8 @@ import { calculateStationDensityCenter } from '../vehicle/stationDensityUtils';
 import { minutesSinceMidnight } from './activeServiceUtils';
 import { computeHeadwayMinutes, shouldSuppressGhost, claimRunsAtStart, type RunStart, type GpsVehicleLite } from './ghostSuppression';
 import { generateStatusMessage } from '../arrival/statusUtils';
-import type { Coordinates } from '../location/distanceUtils';
+import { calculateDistance, type Coordinates } from '../location/distanceUtils';
+import { GHOST_VEHICLE_MATCH } from '../core/constants';
 
 /** Default look-ahead window for scheduled departures/arrivals, in minutes. */
 const DEFAULT_WINDOW_MINUTES = 90;
@@ -208,6 +209,8 @@ export interface ScheduledVehiclesParams {
   gpsVehicleTripIds: Set<string>;
   /** Live vehicles, used for ghost speed averaging (same as real predictions). */
   realVehicles: EnhancedVehicleData[];
+  /** Tranzy stop_times, to resolve each live vehicle's trip origin/terminus. */
+  tranzyStopTimes?: { trip_id: string; stop_id: number; stop_sequence: number }[];
   now?: Date;
   windowMinutes?: number;
 }
@@ -230,6 +233,7 @@ export function buildScheduledStationVehicles(
     tranzyTrips,
     gpsVehicleTripIds,
     realVehicles,
+    tranzyStopTimes = [],
     now = new Date(),
     windowMinutes = DEFAULT_WINDOW_MINUTES,
   } = params;
@@ -248,18 +252,31 @@ export function buildScheduledStationVehicles(
   const stationDensityCenter = calculateStationDensityCenter(stops);
   const nowMin = minutesSinceMidnight(now);
 
+  // Each live vehicle's CURRENT trip origin (its first stop_id) from Tranzy stop
+  // times, so a vehicle terminating at a turnaround can't claim the outbound
+  // departure that originates there.
+  const tripOrigin = new Map<string, { stopId: number; seq: number }>();
+  for (const st of tranzyStopTimes) {
+    const cur = tripOrigin.get(st.trip_id);
+    if (!cur || st.stop_sequence < cur.seq) {
+      tripOrigin.set(st.trip_id, { stopId: st.stop_id, seq: st.stop_sequence });
+    }
+  }
+
   // Per-route live GPS coverage, for ghost suppression (Req 7, 12):
-  //  - lite vehicle (position + speed) per route, used for positional match,
-  //    high-frequency blanket rule, and start-station claiming.
+  //  - lite vehicle (position + speed + trip origin) per route, used for the
+  //    positional match, high-frequency blanket rule, and start-station claim.
   const routeVehicles = new Map<number, GpsVehicleLite[]>();
   for (const v of realVehicles) {
     if (v.route_id === null || v.route_id === undefined) continue;
     const arr = routeVehicles.get(v.route_id) ?? [];
-    arr.push({ position: { lat: v.latitude, lon: v.longitude }, speed: v.speed ?? 0 });
+    arr.push({
+      position: { lat: v.latitude, lon: v.longitude },
+      speed: v.speed ?? 0,
+      originStopId: v.trip_id ? tripOrigin.get(v.trip_id)?.stopId ?? null : null,
+    });
     routeVehicles.set(v.route_id, arr);
   }
-  const positionsOf = (routeId: number): Coordinates[] =>
-    (routeVehicles.get(routeId) ?? []).map((v) => v.position);
 
   // Per-route active start-station departures (one pass), for headway/frequency,
   // plus per (route, start stop) run lists for start-station claiming.
@@ -295,6 +312,7 @@ export function buildScheduledStationVehicles(
     const claimed = claimRunsAtStart(
       runs,
       { lat: startStop.stop_lat, lon: startStop.stop_lon },
+      startStopId,
       vehiclesOnRoute,
       nowMin,
       windowMinutes,
@@ -390,8 +408,26 @@ export function buildScheduledStationVehicles(
         // Suppress the ghost when the live feed already covers this run:
         // positionally (a GPS vehicle on the route is within the headway-scaled
         // distance) or on a high-frequency route that already has GPS vehicles.
-        const routeVehiclePos = positionsOf(routeId);
-        if (shouldSuppressGhost(headway, routeVehiclePos.length > 0, { lat: pos.lat, lon: pos.lon }, routeVehiclePos)) {
+        // EXCLUDE vehicles still within the run's start zone: a bus sitting near
+        // the start is interpreted by the start-station claim as the NEXT
+        // departure, so using it to cover THIS (just-departed) run would create
+        // a flip-flop. Only a vehicle that has actually left the start can cover
+        // a departed ghost.
+        const runStart = stopsById.get(bounds.first.s);
+        const coveringPositions = (routeVehicles.get(routeId) ?? [])
+          .filter((v) => {
+            if (!runStart) return true;
+            try {
+              return (
+                calculateDistance(v.position, { lat: runStart.stop_lat, lon: runStart.stop_lon }) >
+                GHOST_VEHICLE_MATCH.START_CLAIM_PROXIMITY_METERS
+              );
+            } catch {
+              return true;
+            }
+          })
+          .map((v) => v.position);
+        if (shouldSuppressGhost(headway, coveringPositions.length > 0, { lat: pos.lat, lon: pos.lon }, coveringPositions)) {
           continue;
         }
 

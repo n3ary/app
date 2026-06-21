@@ -129,6 +129,7 @@ export const filterStations = async (
           tranzyTrips: scheduleContext.tranzyTrips,
           gpsVehicleTripIds: deriveGpsVehicleTripIds(vehicles),
           realVehicles: vehicles,
+          tranzyStopTimes: stopTimes,
         })
       : new Map<number, StationVehicle[]>();
 

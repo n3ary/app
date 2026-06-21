@@ -34,6 +34,13 @@ export interface GpsVehicleLite {
   position: Coordinates;
   /** Predicted/current speed (km/h); ~0 means stopped/waiting. */
   speed: number;
+  /**
+   * The stop_id where this vehicle's CURRENT trip originates (its first stop),
+   * or null when unknown. Only a vehicle whose trip originates at the run's
+   * start stop may claim that departure — a vehicle terminating there (just
+   * arrived inbound at a turnaround) must not take over the outbound card.
+   */
+  originStopId?: number | null;
 }
 
 /**
@@ -53,6 +60,7 @@ export interface GpsVehicleLite {
 export function claimRunsAtStart(
   runs: RunStart[],
   startStop: Coordinates,
+  startStopId: number,
   routeVehicles: GpsVehicleLite[],
   nowMin: number,
   windowMinutes: number,
@@ -63,6 +71,10 @@ export function claimRunsAtStart(
   let stoppedAtStart = 0;
   for (const v of routeVehicles) {
     if (v.speed > GHOST_VEHICLE_MATCH.START_CLAIM_SPEED_KMH) continue;
+    // Only a bus DEPARTING from this stop (its trip originates here) may claim.
+    // A bus terminating here (just arrived inbound at a turnaround) must not.
+    // When the origin is unknown, fall back to proximity-only (legacy behavior).
+    if (v.originStopId != null && v.originStopId !== startStopId) continue;
     let d: number;
     try {
       d = calculateDistance(v.position, startStop);
