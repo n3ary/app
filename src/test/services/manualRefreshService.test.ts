@@ -27,6 +27,7 @@ describe('ManualRefreshService', () => {
     // Reset service state
     (manualRefreshService as any).isRefreshing = false;
     (manualRefreshService as any).refreshPromise = null;
+    (manualRefreshService as any).lastRefreshStartedAt = 0;
   });
 
   afterEach(() => {

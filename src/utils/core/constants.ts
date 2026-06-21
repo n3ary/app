@@ -96,6 +96,20 @@ export const PERFORMANCE = {
 } as const;
 
 /**
+ * Manual refresh debounce (ms).
+ *
+ * This is NOT a cache tier — it is the debounce window for the refresh BUTTON.
+ * The auto-refresh cadence is independent (AUTO_REFRESH_CYCLE) and is never
+ * changed by tapping. When the user taps refresh:
+ *   - if the vehicle data is OLDER than this window  -> force a real fetch;
+ *   - if it is YOUNGER (a fetch would just be skipped) -> recompute predictions
+ *     instead, so the tap is still rewarding (no API call, quota-friendly).
+ * Mirrors the vehicle data freshness so "inside the window" == "a fetch would be
+ * a no-op".
+ */
+export const MANUAL_REFRESH_DEBOUNCE_MS = API_CACHE_DURATION.VEHICLES; // 60s
+
+/**
  * Arrival time calculation constants
  * Configurable values for arrival time estimation (Requirements 2.3, 2.5)
  */

@@ -9,7 +9,7 @@ import { useStopTimeStore } from '../stores/stopTimeStore';
 import { useTripStore } from '../stores/tripStore';
 import { useStationRoleStore } from '../stores/stationRoleStore';
 import { useStatusStore } from '../stores/statusStore';
-import { API_CACHE_DURATION } from '../utils/core/constants';
+import { API_CACHE_DURATION, PERFORMANCE } from '../utils/core/constants';
 
 export interface RefreshResult {
   success: boolean;
@@ -18,17 +18,56 @@ export interface RefreshResult {
   skippedStores: string[];
 }
 
+/** Options for a refresh pass. */
+export interface RefreshOptions {
+  /**
+   * Force a vehicle fetch even within the freshness/debounce window (used by an
+   * explicit user tap, see MANUAL_REFRESH_DEBOUNCE_MS). Forcing does NOT refetch
+   * 24h static data — only the dynamic vehicle data is forced. Forced calls also
+   * bypass the automatic-trigger coalescing guard.
+   */
+  force?: boolean;
+}
+
 class ManualRefreshService {
   private isRefreshing = false;
   private refreshPromise: Promise<RefreshResult> | null = null;
+  /** Start time of the most recent refresh, for coalescing automatic triggers. */
+  private lastRefreshStartedAt = 0;
 
-  async refreshData(): Promise<RefreshResult> {
+  async refreshData(options: RefreshOptions = {}): Promise<RefreshResult> {
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
     }
 
+    // Network gate first, so an offline attempt never updates the coalescing
+    // timestamp (otherwise a real refresh on network-restore could be skipped).
+    if (!this.isNetworkAvailable()) {
+      return {
+        success: false,
+        errors: ['Network unavailable'],
+        refreshedStores: [],
+        skippedStores: [],
+      };
+    }
+
+    // Coalesce rapid AUTOMATIC triggers (e.g. foreground + network-available
+    // firing together on resume). An explicit user tap (force) always proceeds.
+    if (!options.force) {
+      const sinceLast = Date.now() - this.lastRefreshStartedAt;
+      if (sinceLast < PERFORMANCE.MIN_REFRESH_INTERVAL) {
+        return {
+          success: true,
+          errors: [],
+          refreshedStores: [],
+          skippedStores: ['coalesced'],
+        };
+      }
+    }
+
     this.isRefreshing = true;
-    this.refreshPromise = this.performRefresh();
+    this.lastRefreshStartedAt = Date.now();
+    this.refreshPromise = this.performRefresh(options);
     
     try {
       const result = await this.refreshPromise;
@@ -39,7 +78,7 @@ class ManualRefreshService {
     }
   }
 
-  private async performRefresh(): Promise<RefreshResult> {
+  private async performRefresh(options: RefreshOptions = {}): Promise<RefreshResult> {
     const result: RefreshResult = {
       success: true,
       errors: [],
@@ -67,8 +106,10 @@ class ManualRefreshService {
       try {
         const storeState = store.getState();
         
-        // Check if data is fresh - skip refresh if so
-        if (storeState.isDataFresh && storeState.isDataFresh(maxAge)) {
+        // Check if data is fresh - skip refresh if so. A forced tap bypasses the
+        // debounce for VEHICLE data only (static 24h data is never worth forcing).
+        const forceThisStore = options.force === true && name === 'vehicles';
+        if (!forceThisStore && storeState.isDataFresh && storeState.isDataFresh(maxAge)) {
           result.skippedStores.push(name);
           console.log(`[Refresh] ${name}: Using cached data (fetched at ${new Date(storeState.lastApiFetch || 0).toLocaleTimeString()})`);
           continue;

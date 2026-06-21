@@ -10,7 +10,8 @@ import { automaticRefreshService } from '../../../services/automaticRefreshServi
 import { manualRefreshService } from '../../../services/manualRefreshService';
 import { useConfigStore } from '../../../stores/configStore';
 import { useStatusStore } from '../../../stores/statusStore';
-import { API_FETCH_FRESHNESS_THRESHOLDS } from '../../../utils/core/constants';
+import { useVehicleStore } from '../../../stores/vehicleStore';
+import { API_FETCH_FRESHNESS_THRESHOLDS, MANUAL_REFRESH_DEBOUNCE_MS } from '../../../utils/core/constants';
 
 interface ManualRefreshButtonProps {
   className?: string;
@@ -40,6 +41,9 @@ export const ManualRefreshButton: FC<ManualRefreshButtonProps> = ({
   });
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Local busy state for the in-debounce "predict only" tap (no API call, so it
+  // does not show up in manualRefreshService.isRefreshInProgress()).
+  const [isPredicting, setIsPredicting] = useState(false);
 
   // Subscribe to freshness monitor for fresh/stale status
   useEffect(() => {
@@ -74,22 +78,40 @@ export const ManualRefreshButton: FC<ManualRefreshButtonProps> = ({
   }, []);
 
   /**
-   * Manual refresh system - triggers automatic refresh service and resets timer
+   * Manual refresh: an explicit tap should always do something useful.
+   *   - OUTSIDE the debounce window (vehicle data is older) -> force a real
+   *     fetch and reset the auto-refresh cadence.
+   *   - INSIDE the window (a fetch would just be skipped) -> recompute
+   *     predictions so the tap still moves vehicles, without spending an API
+   *     call (quota-friendly).
    */
   const handleManualRefresh = async () => {
     // Prevent concurrent operations
-    if (isRefreshing || disabled) {
+    if (isRefreshing || isPredicting || disabled) {
       return;
     }
 
-    console.log('[Manual Refresh] User triggered manual refresh');
+    const lastApiFetch = useVehicleStore.getState().lastApiFetch;
+    const vehicleAge = lastApiFetch ? Date.now() - lastApiFetch : Infinity;
+    const outsideDebounce = vehicleAge >= MANUAL_REFRESH_DEBOUNCE_MS;
 
-    try {
-      // Use automatic refresh service to trigger refresh and reset timer
-      await automaticRefreshService.triggerManualRefresh();
-    } catch (error) {
-      // Error handling - let automatic refresh service handle errors
-      console.warn('Manual refresh encountered errors:', error);
+    if (outsideDebounce) {
+      console.log('[Manual Refresh] User tap -> force fetch');
+      try {
+        await automaticRefreshService.triggerManualRefresh(true);
+      } catch (error) {
+        console.warn('Manual refresh encountered errors:', error);
+      }
+    } else {
+      console.log('[Manual Refresh] User tap within debounce -> prediction update');
+      setIsPredicting(true);
+      try {
+        await automaticRefreshService.triggerPredictionUpdate();
+      } catch (error) {
+        console.warn('Manual prediction update failed:', error);
+      } finally {
+        setIsPredicting(false);
+      }
     }
   };
 
@@ -129,6 +151,7 @@ export const ManualRefreshButton: FC<ManualRefreshButtonProps> = ({
   };
 
   const buttonColor = getButtonColor();
+  const busy = isRefreshing || isPredicting;
 
   return (
     <Box sx={{ position: 'relative', display: 'inline-flex' }}>
@@ -136,14 +159,14 @@ export const ManualRefreshButton: FC<ManualRefreshButtonProps> = ({
         className={className}
         color={buttonColor}
         onClick={handleManualRefresh}
-        disabled={disabled || isRefreshing}
+        disabled={disabled || busy}
         aria-label="Manual refresh data"
         size="small"
         sx={{
           transition: 'color 0.2s ease-in-out',
         }}
       >
-        {isRefreshing ? (
+        {busy ? (
           <CircularProgress
             size={24}
             color={buttonColor === 'default' ? 'inherit' : buttonColor}

@@ -322,16 +322,18 @@ class AutomaticRefreshService {
 
   /**
    * Manually trigger a refresh and reset the automatic timers
-   * This should be called by the manual refresh button to keep both systems in sync
+   * This should be called by the manual refresh button to keep both systems in sync.
+   * Pass `force` for an explicit user tap so the vehicle fetch bypasses the
+   * freshness debounce and the automatic-trigger coalescing guard.
    */
-  async triggerManualRefresh(): Promise<void> {
+  async triggerManualRefresh(force = false): Promise<void> {
     try {
       // Stop current timers
       this.stopVehicleRefreshTimer();
       this.stopPredictionUpdateTimer();
       
       // Trigger the same refresh logic used by automatic refresh
-      await manualRefreshService.refreshData();
+      await manualRefreshService.refreshData({ force });
       
       // Restart timers (resets the countdown)
       if (this.isAppInForeground) {
@@ -346,6 +348,15 @@ class AutomaticRefreshService {
       }
       throw error; // Re-throw for button to handle
     }
+  }
+
+  /**
+   * Recompute vehicle predictions without an API call. Used by an explicit tap
+   * that lands INSIDE the manual-refresh debounce window: a fetch would be a
+   * no-op, so we recompute positions/ETAs instead to keep the tap rewarding.
+   */
+  async triggerPredictionUpdate(): Promise<void> {
+    await this.updatePredictionsOnly();
   }
 
   /**
