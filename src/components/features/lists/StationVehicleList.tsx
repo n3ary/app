@@ -15,7 +15,8 @@ import {
   AccessTime as ArrivalIcon, ExpandMore as ExpandMoreIcon, Map as MapIcon,
   LocationOn as TargetStationIcon, Favorite as FavoriteIcon,
   AccessTime as AccessTimeIcon, Warning as WarningIcon, Error as ErrorIcon,
-  ArrowRightAlt as HeadsignArrowIcon
+  ArrowRightAlt as HeadsignArrowIcon,
+  CalendarToday as ScheduleIcon
 } from '@mui/icons-material';
 import { formatTimestamp, getAccessibilityFeatures, formatArrivalTime } from '../../../utils/vehicle/vehicleFormatUtils';
 import { formatAbsoluteTime, formatRelativeTime, formatDetailedRelativeTime } from '../../../utils/time/timestampFormatUtils';
@@ -539,6 +540,7 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
                 size="small"
                 variant="outlined"
                 color="info"
+                startIcon={<ScheduleIcon sx={{ fontSize: '0.9rem !important' }} />}
                 onClick={() => setScheduleView('today')}
                 sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, textTransform: 'none', py: 0.25 }}
               >
