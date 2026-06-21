@@ -292,6 +292,7 @@ export const StationList: FC<StationListProps> = memo(({ stations, utilities, ve
                   selectedRouteId={selectedRouteId}
                   vehicleRefreshTimestamp={vehicleRefreshTimestamp}
                   vehicleLoading={vehicleLoading}
+                  routeIds={routeIds}
                 />
               </Collapse>
             </CardContent>

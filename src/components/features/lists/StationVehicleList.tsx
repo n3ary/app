@@ -30,8 +30,12 @@ import { useStopTimeStore } from '../../../stores/stopTimeStore';
 import { useStationStore } from '../../../stores/stationStore';
 import { useVehicleStore } from '../../../stores/vehicleStore';
 import { useRouteStore } from '../../../stores/routeStore';
+import { useScheduleStore } from '../../../stores/scheduleStore';
 import { VehicleMapDialog } from '../maps/VehicleMapDialog';
 import { VehicleDropOffChip } from '../controls/VehicleDropOffChip';
+import { ScheduledDepartureRow } from './ScheduledDepartureRow';
+import { buildTripRouteMap } from '../../../utils/schedule/scheduleVehicleIntegration';
+import { getNextScheduledDeparture } from '../../../utils/schedule/nextScheduledDepartureUtils';
 import type { StationVehicle } from '../../../types/stationFilter';
 import { useFavoritesStore } from '../../../stores/favoritesStore';
 
@@ -46,11 +50,48 @@ interface StationVehicleListProps {
   selectedRouteId?: number | null; // NEW: route filter
   vehicleRefreshTimestamp?: number | null; // Timestamp when vehicle data was last refreshed
   vehicleLoading?: boolean; // NEW: vehicle loading state for showing loading indicator
+  routeIds?: number[]; // NEW: route ids serving this station (for scheduled departures)
 }
 
-export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles, expanded, station, stationRouteCount, selectedRouteId, vehicleRefreshTimestamp, vehicleLoading }) => {
+export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles, expanded, station, stationRouteCount, selectedRouteId, vehicleRefreshTimestamp, vehicleLoading, routeIds }) => {
   // State for expansion functionality
   const [showingAll, setShowingAll] = useState(false);
+
+  // Schedule data for next scheduled departures at a route's start station
+  const { scheduleData } = useScheduleStore();
+  const { trips } = useTripStore();
+  const { routes } = useRouteStore();
+
+  const tripRouteMap = useMemo(() => buildTripRouteMap(trips), [trips]);
+
+  // Compute the next scheduled departure for each route that starts at this
+  // station (direction-aware via the util). When schedule data is null or no
+  // route starts here, this is empty and nothing extra renders.
+  const scheduledDepartures = useMemo(() => {
+    const result: Array<{ key: number; routeShortName: string; headsign: string; minutesUntil: number }> = [];
+    const now = new Date();
+
+    for (const routeId of routeIds ?? []) {
+      // Respect the active route filter.
+      if (selectedRouteId && routeId !== selectedRouteId) continue;
+
+      const dep = getNextScheduledDeparture({
+        scheduleData,
+        tripRouteMap,
+        stopId: station.stop_id,
+        routeId,
+        now,
+      });
+      if (!dep) continue;
+
+      const routeShortName = routes.find(r => r.route_id === routeId)?.route_short_name ?? String(routeId);
+      const headsign = trips.find(t => t.trip_id === dep.tripId)?.trip_headsign ?? '';
+
+      result.push({ key: routeId, routeShortName, headsign, minutesUntil: dep.minutesUntil });
+    }
+
+    return result.sort((a, b) => a.minutesUntil - b.minutesUntil);
+  }, [scheduleData, tripRouteMap, station, routeIds, selectedRouteId, routes, trips]);
   
   // Apply route filtering with departed vehicle limiting (must be before any returns)
   const filteredVehicles = useMemo(() => {
@@ -98,6 +139,23 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
   // Don't render when collapsed (performance optimization)
   if (!expanded) return null;
 
+  // Scheduled-departure rows for routes that START at this station. Rendered
+  // after the live GPS vehicle list (and alongside the empty states) so the
+  // next scheduled departure is always visible at a start station. Empty when
+  // schedule data is null or no route starts here -> nothing extra renders.
+  const scheduledSection = scheduledDepartures.length > 0 ? (
+    <Stack spacing={1} divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+      {scheduledDepartures.map((dep) => (
+        <ScheduledDepartureRow
+          key={dep.key}
+          routeShortName={dep.routeShortName}
+          headsign={dep.headsign}
+          minutesUntil={dep.minutesUntil}
+        />
+      ))}
+    </Stack>
+  ) : null;
+
   // Show loading indicator when vehicles are being loaded
   if (vehicleLoading && vehicles.length === 0) {
     return (
@@ -110,21 +168,27 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
     );
   }
 
-  // Empty state - no vehicles found
+  // Empty state - no vehicles found (still surface scheduled departures if any)
   if (vehicles.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-        No active vehicles serving this station
-      </Typography>
+      <Stack spacing={2} sx={{ pt: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ px: 2, fontStyle: 'italic' }}>
+          No active vehicles serving this station
+        </Typography>
+        {scheduledSection}
+      </Stack>
     );
   }
 
   // Handle empty state when route filter is active but no vehicles match
   if (selectedRouteId && filteredVehicles.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ p: 2, fontStyle: 'italic' }}>
-        No active vehicles for this route
-      </Typography>
+      <Stack spacing={2} sx={{ pt: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ px: 2, fontStyle: 'italic' }}>
+          No active vehicles for this route
+        </Typography>
+        {scheduledSection}
+      </Stack>
     );
   }
 
@@ -186,6 +250,9 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
           />
         </Box>
       )}
+
+      {/* Next scheduled departures for routes that start at this station */}
+      {scheduledSection}
     </Stack>
   );
 });
