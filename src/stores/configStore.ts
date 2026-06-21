@@ -11,6 +11,14 @@ interface ConfigStore {
   home_location: { lat: number; lon: number } | null;
   work_location: { lat: number; lon: number } | null;
   theme: 'light' | 'dark' | 'auto' | null;
+  /**
+   * Whether to surface drop-off-only rows (vehicles that terminate at the
+   * current station, so the user can't board) in station vehicle lists.
+   *
+   * Off by default: those rows are low value to a rider waiting at the
+   * station. The Settings panel exposes a toggle for power users / debugging.
+   */
+  showDropOffOnly: boolean;
   
   // Simple loading and error states
   loading: boolean;
@@ -24,6 +32,7 @@ interface ConfigStore {
   setWorkLocation: (lat: number, lon: number) => void;
   setTheme: (theme: 'light' | 'dark' | 'auto') => void;
   toggleTheme: () => void;
+  setShowDropOffOnly: (show: boolean) => void;
   clearError: () => void;
   clearSuccess: () => void;
   validateApiKey: (apiKey: string) => Promise<void>;
@@ -40,6 +49,7 @@ export const useConfigStore = create<ConfigStore>()(
       home_location: null,
       work_location: null,
       theme: null,
+      showDropOffOnly: false,
       
       // Simple states
       loading: false,
@@ -192,6 +202,7 @@ export const useConfigStore = create<ConfigStore>()(
           error: null,
           success: null
         })),
+      setShowDropOffOnly: (show: boolean) => set({ showDropOffOnly: show }),
       clearError: () => set({ error: null }),
       clearSuccess: () => set({ success: null }),
     }),

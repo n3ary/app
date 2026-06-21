@@ -1,0 +1,69 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+# Only one deploy at a time; cancel in-progress if a new merge lands.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to push the version-bump commit back
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so the version-bump commit can push cleanly.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Bump version
+        run: |
+          # Increment the patch version in package.json
+          NEW_VERSION=$(node -p "
+            const pkg = require('./package.json');
+            const [major, minor, patch] = pkg.version.split('.').map(Number);
+            major + '.' + minor + '.' + (patch + 1)
+          ")
+          npm version "$NEW_VERSION" --no-git-tag-version
+          # Update the cache-bust timestamp in sw.js + index.html
+          node scripts/update-version.js
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+        id: version
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Deploy to Netlify
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --prod --dir=dist --functions=netlify/functions --skip-functions-cache
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json index.html public/sw.js
+          git commit -m "chore(release): auto-bump to v${{ steps.version.outputs.version }} [skip ci]" || echo "No changes to commit"
+          git push

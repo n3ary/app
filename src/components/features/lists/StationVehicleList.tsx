@@ -11,31 +11,38 @@ import {
 } from '@mui/material';
 import { 
   AccessibleForward as WheelchairIcon,
-  DirectionsBike as BikeIcon, Speed as SpeedIcon,
+  DirectionsBike as BikeIcon,
   AccessTime as ArrivalIcon, ExpandMore as ExpandMoreIcon, Map as MapIcon,
   LocationOn as TargetStationIcon, Favorite as FavoriteIcon,
   AccessTime as AccessTimeIcon, Warning as WarningIcon, Error as ErrorIcon,
-  ArrowRightAlt as HeadsignArrowIcon
+  ArrowRightAlt as HeadsignArrowIcon,
+  CalendarToday as ScheduleIcon
 } from '@mui/icons-material';
-import { formatTimestamp, formatSpeed, getAccessibilityFeatures, formatArrivalTime } from '../../../utils/vehicle/vehicleFormatUtils';
+import { formatTimestamp, getAccessibilityFeatures, formatArrivalTime } from '../../../utils/vehicle/vehicleFormatUtils';
 import { formatAbsoluteTime, formatRelativeTime, formatDetailedRelativeTime } from '../../../utils/time/timestampFormatUtils';
 import { sortStationVehiclesByArrival } from '../../../utils/station/stationVehicleUtils';
 import { calculateDataAge } from '../../../utils/vehicle/dataAgeUtils';
 import { groupVehiclesForDisplay } from '../../../utils/station/vehicleGroupingUtils';
+import {
+  buildDropOffOnlyVehicleIdSet,
+  isVehicleDropOffOnlyAtStation,
+} from '../../../utils/station/dropOffOnlyUtils';
+import { getNextTomorrowDeparture } from '../../../utils/schedule/stationScheduleBoard';
 import { VEHICLE_DISPLAY } from '../../../utils/core/constants';
 import { getTripStopSequence } from '../../../utils/arrival/tripUtils';
 import { determineTargetStopRelation } from '../../../utils/arrival/arrivalUtils';
-import { isStationEndForTrip } from '../../../utils/station/stationRoleUtils';
 import { useTripStore } from '../../../stores/tripStore';
 import { useStopTimeStore } from '../../../stores/stopTimeStore';
 import { useStationStore } from '../../../stores/stationStore';
 import { useVehicleStore } from '../../../stores/vehicleStore';
 import { useRouteStore } from '../../../stores/routeStore';
 import { useScheduleStore } from '../../../stores/scheduleStore';
+import { useConfigStore } from '../../../stores/configStore';
 import { VehicleMapDialog } from '../maps/VehicleMapDialog';
 import { VehicleDropOffChip } from '../controls/VehicleDropOffChip';
 import { ScheduledDepartureChip } from '../controls/ScheduledDepartureChip';
 import { ScheduleBoardDialog } from '../schedule/ScheduleBoardDialog';
+import { buildTripRouteMap } from '../../../utils/schedule/scheduleVehicleIntegration';
 import type { StationVehicle } from '../../../types/stationFilter';
 import { useFavoritesStore } from '../../../stores/favoritesStore';
 
@@ -53,9 +60,74 @@ interface StationVehicleListProps {
   routeIds?: number[]; // NEW: route ids serving this station (for scheduled departures)
 }
 
+/**
+ * Fallback row shown when a station has no displayable vehicles. If the GTFS
+ * schedule knows about a departure tomorrow, it shows "Next: tomorrow HH:MM"
+ * with a button that opens the Tomorrow schedule dialog. Otherwise just shows
+ * the provided empty-state message.
+ */
+const NextTomorrowFallback: FC<{ station: any; message: string }> = ({ station, message }) => {
+  const { scheduleData } = useScheduleStore();
+  const { routes } = useRouteStore();
+  const { trips } = useTripStore();
+  const [tomorrowDialogOpen, setTomorrowDialogOpen] = useState(false);
+
+  const nextTomorrow = useMemo(() => {
+    if (!station?.stop_id || !scheduleData) return null;
+    return getNextTomorrowDeparture({
+      scheduleData,
+      tripRouteMap: buildTripRouteMap(trips),
+      stopId: station.stop_id,
+      routes,
+    });
+  }, [station?.stop_id, scheduleData, trips, routes]);
+
+  return (
+    <Stack spacing={1.5} sx={{ pt: 2, px: 2 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+        {message}
+      </Typography>
+      {nextTomorrow && (
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="body2" color="text.secondary">
+            Next: tomorrow {nextTomorrow.time}
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="info"
+            onClick={() => setTomorrowDialogOpen(true)}
+            sx={{ fontSize: '0.7rem', textTransform: 'none', py: 0.25 }}
+          >
+            Tomorrow schedule
+          </Button>
+        </Box>
+      )}
+      <ScheduleBoardDialog
+        open={tomorrowDialogOpen}
+        initialMode="tomorrow"
+        station={station}
+        routeId={null}
+        routeShortName=""
+        headsign=""
+        directionId={null}
+        onClose={() => setTomorrowDialogOpen(false)}
+      />
+    </Stack>
+  );
+};
+
 export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles, expanded, station, stationRouteCount, selectedRouteId, vehicleRefreshTimestamp, vehicleLoading, routeIds }) => {
   // State for expansion functionality
   const [showingAll, setShowingAll] = useState(false);
+
+  // Inputs needed to detect "drop-off only" rows (the trip terminates at this
+  // station, so the user can't board). Live vehicles need the Tranzy
+  // stop_times store; scheduled/ghost vehicles use the GTFS schedule payload.
+  const stopTimesForDropOff = useStopTimeStore((s) => s.stopTimes);
+  const scheduleDataForDropOff = useScheduleStore((s) => s.scheduleData);
+  // Whether the user has opted INTO seeing drop-off-only rows (off by default).
+  const showDropOffOnly = useConfigStore((s) => s.showDropOffOnly);
 
   // Apply route filtering with departed vehicle limiting (must be before any returns)
   const filteredVehicles = useMemo(() => {
@@ -99,7 +171,28 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
     // Combine non-departed and limited departed vehicles
     return [...nonDepartedVehicles, ...departedVehicles];
   }, [vehicles, selectedRouteId]);
-  
+
+  // Drop-off-only ids — vehicles that terminate at this station (passengers
+  // can't board). Computed once and used to deprioritise these rows in the
+  // sort and the "More N vehicles" grouping. Must sit ABOVE every early
+  // return below so the hook order stays stable across renders.
+  const dropOffOnlyIds = useMemo(
+    () => buildDropOffOnlyVehicleIdSet(filteredVehicles, station?.stop_id, stopTimesForDropOff, scheduleDataForDropOff),
+    [filteredVehicles, station?.stop_id, stopTimesForDropOff, scheduleDataForDropOff],
+  );
+
+  // Apply the user's "show drop-off only" preference. When OFF (default),
+  // those rows are removed entirely — riders waiting at the station can't
+  // board them so they're noise. When ON they remain in the list but the
+  // sort/grouping below still pushes them behind every pickup row.
+  const visibleVehicles = useMemo(
+    () =>
+      showDropOffOnly
+        ? filteredVehicles
+        : filteredVehicles.filter((v) => !dropOffOnlyIds.has(v.vehicle.id)),
+    [filteredVehicles, dropOffOnlyIds, showDropOffOnly],
+  );
+
   // Don't render when collapsed (performance optimization)
   if (!expanded) return null;
 
@@ -117,28 +210,29 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
 
   // Empty state - no vehicles found
   if (vehicles.length === 0) {
+    return <NextTomorrowFallback station={station} message="No active vehicles serving this station" />;
+  }
+
+  // The station has vehicles but they're all drop-off-only and the user has
+  // hidden them. Tell them why the list is empty (and how to opt back in)
+  // rather than silently showing nothing.
+  if (!selectedRouteId && filteredVehicles.length > 0 && visibleVehicles.length === 0) {
     return (
-      <Stack spacing={2} sx={{ pt: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ px: 2, fontStyle: 'italic' }}>
-          No active vehicles serving this station
-        </Typography>
-      </Stack>
+      <NextTomorrowFallback
+        station={station}
+        message="Only drop-off vehicles serve this station at the moment. Enable Show drop-off only in Settings to view them."
+      />
     );
   }
 
   // Handle empty state when route filter is active but no vehicles match
-  if (selectedRouteId && filteredVehicles.length === 0) {
-    return (
-      <Stack spacing={2} sx={{ pt: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ px: 2, fontStyle: 'italic' }}>
-          No active vehicles for this route
-        </Typography>
-      </Stack>
-    );
+  if (selectedRouteId && visibleVehicles.length === 0) {
+    return <NextTomorrowFallback station={station} message="No active vehicles for this route" />;
   }
-
-  // Sort vehicles by arrival time using existing utility
-  const sortedVehicles = sortStationVehiclesByArrival(filteredVehicles);
+  // Sort vehicles by arrival time using existing utility, with drop-off-only
+  // pushed to the end of the list (lowest priority). When `showDropOffOnly`
+  // is false, those rows have already been filtered out above.
+  const sortedVehicles = sortStationVehiclesByArrival(visibleVehicles, dropOffOnlyIds);
 
   // Skip grouping when route filter is active
   const shouldApplyGrouping = !selectedRouteId && 
@@ -149,7 +243,8 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
   const groupingResult = shouldApplyGrouping 
     ? groupVehiclesForDisplay(sortedVehicles, {
         maxVehicles: VEHICLE_DISPLAY.VEHICLE_DISPLAY_THRESHOLD,
-        routeCount: stationRouteCount || 1
+        routeCount: stationRouteCount || 1,
+        dropOffOnlyIds,
       })
     : {
         displayed: sortedVehicles,
@@ -257,20 +352,16 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
   // accessibility) for schedule-view buttons.
   const isFutureScheduled = isScheduled && vehicle.isGhost !== true;
 
-  // Check if current station is the end station for this vehicle's trip.
-  // Live vehicles use the Tranzy stop-time store; scheduled vehicles use their
-  // GTFS stop list (their trip isn't in the Tranzy set). A scheduled vehicle
-  // arriving at its terminus (e.g. an inbound ghost) IS drop-off only.
-  const isDropOffOnly = (() => {
-    if (!station?.stop_id || !vehicle.trip_id) return false;
-    if (isScheduled) {
-      const sts = scheduleData?.stopTimes?.[vehicle.trip_id];
-      if (!sts || sts.length === 0) return false;
-      const last = sts.reduce((a, b) => (b.q > a.q ? b : a));
-      return last.s === station.stop_id;
-    }
-    return isStationEndForTrip(station.stop_id, vehicle.trip_id, stopTimes);
-  })();
+  // Whether the current station is the trip's terminus — passengers can't
+  // board, so the row is shown demoted with a "Drop off only" chip and is
+  // also pushed to the bottom of the list by the sort/grouping. Same util
+  // the list component uses to build its drop-off set.
+  const isDropOffOnly = isVehicleDropOffOnlyAtStation(
+    { vehicle, route, trip, arrivalTime } as StationVehicle,
+    station?.stop_id,
+    stopTimes,
+    scheduleData,
+  );
   
   // Get all data needed for the map dialog
   const { vehicles: allVehicles } = useVehicleStore();
@@ -440,24 +531,20 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
         >
           {isFutureScheduled ? (
             <>
-              {/* Placeholders for upcoming schedule views (today / tomorrow AM). */}
+              {/*
+                One button opens the Today schedule overlay which already
+                exposes a Today / Tomorrow toggle inside the dialog, so the
+                second card-level "Tomorrow schedule" button was redundant.
+              */}
               <Button
                 size="small"
                 variant="outlined"
                 color="info"
+                startIcon={<ScheduleIcon sx={{ fontSize: '0.9rem !important' }} />}
                 onClick={() => setScheduleView('today')}
                 sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, textTransform: 'none', py: 0.25 }}
               >
-                Today schedule
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="info"
-                onClick={() => setScheduleView('tomorrow')}
-                sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' }, textTransform: 'none', py: 0.25 }}
-              >
-                Tomorrow schedule
+                Today
               </Button>
             </>
           ) : (
@@ -474,19 +561,6 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
                   }}
                 />
               ) : null}
-              {/* Speed */}
-              <Box display="flex" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
-                <SpeedIcon fontSize="small" color="action" />
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {formatSpeed(vehicle.speed)}
-                </Typography>
-              </Box>
 
               {/* Accessibility information */}
               {getAccessibilityFeatures(vehicle.wheelchair_accessible, vehicle.bike_accessible).map(feature => (

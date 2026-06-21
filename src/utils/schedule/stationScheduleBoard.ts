@@ -81,6 +81,44 @@ export function formatBoardTime(minutes: number): string {
 }
 
 /**
+ * Find the first scheduled departure from a station tomorrow. Used as a
+ * fallback signal when no vehicles (GPS or scheduled) are within the current
+ * look-ahead window — the user still sees "Next: tomorrow HH:MM" rather than
+ * an empty card list with no guidance on when service resumes.
+ *
+ * Returns `null` when schedule data is unavailable or no tomorrow departure
+ * exists for the given stop (and optional route/direction filter).
+ */
+export function getNextTomorrowDeparture(params: {
+  scheduleData: SchedulePayload | null;
+  tripRouteMap?: Record<string, number>;
+  stopId: number;
+  routes: TranzyRouteResponse[];
+  routeId?: number | null;
+  directionId?: number | null;
+}): { time: string; departureMinutes: number } | null {
+  const { scheduleData, tripRouteMap, stopId, routes, routeId, directionId } = params;
+  if (!scheduleData) return null;
+
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+
+  const board = buildStationDepartureBoard({
+    scheduleData,
+    tripRouteMap,
+    stopId,
+    date: tomorrow,
+    fromMinutes: null, // whole day
+    routes,
+    routeId: routeId ?? null,
+    directionId: directionId ?? null,
+  });
+
+  if (board.length === 0) return null;
+  return { time: formatBoardTime(board[0].departureMinutes), departureMinutes: board[0].departureMinutes };
+}
+
+/**
  * Build the scheduled departure board for a station on a given day.
  */
 export function buildStationDepartureBoard(params: StationBoardParams): BoardDeparture[] {

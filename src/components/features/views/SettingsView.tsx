@@ -8,7 +8,9 @@ import {
   Button, 
   Card,
   CardContent,
-  Link
+  Link,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import { ThemeToggle } from '../../theme/ThemeToggle';
 import { useConfigStore } from '../../../stores/configStore';
@@ -21,6 +23,8 @@ interface SettingsViewProps {
 
 export const SettingsView: FC<SettingsViewProps> = ({ onNavigateToSetup }) => {
   const { theme } = useConfigStore();
+  const showDropOffOnly = useConfigStore((s) => s.showDropOffOnly);
+  const setShowDropOffOnly = useConfigStore((s) => s.setShowDropOffOnly);
   
   const handleReconfigure = () => {
     if (onNavigateToSetup) {
@@ -61,6 +65,28 @@ export const SettingsView: FC<SettingsViewProps> = ({ onNavigateToSetup }) => {
           >
             Reconfigure
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined" sx={{ mt: 2 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Display
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showDropOffOnly}
+                onChange={(_, v) => setShowDropOffOnly(v)}
+              />
+            }
+            label="Show drop-off-only vehicles"
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Vehicles whose trip ends at the current station — you can't board
+            them. Hidden by default; toggle on for terminus / debugging
+            visibility.
+          </Typography>
         </CardContent>
       </Card>
 
