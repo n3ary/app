@@ -150,3 +150,23 @@ The GTFS Schedule Integration feature adds scheduled arrival/departure times to 
 1. THE System SHALL display attribution for the GTFS data source in the app's about/info section
 2. THE attribution SHALL reference the data source and the CC-BY-SA-4.0 license
 3. THE attribution SHALL be visible to users without requiring navigation to external links
+
+### Requirement 12: Start-Station Scheduled & Ghost Vehicle Display (primary user-facing surface)
+
+**User Story:** As a user at a route's start station, I want to see the next scheduled vehicle (and vehicles that should have departed but have no GPS yet), so that I know when service is coming even when no real-time vehicle is visible.
+
+This is the primary user-facing surface for the schedule feature. It unifies the
+UI intent of Requirements 6 (upcoming departures), 7 (ghost vehicles), and 9
+(start-station handling). It applies only at a station that is the **start
+station** for a route (direction-aware: the direction where this station is the
+trip's first stop).
+
+#### Acceptance Criteria
+
+1. WHERE a station is the start station for a route, THE System SHALL show, in addition to any GPS-visible vehicles, one scheduled entry for the next scheduled departure of that route from that station.
+2. WHILE the current time is before the next Scheduled_Departure, THE System SHALL display that entry with a distinct "scheduled" ETA bubble (blue) reading "Scheduled in X" (minutes, or hours+minutes when far away), distinct from the green "in X minutes" bubble for GPS vehicles and the "departed" bubble for recently departed vehicles.
+3. WHEN the Scheduled_Departure time has passed, THE System SHALL show the vehicle as moving with predicted position and ETA estimates along the route, even when no GPS data has been received for that trip.
+4. IF a GPS-visible vehicle is received for that trip, THEN THE System SHALL display it as a normal real (GPS) vehicle.
+5. IF no GPS data is received after the Scheduled_Departure has passed (and before the scheduled end), THEN THE System SHALL treat it as a Ghost_Vehicle: on the map it SHALL be rendered visually distinct (e.g., translucent and a different color), and on the station card it SHALL keep the blue "scheduled" indicator visible in addition to the green "in X minutes" estimate.
+6. WHEN a Ghost_Vehicle's scheduled end time has passed, THE System SHALL remove it.
+7. WHERE schedule data is unavailable, THE System SHALL show only GPS vehicles (existing behavior), with no scheduled or ghost entries.
