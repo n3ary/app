@@ -14,7 +14,8 @@ import {
   DirectionsBike as BikeIcon, Speed as SpeedIcon,
   AccessTime as ArrivalIcon, ExpandMore as ExpandMoreIcon, Map as MapIcon,
   LocationOn as TargetStationIcon, Favorite as FavoriteIcon,
-  AccessTime as AccessTimeIcon, Warning as WarningIcon, Error as ErrorIcon
+  AccessTime as AccessTimeIcon, Warning as WarningIcon, Error as ErrorIcon,
+  ArrowRightAlt as HeadsignArrowIcon
 } from '@mui/icons-material';
 import { formatTimestamp, formatSpeed, getAccessibilityFeatures, formatArrivalTime } from '../../../utils/vehicle/vehicleFormatUtils';
 import { formatAbsoluteTime, formatRelativeTime, formatDetailedRelativeTime } from '../../../utils/time/timestampFormatUtils';
@@ -366,7 +367,24 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
           
           {/* Route name and vehicle info */}
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Box display="flex" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+            <Box display="flex" alignItems="center" gap={0.5} sx={{ mb: 0.5 }}>
+              {/*
+                A subtle "→" arrow before the headsign to convey
+                "this bus is travelling toward <destination>". Sized to the
+                line height of the headsign and tinted secondary so it
+                reinforces direction without competing with the destination
+                name itself. `ArrowRightAlt` reads as a clean horizontal arrow
+                (line + head), more graphical than a literal `>` glyph and
+                more compact than `ArrowForward`.
+              */}
+              <HeadsignArrowIcon
+                aria-hidden
+                sx={{
+                  flexShrink: 0,
+                  color: 'text.secondary',
+                  fontSize: { xs: '1.1rem', sm: '1.25rem' },
+                }}
+              />
               <Typography 
                 variant="subtitle1" 
                 sx={{ 
@@ -399,7 +417,16 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
             onClick={() => setDataToastOpen(true)}
           >
             {isScheduled
-              ? <AccessTimeIcon fontSize="small" sx={{ color: 'info.main' }} />
+              ? <AccessTimeIcon
+                  fontSize="small"
+                  sx={{
+                    // Ghost (en-route schedule estimate, no live GPS) is RED
+                    // to signal "this is estimated, treat with caution".
+                    // Future (waiting at start) stays the existing blue, which
+                    // matches the "Scheduled" pill on those rows.
+                    color: vehicle.isGhost === true ? 'error.main' : 'info.main',
+                  }}
+                />
               : (dataAgeResult && <DataAgeIcon status={dataAgeResult.status} />)}
           </Box>
         </Stack>
@@ -736,7 +763,7 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
               {vehicle.isGhost ? (
                 <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
                   Position is estimated from the timetable, based on the last scheduled
-                  stop at {formatAbsoluteTime(new Date(vehicle.timestamp).getTime())}.
+                  stop {formatAbsoluteTime(new Date(vehicle.timestamp).getTime())}.
                 </Typography>
               ) : (
                 <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
