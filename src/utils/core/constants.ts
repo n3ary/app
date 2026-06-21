@@ -131,7 +131,13 @@ export const ARRIVAL_CONFIG = {
   RECENT_DEPARTURE_WINDOW: 2,
   
   // Off-route threshold for distance from route shape (meters)
-  OFF_ROUTE_THRESHOLD: 200
+  OFF_ROUTE_THRESHOLD: 200,
+
+  // Distance (m) over which the ETA blends the vehicle's momentary speed toward
+  // AVERAGE_SPEED. A single low/high speed reading must not be extrapolated over
+  // a long remaining trip: near stops trust the current speed, far stops trust
+  // the average (avoids ETAs swinging when a bus briefly stops or crawls).
+  ETA_SPEED_BLEND_DISTANCE_METERS: 2000,
 } as const;
 
 /**

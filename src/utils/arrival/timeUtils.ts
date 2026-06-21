@@ -18,14 +18,23 @@ export function calculateArrivalTime(
 ): number {
   // Convert distance from meters to kilometers
   const distanceKm = distance / 1000;
-  
-  // Use predicted speed if available, otherwise fall back to average speed (Requirement 5.1)
-  const effectiveSpeed = predictedSpeed && predictedSpeed > 0 ? predictedSpeed : ARRIVAL_CONFIG.AVERAGE_SPEED;
-  
-  // Calculate travel time based on effective speed
-  const travelTimeHours = distanceKm / effectiveSpeed;
-  const travelTimeMinutes = travelTimeHours * 60;
-  
+  const averageSpeed = ARRIVAL_CONFIG.AVERAGE_SPEED;
+
+  // Travel time. When a live speed is available, blend it toward the average
+  // travel speed by distance: a momentary reading (a bus briefly stopped or
+  // crawling at e.g. 8 km/h) must not be extrapolated over a long remaining
+  // trip. Near stops are dominated by the current speed; far stops by the
+  // average — which keeps the ETA stable as the vehicle stops and starts.
+  let travelTimeMinutes: number;
+  if (predictedSpeed && predictedSpeed > 0) {
+    const timeAtCurrent = (distanceKm / predictedSpeed) * 60;
+    const timeAtAverage = (distanceKm / averageSpeed) * 60;
+    const weight = Math.min(1, distance / ARRIVAL_CONFIG.ETA_SPEED_BLEND_DISTANCE_METERS);
+    travelTimeMinutes = timeAtCurrent * (1 - weight) + timeAtAverage * weight;
+  } else {
+    travelTimeMinutes = (distanceKm / averageSpeed) * 60;
+  }
+
   // Add dwell time for intermediate stops
   const dwellTimeMinutes = calculateDwellTime(intermediateStops);
   
