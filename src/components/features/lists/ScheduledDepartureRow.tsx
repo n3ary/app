@@ -68,7 +68,7 @@ export const ScheduledDepartureRow: FC<ScheduledDepartureRowProps> = ({
         <Chip
           icon={<AccessTime />}
           label={formatMinutesUntil(minutesUntil)}
-          color="success"
+          color="info"
           variant="filled"
           size="small"
           sx={{
