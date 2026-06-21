@@ -15,15 +15,16 @@ import type { FC } from 'react';
 import { useMemo, useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, IconButton, Typography, Box, Avatar,
-  ToggleButtonGroup, ToggleButton,
+  ToggleButtonGroup, ToggleButton, Button,
 } from '@mui/material';
-import { Close as CloseIcon } from '@mui/icons-material';
+import { Close as CloseIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { useScheduleStore } from '../../../stores/scheduleStore';
 import { useTripStore } from '../../../stores/tripStore';
 import { useRouteStore } from '../../../stores/routeStore';
 import { buildTripRouteMap } from '../../../utils/schedule/scheduleVehicleIntegration';
 import { buildStationDepartureBoard, formatBoardTime } from '../../../utils/schedule/stationScheduleBoard';
 import { minutesSinceMidnight } from '../../../utils/schedule/activeServiceUtils';
+import { generateStatusMessage } from '../../../utils/arrival/statusUtils';
 
 type BoardMode = 'today' | 'tomorrow';
 
@@ -43,6 +44,8 @@ export const ScheduleBoardDialog: FC<ScheduleBoardDialogProps> = ({
   open, initialMode, station, routeId, routeShortName, headsign, directionId, onClose,
 }) => {
   const [mode, setMode] = useState<BoardMode>(initialMode);
+  // Tomorrow defaults to the morning (until noon) with a "See more" expander.
+  const [tomorrowExpanded, setTomorrowExpanded] = useState(false);
   const { scheduleData } = useScheduleStore();
   const { trips } = useTripStore();
   const { routes } = useRouteStore();
@@ -50,6 +53,11 @@ export const ScheduleBoardDialog: FC<ScheduleBoardDialogProps> = ({
   useEffect(() => {
     if (open) setMode(initialMode);
   }, [open, initialMode]);
+
+  // Collapse the tomorrow expander whenever the dialog opens or the tab changes.
+  useEffect(() => {
+    setTomorrowExpanded(false);
+  }, [open, mode]);
 
   const board = useMemo(() => {
     if (!open || !station) return [];
@@ -62,6 +70,14 @@ export const ScheduleBoardDialog: FC<ScheduleBoardDialogProps> = ({
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12, 0, 0);
     return buildStationDepartureBoard({ ...common, date: tomorrow, fromMinutes: null });
   }, [open, station, mode, scheduleData, trips, routes, routeId, directionId]);
+
+  // Tomorrow defaults to morning (before noon); "See more" reveals the rest.
+  const NOON_MINUTES = 12 * 60;
+  const visibleBoard =
+    mode === 'tomorrow' && !tomorrowExpanded
+      ? board.filter((d) => d.departureMinutes < NOON_MINUTES)
+      : board;
+  const hasMore = mode === 'tomorrow' && !tomorrowExpanded && board.length > visibleBoard.length;
 
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
@@ -104,29 +120,59 @@ export const ScheduleBoardDialog: FC<ScheduleBoardDialogProps> = ({
               : 'Schedule data is not available.'}
           </Typography>
         ) : (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)' },
-              gap: 1,
-            }}
-          >
-            {board.map((d, i) => (
-              <Box
-                key={`${d.tripId}-${i}`}
-                sx={{
-                  py: 1,
-                  textAlign: 'center',
-                  borderRadius: 1,
-                  bgcolor: 'action.hover',
-                  fontVariantNumeric: 'tabular-nums',
-                  fontWeight: 600,
-                }}
-              >
-                {formatBoardTime(d.departureMinutes)}
+          <>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)' },
+                gap: 1,
+              }}
+            >
+              {visibleBoard.map((d, i) => {
+                // For the soonest TODAY departure, show "(In X minutes)" using the
+                // same wording as the arrival bubble.
+                const minutesUntil = d.departureMinutes - minutesSinceMidnight(new Date());
+                const showEta = mode === 'today' && i === 0 && minutesUntil >= 0;
+                const etaLabel =
+                  minutesUntil < 1 ? 'Departing now' : generateStatusMessage('in_minutes', minutesUntil);
+                return (
+                  <Box
+                    key={`${d.tripId}-${i}`}
+                    sx={{
+                      py: 1,
+                      px: 0.5,
+                      textAlign: 'center',
+                      borderRadius: 1,
+                      bgcolor: showEta ? 'info.main' : 'action.hover',
+                      color: showEta ? 'info.contrastText' : 'text.primary',
+                      fontVariantNumeric: 'tabular-nums',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatBoardTime(d.departureMinutes)}
+                    {showEta && (
+                      <Typography variant="caption" component="div" sx={{ fontWeight: 400 }}>
+                        ({etaLabel})
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+            {hasMore && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<ExpandMoreIcon />}
+                  onClick={() => setTomorrowExpanded(true)}
+                >
+                  See more
+                </Button>
               </Box>
-            ))}
-          </Box>
+            )}
+          </>
         )}
       </DialogContent>
     </Dialog>

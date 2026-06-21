@@ -507,10 +507,12 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
               color="info"
               variant="filled"
               size="small"
+              onClick={() => setScheduleView('today')}
               sx={{
                 fontWeight: 'medium',
                 fontSize: { xs: '0.7rem', sm: '0.75rem' },
                 '& .MuiChip-icon': { color: 'inherit' },
+                cursor: 'pointer',
               }}
             />
             <ScheduledDepartureChip />
