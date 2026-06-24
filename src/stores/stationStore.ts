@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { TranzyStopResponse } from '../types/rawTranzyApi';
 import { API_CACHE_DURATION } from '../utils/core/constants';
-import { createRefreshMethod, createFreshnessChecker } from '../utils/core/storeUtils';
+import { createRefreshMethod, createFreshnessChecker, createLoadMethod } from '../utils/core/storeUtils';
 
 interface StationStore {
   // Raw API data - no transformations
@@ -33,6 +33,10 @@ interface StationStore {
 }
 
 // Create shared utilities for this store
+const loadMethod = createLoadMethod('stops', async () => {
+  const { stationService } = await import('../services/stationService');
+  return stationService.getStops();
+});
 const refreshMethod = createRefreshMethod(
   'station',
   'stops', 
@@ -55,36 +59,7 @@ export const useStationStore = create<StationStore>()(
       
       // Actions
       loadStops: async () => {
-        // Performance optimization: avoid duplicate requests if already loading
-        const currentState = get();
-        if (currentState.loading) {
-          return;
-        }
-        
-        // Check if cached data is fresh
-        if (currentState.stops.length > 0 && currentState.isDataFresh()) {
-          return; // Use cached data
-        }
-        
-        set({ loading: true, error: null });
-        
-        try {
-          // Import service dynamically to avoid circular dependencies
-          const { stationService } = await import('../services/stationService');
-          const stops = await stationService.getStops();
-          
-          // Don't overwrite existing data with empty result (hash-match signal)
-          if (stops.length === 0 && currentState.stops.length > 0) {
-            set({ loading: false, error: null, lastUpdated: Date.now(), lastApiFetch: Date.now() });
-          } else {
-            set({ stops, loading: false, error: null, lastUpdated: Date.now() });
-          }
-        } catch (error) {
-          set({ 
-            loading: false, 
-            error: error instanceof Error ? error.message : 'Failed to load stops'
-          });
-        }
+        await loadMethod(get, set);
       },
       
       refreshData: async () => {

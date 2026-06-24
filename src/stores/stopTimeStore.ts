@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { TranzyStopTimeResponse } from '../types/rawTranzyApi';
 import { API_CACHE_DURATION } from '../utils/core/constants';
-import { createRefreshMethod, createFreshnessChecker } from '../utils/core/storeUtils';
+import { createRefreshMethod, createFreshnessChecker, createLoadMethod } from '../utils/core/storeUtils';
 import { createCompressedStorage } from '../utils/core/compressedStorage';
 
 interface StopTimeStore {
@@ -35,9 +35,6 @@ interface StopTimeStore {
   // O(1) lookup by trip_id (lazy-built index)
   getStopTimesForTrip: (tripId: string) => TranzyStopTimeResponse[];
   
-  // Local storage integration
-  persistToStorage: () => void;
-  loadFromStorage: () => void;
 }
 
 // Lazy-built trip_id → stopTimes index for O(1) lookups
@@ -67,6 +64,10 @@ function getOrBuildIndex(stopTimes: TranzyStopTimeResponse[]): Map<string, Tranz
 }
 
 // Create shared utilities for this store
+const loadMethod = createLoadMethod('stopTimes', async () => {
+  const { tripService } = await import('../services/tripService');
+  return tripService.getStopTimes();
+});
 const refreshMethod = createRefreshMethod(
   'trip',
   'stopTimes', 
@@ -87,36 +88,7 @@ export const useStopTimeStore = create<StopTimeStore>()(
       
       // Actions
       loadStopTimes: async () => {
-        // Performance optimization: avoid duplicate requests if already loading
-        const currentState = get();
-        if (currentState.loading) {
-          return;
-        }
-        
-        // Check if cached data is fresh
-        if (currentState.stopTimes.length > 0 && currentState.isDataFresh()) {
-          return; // Use cached data
-        }
-        
-        set({ loading: true, error: null });
-        
-        try {
-          // Import service dynamically to avoid circular dependencies
-          const { tripService } = await import('../services/tripService');
-          const stopTimes = await tripService.getStopTimes();
-          
-          // Don't overwrite existing data with empty result (hash-match signal)
-          if (stopTimes.length === 0 && currentState.stopTimes.length > 0) {
-            set({ loading: false, error: null, lastUpdated: Date.now(), lastApiFetch: Date.now() });
-          } else {
-            set({ stopTimes, loading: false, error: null, lastUpdated: Date.now() });
-          }
-        } catch (error) {
-          set({ 
-            loading: false, 
-            error: error instanceof Error ? error.message : 'Failed to load stop times'
-          });
-        }
+        await loadMethod(get, set);
       },
       
       refreshData: async () => {
@@ -143,16 +115,7 @@ export const useStopTimeStore = create<StopTimeStore>()(
         return idx.get(tripId) || [];
       },
       
-      // Local storage integration methods
-      persistToStorage: () => {
-        // Persistence is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
       
-      loadFromStorage: () => {
-        // Loading from storage is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
     }),
     {
       name: 'stop-time-store',

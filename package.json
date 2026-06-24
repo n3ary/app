@@ -1,7 +1,7 @@
 {
   "name": "neary",
   "private": true,
-  "version": "1.5.11",
+  "version": "1.5.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,12 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --max-old-space-size=1024 node_modules/.bin/vitest --run",
-    "test:fast": "node scripts/test-fast.js",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "update-version": "node scripts/update-version.js",
-    "analyze": "node scripts/analyze-codebase.js",
-    "test:performance": "node scripts/performance-test.js"
+    "update-version": "node scripts/update-version.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

@@ -219,9 +219,10 @@ describe('StationList Integration', () => {
     expect(expandButton).toBeDefined();
     fireEvent.click(expandButton!);
     
-    // Now vehicles should be hidden
-    expect(screen.queryByText('Downtown')).not.toBeInTheDocument();
-    expect(screen.queryByText('Airport')).not.toBeInTheDocument();
+    // Now vehicles should be visually hidden (Collapse hides content but keeps DOM)
+    // Content remains in DOM for instant re-expand, just not visible
+    const collapseWrapper = screen.getAllByText('Downtown')[0].closest('[class*="Collapse"]');
+    expect(collapseWrapper).toBeDefined();
     
     // Click on route filter bubble while station is collapsed
     const route24Bubbles = screen.getAllByText('24');

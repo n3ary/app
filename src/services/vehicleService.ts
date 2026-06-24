@@ -129,10 +129,6 @@ export const vehicleService = {
    * Get enhanced vehicles with position predictions applied
    * @deprecated Use getVehicles() instead - it now returns enhanced vehicles by default
    */
-  async getEnhancedVehicles(): Promise<EnhancedVehicleData[]> {
-    return this.getVehicles();
-  },
-
   /**
    * Helper methods to build data structures from store data
    */

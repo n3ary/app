@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { TranzyTripResponse } from '../types/rawTranzyApi';
 import { API_CACHE_DURATION } from '../utils/core/constants';
-import { createRefreshMethod, createFreshnessChecker } from '../utils/core/storeUtils';
+import { createRefreshMethod, createFreshnessChecker, createLoadMethod } from '../utils/core/storeUtils';
 
 interface TripStore {
   // Raw API data - no transformations
@@ -34,12 +34,13 @@ interface TripStore {
   // Helper to get trip by trip_id
   getTripById: (tripId: string) => TranzyTripResponse | undefined;
   
-  // Local storage integration
-  persistToStorage: () => void;
-  loadFromStorage: () => void;
 }
 
 // Create shared utilities for this store
+const loadMethod = createLoadMethod('trips', async () => {
+  const { tripService } = await import('../services/tripService');
+  return tripService.getTrips();
+});
 const refreshMethod = createRefreshMethod(
   'trip',
   'trips', 
@@ -60,36 +61,7 @@ export const useTripStore = create<TripStore>()(
       
       // Actions
       loadTrips: async () => {
-        // Deduplicate concurrent calls: if already loading, reuse the in-flight promise
-        const currentState = get();
-        if (currentState.loading) {
-          return;
-        }
-        
-        // Check if cached data is fresh
-        if (currentState.trips.length > 0 && currentState.isDataFresh()) {
-          return;
-        }
-        
-        set({ loading: true, error: null });
-        
-        try {
-          // Import service dynamically to avoid circular dependencies
-          const { tripService } = await import('../services/tripService');
-          const trips = await tripService.getTrips();
-          
-          // Don't overwrite existing data with empty result (hash-match signal)
-          if (trips.length === 0 && currentState.trips.length > 0) {
-            set({ loading: false, error: null, lastUpdated: Date.now(), lastApiFetch: Date.now() });
-          } else {
-            set({ trips, loading: false, error: null, lastUpdated: Date.now() });
-          }
-        } catch (error) {
-          set({ 
-            loading: false, 
-            error: error instanceof Error ? error.message : 'Failed to load trips'
-          });
-        }
+        await loadMethod(get, set);
       },
       
       refreshData: async () => {
@@ -110,16 +82,7 @@ export const useTripStore = create<TripStore>()(
         return trips.find(trip => trip.trip_id === tripId);
       },
       
-      // Local storage integration methods
-      persistToStorage: () => {
-        // Persistence is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
       
-      loadFromStorage: () => {
-        // Loading from storage is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
     }),
     {
       name: 'trip-store',

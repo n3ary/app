@@ -7,12 +7,14 @@
  */
 
 import type { FC } from 'react';
-import { useEffect, useState } from 'react';
-import { Box, Stack, Typography, Divider } from '@mui/material';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Box, Stack, Typography, Divider, LinearProgress } from '@mui/material';
 import { useVehicleStore } from '../../../stores/vehicleStore';
 import { useScheduleStore } from '../../../stores/scheduleStore';
 import { useConfigStore } from '../../../stores/configStore';
 import { staticDataService } from '../../../services/staticDataService';
+import { subscribeToLoadingStates, getLoadingStates, getEstimatedSizeKB } from '../../../services/staticDataService';
+import type { EndpointLoadingState } from '../../../services/staticDataService';
 import { formatCompactRelativeTime } from '../../../utils/time/timestampFormatUtils';
 import {
   API_FETCH_FRESHNESS_THRESHOLDS,
@@ -80,6 +82,9 @@ export const FreshnessDebugPanel: FC<FreshnessDebugPanelProps> = ({ className })
   const timestamps = staticDataService.getTimestamps();
   const scheduleVersionTs = scheduleVersion ? Date.parse(scheduleVersion) : null;
 
+  // Subscribe to endpoint loading states
+  const loadingStatesMap = useSyncExternalStore(subscribeToLoadingStates, getLoadingStates);
+
   return (
     <Box className={className} data-testid="freshness-debug-panel">
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -119,6 +124,7 @@ export const FreshnessDebugPanel: FC<FreshnessDebugPanelProps> = ({ className })
         {STATIC_ENDPOINTS.map(({ key, label }) => {
           const hashKey = `${agencyId}/${key}`;
           const ts = timestamps[hashKey];
+          const loadState = loadingStatesMap.get(key) || 'idle';
           return (
             <StaticRow
               key={key}
@@ -126,6 +132,8 @@ export const FreshnessDebugPanel: FC<FreshnessDebugPanelProps> = ({ className })
               lastChanged={ts?.lastChanged ?? null}
               lastChecked={ts?.lastChecked ?? null}
               now={now}
+              loadingState={loadState}
+              estimatedKB={getEstimatedSizeKB(key)}
             />
           );
         })}
@@ -134,6 +142,8 @@ export const FreshnessDebugPanel: FC<FreshnessDebugPanelProps> = ({ className })
           lastChanged={scheduleVersionTs && Number.isFinite(scheduleVersionTs) ? scheduleVersionTs : null}
           lastChecked={scheduleFetched}
           now={now}
+          loadingState={loadingStatesMap.get('schedule') || 'idle'}
+          estimatedKB={getEstimatedSizeKB('schedule')}
         />
       </Stack>
     </Box>
@@ -157,28 +167,43 @@ function LiveRow({ label, ageMs, status }: { label: string; ageMs: number | null
   );
 }
 
-function StaticRow({ label, lastChanged, lastChecked, now }: {
+function StaticRow({ label, lastChanged, lastChecked, now, loadingState, estimatedKB }: {
   label: string; lastChanged: number | null; lastChecked: number | null; now: number;
+  loadingState: EndpointLoadingState; estimatedKB: number;
 }) {
   const FRESH = API_CACHE_DURATION.STATIC_DATA / 2;
   const AGING = API_CACHE_DURATION.STATIC_DATA;
   const age = lastChanged ? now - lastChanged : null;
   const status = gradeAge(age, FRESH, AGING);
+  const isLoading = loadingState === 'checking' || loadingState === 'downloading';
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Dot color={STATUS_COLOR[status]} />
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Dot color={STATUS_COLOR[status]} />
+          <Typography variant="body2" color="text.secondary">{label}</Typography>
+          {estimatedKB >= 500 && isLoading && (
+            <Typography variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
+              ~{Math.round(estimatedKB / 1024 * 10) / 10 >= 1 ? `${(estimatedKB / 1024).toFixed(1)} MB` : `${estimatedKB} KB`}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'baseline' }}>
+          <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums', color: 'text.secondary', minWidth: 40, textAlign: 'right' }}>
+            {lastChanged ? formatCompactRelativeTime(lastChanged) : '—'}
+          </Typography>
+          <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums', color: 'text.disabled', minWidth: 40, textAlign: 'right' }}>
+            {lastChecked ? formatCompactRelativeTime(lastChecked) : '—'}
+          </Typography>
+        </Box>
       </Box>
-      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'baseline' }}>
-        <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums', color: 'text.secondary', minWidth: 40, textAlign: 'right' }}>
-          {lastChanged ? formatCompactRelativeTime(lastChanged) : '—'}
-        </Typography>
-        <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums', color: 'text.disabled', minWidth: 40, textAlign: 'right' }}>
-          {lastChecked ? formatCompactRelativeTime(lastChecked) : '—'}
-        </Typography>
-      </Box>
+      {isLoading && (
+        <LinearProgress
+          variant={loadingState === 'downloading' ? 'indeterminate' : 'query'}
+          sx={{ height: 2, mt: 0.25, borderRadius: 1, opacity: 0.7 }}
+        />
+      )}
     </Box>
   );
 }

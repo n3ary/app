@@ -149,6 +149,7 @@ async function fetchSingleEndpoint<T>(
     return { endpoint, data: null, changed: false };
   }
 
+  setLoadingState(endpoint, 'downloading');
   const url = staticDataUrl(agencyId, endpoint);
   const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!res.ok) throw new Error(`${endpoint}: HTTP ${res.status}`);
@@ -188,6 +189,46 @@ export type SyncProgressCallback = (status: {
   state: 'checking' | 'downloading' | 'done' | 'unchanged' | 'failed';
 }) => void;
 
+/** Observable loading state for each endpoint (used by Settings UI). */
+export type EndpointLoadingState = 'idle' | 'checking' | 'downloading' | 'done' | 'unchanged' | 'failed';
+
+const loadingStates = new Map<string, EndpointLoadingState>();
+const listeners = new Set<() => void>();
+let snapshotVersion = 0;
+let cachedSnapshot: Map<string, EndpointLoadingState> = new Map();
+
+function setLoadingState(endpoint: string, state: EndpointLoadingState): void {
+  loadingStates.set(endpoint, state);
+  snapshotVersion++;
+  cachedSnapshot = new Map(loadingStates);
+  listeners.forEach(fn => fn());
+}
+
+/** Subscribe to loading state changes. Returns unsubscribe function. */
+export function subscribeToLoadingStates(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Get current loading state snapshot (stable reference between changes). */
+export function getLoadingStates(): Map<string, EndpointLoadingState> {
+  return cachedSnapshot;
+}
+
+/** Estimated sizes in KB for progress indication. */
+const ENDPOINT_SIZES_KB: Record<string, number> = {
+  routes: 30,
+  stops: 50,
+  trips: 40,
+  stop_times: 80,
+  shapes: 2000,
+  schedule: 300,
+};
+
+export function getEstimatedSizeKB(endpoint: string): number {
+  return ENDPOINT_SIZES_KB[endpoint] || 50;
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -210,8 +251,12 @@ export const staticDataService = {
    * Shares the cached manifest — only one network call for the manifest per session.
    */
   async fetchEndpoint<T>(agencyId: number, endpoint: StaticEndpoint): Promise<T | null> {
+    setLoadingState(endpoint, 'checking');
     const { syncedAt, hashes } = await fetchManifest();
     const result = await fetchSingleEndpoint<T>(agencyId, endpoint, hashes, syncedAt);
+    setLoadingState(endpoint, result.changed ? 'done' : 'unchanged');
+    // Reset to idle after a short delay so the UI can flash the state
+    setTimeout(() => setLoadingState(endpoint, 'idle'), 2000);
     return result.data;
   },
 

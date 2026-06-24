@@ -3,7 +3,7 @@
 
 import type { LocationServiceOptions, PermissionState } from '../types/location';
 import { DEFAULT_LOCATION_ACCURACY } from '../types/location';
-import { handleLocationError, retryWithBackoff, DEFAULT_RETRY_CONFIG, type RetryConfig } from './error';
+import { handleLocationError, retryLocationWithBackoff, DEFAULT_RETRY_CONFIG, type RetryConfig } from './error';
 
 export const locationService = {
   /**
@@ -32,7 +32,7 @@ export const locationService = {
 
     try {
       // Use retry logic with exponential backoff for timeout and position unavailable errors
-      return await retryWithBackoff(getPositionOnce, DEFAULT_RETRY_CONFIG, 'get current position');
+      return await retryLocationWithBackoff(getPositionOnce, DEFAULT_RETRY_CONFIG, 'get current position');
     } catch (error) {
       // Handle and transform the error for consistent error reporting
       const locationError = handleLocationError(error, 'get current position');
@@ -64,7 +64,7 @@ export const locationService = {
     };
 
     try {
-      return await retryWithBackoff(getPositionOnce, finalRetryConfig, 'get current position');
+      return await retryLocationWithBackoff(getPositionOnce, finalRetryConfig, 'get current position');
     } catch (error) {
       const locationError = handleLocationError(error, 'get current position');
       throw new Error(locationError.message);

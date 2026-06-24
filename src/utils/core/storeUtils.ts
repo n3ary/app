@@ -2,10 +2,9 @@
 // Shared utilities to eliminate code duplication across stores
 
 // Import types
-import type { StorageData, RetryConfig } from '../../types/common';
+import type { RetryConfig } from '../../types/common';
 
-// Re-export for backward compatibility
-export type { StorageData, RetryConfig };
+export type { RetryConfig };
 
 // Define retry config locally to avoid import issues
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
@@ -16,12 +15,16 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 /**
- * Helper function for exponential backoff retry
+ * Helper function for exponential backoff retry.
+ * Shared across stores and services.
+ * @param isRetryable - Optional callback to check if an error should be retried.
+ *                      If omitted, all errors are retried.
  */
 export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   operationName: string,
-  config: RetryConfig = DEFAULT_RETRY_CONFIG
+  config: RetryConfig = DEFAULT_RETRY_CONFIG,
+  isRetryable?: (error: unknown) => boolean
 ): Promise<T> {
   let lastError: unknown;
   
@@ -31,12 +34,16 @@ export async function retryWithBackoff<T>(
     } catch (error) {
       lastError = error;
       
+      // Check if error is retryable (if callback provided)
+      if (isRetryable && !isRetryable(error)) {
+        throw error;
+      }
+      
       // Don't wait after the last attempt
       if (attempt === config.maxAttempts - 1) {
         break;
       }
       
-      // Calculate exponential backoff delay
       const delay = Math.min(
         config.baseDelay * Math.pow(config.backoffMultiplier, attempt),
         config.maxDelay
@@ -62,6 +69,47 @@ export function isNetworkError(error: unknown): boolean {
            message.includes('fetch');
   }
   return false;
+}
+
+/**
+ * Creates a load method for stores (with loading state).
+ * Handles: duplicate request guard, freshness check, empty-result preservation.
+ * 
+ * @param dataKey - The state key holding the data array (e.g. 'routes', 'stops')
+ * @param fetchFn - Async function that returns the data (called via dynamic import)
+ */
+export function createLoadMethod(
+  dataKey: string,
+  fetchFn: () => Promise<any[]>
+) {
+  return async (get: () => any, set: (updates: any) => void) => {
+    const currentState = get();
+    if (currentState.loading) return;
+    
+    const currentData = currentState[dataKey];
+    const hasData = Array.isArray(currentData) ? currentData.length > 0
+      : currentData instanceof Map ? currentData.size > 0 : !!currentData;
+
+    if (hasData && currentState.isDataFresh?.()) return;
+
+    set({ loading: true, error: null });
+
+    try {
+      const data = await fetchFn();
+
+      // Don't overwrite existing data with empty result (hash-match signal)
+      if (Array.isArray(data) && data.length === 0 && hasData) {
+        set({ loading: false, error: null, lastUpdated: Date.now(), lastApiFetch: Date.now() });
+      } else {
+        set({ [dataKey]: data, loading: false, error: null, lastUpdated: Date.now() });
+      }
+    } catch (error) {
+      set({
+        loading: false,
+        error: error instanceof Error ? error.message : `Failed to load ${dataKey}`
+      });
+    }
+  };
 }
 
 /**

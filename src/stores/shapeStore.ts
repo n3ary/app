@@ -39,9 +39,6 @@ interface ShapeStore {
   hasShape: (shapeId: string) => boolean;
   isDataExpired: () => boolean;
   
-  // Local storage integration
-  persistToStorage: () => void;
-  loadFromStorage: () => void;
 }
 
 // Create shared utilities for this store
@@ -137,14 +134,7 @@ export const useShapeStore = create<ShapeStore>()(
     return (Date.now() - lastUpdated) >= API_CACHE_DURATION.STATIC_DATA;
   },
   
-  // Local storage integration methods (handled by persist middleware)
-  persistToStorage: () => {
-    // Persistence with compression is handled automatically by zustand persist middleware
-  },
   
-  loadFromStorage: () => {
-    // Loading with decompression is handled automatically by zustand persist middleware
-  },
 }),
 {
   name: 'shape-store',
