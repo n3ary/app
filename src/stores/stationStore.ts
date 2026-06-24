@@ -41,7 +41,8 @@ const refreshMethod = createRefreshMethod(
   'station',
   'stops', 
   () => import('../services/stationService'),
-  'getStops'
+  'getStops',
+  { preserveOnEmpty: true }
 );
 const freshnessChecker = createFreshnessChecker(API_CACHE_DURATION.STATIC_DATA);
 

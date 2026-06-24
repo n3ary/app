@@ -45,7 +45,8 @@ const refreshMethod = createRefreshMethod(
   'trip',
   'trips', 
   () => import('../services/tripService'),
-  'getTrips'
+  'getTrips',
+  { preserveOnEmpty: true }
 );
 const freshnessChecker = createFreshnessChecker(API_CACHE_DURATION.STATIC_DATA);
 

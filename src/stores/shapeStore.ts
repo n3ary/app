@@ -49,11 +49,9 @@ const refreshMethod = createRefreshMethod(
   () => import('../services/shapesService.ts'),
   'getAllShapes',
   {
-    // Shapes are a large payload (~14 MB uncompressed). Reduce retries to avoid
-    // hammering the API on slow connections, and use a longer delay between
-    // attempts so the network has time to recover.
     useRetry: true,
     retryConfig: { maxAttempts: 2, baseDelay: 3000, maxDelay: 10000, backoffMultiplier: 2 },
+    preserveOnEmpty: true,
     processData: async (rawShapes: any) => {
       try {
         const { processAllShapes, validateShapeData } = await import('../utils/shapes/shapeProcessingUtils.ts');

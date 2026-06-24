@@ -132,6 +132,10 @@ export function createRefreshMethod<T>(
     retryConfig?: RetryConfig;
     allowCachedDataOnError?: boolean; // Default: true
     processData?: (data: any) => any;
+    /** When true, empty results are treated as "no change" and existing data is preserved.
+     *  Only enable for static data services that return [] on hash match.
+     *  Default: false (empty result replaces store data). */
+    preserveOnEmpty?: boolean;
   }
 ) {
   return async (getState: () => any, setState: (updates: any) => void) => {
@@ -169,28 +173,32 @@ export function createRefreshMethod<T>(
       console.log(`[Store] ${storeName}: API fetch completed at ${new Date().toLocaleTimeString()}`);
       
       // Don't overwrite existing data with empty result (hash-match signal)
-      const currentData = getState()[dataKey];
-      const hasExistingData = Array.isArray(currentData) ? currentData.length > 0 
-        : currentData instanceof Map ? currentData.size > 0 : !!currentData;
-      const isEmptyResult = Array.isArray(data) ? data.length === 0
-        : data instanceof Map ? data.size === 0 : !data;
+      // Only applies to static data stores that use hash-matching (preserveOnEmpty: true)
+      const preserveOnEmpty = options?.preserveOnEmpty ?? false;
+      if (preserveOnEmpty) {
+        const currentData = getState()[dataKey];
+        const hasExistingData = Array.isArray(currentData) ? currentData.length > 0 
+          : currentData instanceof Map ? currentData.size > 0 : !!currentData;
+        const isEmptyResult = Array.isArray(data) ? data.length === 0
+          : data instanceof Map ? data.size === 0 : !data;
 
-      if (isEmptyResult && hasExistingData) {
-        // Hash matched — data unchanged, keep cache. Just update timestamps.
-        setState({
-          error: null,
-          lastUpdated: Date.now(),
-          lastApiFetch: Date.now()
-        });
-      } else {
-        // Fresh data — update store
-        setState({ 
-          [dataKey]: data,
-          error: null, 
-          lastUpdated: Date.now(),
-          lastApiFetch: Date.now()
-        });
+        if (isEmptyResult && hasExistingData) {
+          setState({
+            error: null,
+            lastUpdated: Date.now(),
+            lastApiFetch: Date.now()
+          });
+          return;
+        }
       }
+
+      // Fresh data — update store
+      setState({ 
+        [dataKey]: data,
+        error: null, 
+        lastUpdated: Date.now(),
+        lastApiFetch: Date.now()
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : `Failed to refresh ${storeName}`;
       
