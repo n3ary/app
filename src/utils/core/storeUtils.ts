@@ -98,10 +98,7 @@ export function createLoadMethod(
       const data = await fetchFn();
 
       // Don't overwrite existing data with empty result (hash-match signal)
-      const isEmpty = Array.isArray(data) ? data.length === 0
-        : data instanceof Map ? data.size === 0 : !data;
-
-      if (isEmpty && hasData) {
+      if (Array.isArray(data) && data.length === 0 && hasData) {
         set({ loading: false, error: null, lastUpdated: Date.now(), lastApiFetch: Date.now() });
       } else {
         set({ [dataKey]: data, loading: false, error: null, lastUpdated: Date.now() });
