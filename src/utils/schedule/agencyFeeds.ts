@@ -52,3 +52,22 @@ export function hasScheduleForAgency(agencyId: number | null | undefined): boole
 export function scheduleUrlForAgency(agencyId: number): string {
   return `https://raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/agency-${agencyId}-schedule.json`;
 }
+
+// ============================================================================
+// Static data URLs (raw Tranzy JSON served from neary-gtfs releases branch)
+// ============================================================================
+
+const STATIC_BASE_URL = 'https://raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/data';
+
+/** Endpoints available as static files. */
+export type StaticEndpoint = 'routes' | 'stops' | 'trips' | 'stop_times' | 'shapes';
+
+/** URL for a static data file (routes, stops, trips, stop_times, shapes). */
+export function staticDataUrl(agencyId: number, endpoint: StaticEndpoint): string {
+  return `${STATIC_BASE_URL}/${agencyId}/${endpoint}.json`;
+}
+
+/** URL for the hash manifest (used for freshness checks without downloading data). */
+export function hashManifestUrl(): string {
+  return `${STATIC_BASE_URL}/hashes.json`;
+}
