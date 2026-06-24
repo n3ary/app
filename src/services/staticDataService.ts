@@ -68,10 +68,17 @@ function updateTimestamp(key: string, changed: boolean, serverSyncedAt: string |
     const now = Date.now();
     const existing = all[key] || { lastChecked: null, lastChanged: null };
     const serverTime = serverSyncedAt ? Date.parse(serverSyncedAt) : null;
-    all[key] = {
-      lastChecked: now,
-      lastChanged: changed && serverTime ? serverTime : existing.lastChanged,
-    };
+    
+    let lastChanged = existing.lastChanged;
+    if (changed) {
+      // Data was freshly downloaded — use server time if available, otherwise now
+      lastChanged = (serverTime && Number.isFinite(serverTime)) ? serverTime : now;
+    } else if (!lastChanged && serverTime && Number.isFinite(serverTime)) {
+      // Hash matched but we never recorded a lastChanged — backfill from server
+      lastChanged = serverTime;
+    }
+
+    all[key] = { lastChecked: now, lastChanged };
     localStorage.setItem(TIMESTAMPS_STORAGE_KEY, JSON.stringify(all));
   } catch { /* non-fatal */ }
 }
