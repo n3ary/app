@@ -100,7 +100,8 @@ export const vehicleService = {
         headers: {
           'X-API-Key': apiKey,
           'X-Agency-Id': agencyId.toString()
-        }
+        },
+        params: { _t: Date.now() } // Cache-bust Netlify edge CDN
       });
       
       // Validate response is JSON array, not HTML error page
