@@ -43,8 +43,6 @@ describe('ShapeStore', () => {
     expect(typeof store.isDataFresh).toBe('function');
     expect(typeof store.hasShape).toBe('function');
     expect(typeof store.isDataExpired).toBe('function');
-    expect(typeof store.persistToStorage).toBe('function');
-    expect(typeof store.loadFromStorage).toBe('function');
 
     // Verify initial state
     expect(store.shapes).toBeInstanceOf(Map);
@@ -94,7 +92,6 @@ describe('ShapeStore', () => {
     mockLocalStorage.getItem.mockReturnValue(JSON.stringify(storedData));
 
     const store = useShapeStore.getState();
-    store.loadFromStorage();
 
     // Verify Map was reconstructed correctly
     const updatedStore = useShapeStore.getState();

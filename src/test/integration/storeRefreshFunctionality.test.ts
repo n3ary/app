@@ -97,8 +97,6 @@ describe('Store Refresh Functionality', () => {
       
       // Check that all required methods exist
       expect(typeof store.refreshData).toBe('function');
-      expect(typeof store.persistToStorage).toBe('function');
-      expect(typeof store.loadFromStorage).toBe('function');
       expect(typeof store.isDataFresh).toBe('function');
       
       // Check that lastUpdated property exists
@@ -112,8 +110,6 @@ describe('Store Refresh Functionality', () => {
       
       // Check that all required methods exist
       expect(typeof store.refreshData).toBe('function');
-      expect(typeof store.persistToStorage).toBe('function');
-      expect(typeof store.loadFromStorage).toBe('function');
       expect(typeof store.isDataFresh).toBe('function');
       
       // Check that lastUpdated property exists
@@ -127,8 +123,6 @@ describe('Store Refresh Functionality', () => {
       
       // Check that all required methods exist
       expect(typeof store.refreshData).toBe('function');
-      expect(typeof store.persistToStorage).toBe('function');
-      expect(typeof store.loadFromStorage).toBe('function');
       expect(typeof store.isDataFresh).toBe('function');
       
       // Check that lastUpdated property exists
@@ -162,8 +156,6 @@ describe('Store Refresh Functionality', () => {
       
       // Check that all required methods exist
       expect(typeof store.refreshData).toBe('function');
-      expect(typeof store.persistToStorage).toBe('function');
-      expect(typeof store.loadFromStorage).toBe('function');
       expect(typeof store.isDataFresh).toBe('function');
       
       // Check that lastUpdated property exists

@@ -160,43 +160,21 @@ export function handleLocationError(error: GeolocationPositionError | Error | un
 }
 
 /**
- * Implements exponential backoff retry logic for location requests
+ * Exponential backoff retry for location requests.
+ * Delegates to the shared retryWithBackoff with a location-specific retryable check.
  */
-export async function retryWithBackoff<T>(
+export { retryWithBackoff as retryWithBackoffShared } from '../../utils/core/storeUtils';
+
+export async function retryLocationWithBackoff<T>(
   operation: () => Promise<T>,
   config: RetryConfig = DEFAULT_RETRY_CONFIG,
   operationName: string = 'location request'
 ): Promise<T> {
-  let lastError: unknown;
-  
-  for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      
-      // Check if error is retryable
-      const locationError = handleLocationError(error, operationName);
-      if (!locationError.retryable) {
-        throw error;
-      }
-      
-      // Don't wait after the last attempt
-      if (attempt === config.maxAttempts) {
-        break;
-      }
-      
-      // Calculate delay with exponential backoff
-      const delay = Math.min(
-        config.baseDelay * Math.pow(config.backoffMultiplier, attempt - 1),
-        config.maxDelay
-      );
-      
-      console.log(`Location ${operationName} attempt ${attempt} failed, retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  // All attempts failed, throw the last error with retry exhausted message
-  throw new Error(`Location request failed after ${config.maxAttempts} attempts. Please try manual location entry.`);
+  const { retryWithBackoff: sharedRetry } = await import('../../utils/core/storeUtils');
+  return sharedRetry(
+    operation,
+    `Location ${operationName}`,
+    config,
+    (error) => handleLocationError(error, operationName).retryable
+  );
 }

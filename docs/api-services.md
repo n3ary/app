@@ -1,35 +1,33 @@
-# API Services
+# Data Services
 
-## Overview
+## Architecture
 
-Simple API services for Neary using Tranzy API. All services use raw API field names with no transformations for consistency and simplicity.
+Static transit data (routes, stops, trips, stop_times, shapes) is served from the `neary-gtfs` releases branch on GitHub. The Tranzy API is used only for live vehicle positions.
 
-## Available Services
+## Data Sources
 
-### Core Services
-- **vehicleService** - Get vehicle positions and tracking data
-- **stationService** - Get stop information and locations  
-- **routeService** - Get route definitions and metadata
-- **tripService** - Get trip schedules and stop times
-- **agencyService** - Get transit agency information
-- **shapesService** - Get route geometry (polylines)
+| Data | Source | Refresh |
+|------|--------|---------|
+| Routes, Stops, Trips, Stop times, Shapes | `raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/data/<agency>/` | Daily (hash-checked) |
+| Schedule | `raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/agency-<id>-schedule.json` | Daily |
+| Vehicles (live GPS) | Tranzy API `/vehicles` | Every 2 minutes |
+| Agency list | `raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/data/agency.json` | On setup |
 
-### Specialized Services
-- **arrivalService** - Calculate real-time arrival estimates
-- **locationService** - GPS location with error handling and retry logic
+## Services
 
-## Usage Example
+| Service | Purpose |
+|---------|---------|
+| `staticDataService` | Orchestrates all static data fetching with hash-based freshness |
+| `vehicleService` | Live vehicle positions + enhancement (predictions, position interpolation) |
+| `agencyService` | Agency list (static source primary, Tranzy API fallback) |
+| `arrivalService` | Real-time arrival estimates (computed client-side) |
+| `locationService` | GPS location with retry logic |
 
-```typescript
-import { vehicleService, stationService } from '@/services';
+## Hash-based Freshness
 
-// Get vehicles for an agency
-const vehicles = await vehicleService.getVehicles('agency_id');
+The `staticDataService` fetches a manifest (`data/hashes.json`) containing SHA-256 hashes per endpoint. If the remote hash matches the locally stored hash, the full download is skipped. This means:
+- First load: downloads all data (~few MB)
+- Subsequent loads: downloads only the ~1 KB manifest, skips unchanged data
+- Agency switch: invalidates cache, downloads new agency's data
 
-// Get stops for an agency  
-const stops = await stationService.getStops('agency_id');
-```
-
-## Error Handling
-
-All services include integrated error handling with status tracking. Location service includes retry logic with exponential backoff for GPS operations.
+See `src/services/staticDataService.ts` for implementation.

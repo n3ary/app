@@ -34,8 +34,6 @@ interface FavoritesStore {
   isDataFresh: (maxAgeMs?: number) => boolean;
   
   // Local storage integration
-  persistToStorage: () => void;
-  loadFromStorage: () => void;
 }
 
 // Create shared utilities for this store
@@ -189,15 +187,7 @@ export const useFavoritesStore = create<FavoritesStore>()(
       },
       
       // Local storage integration methods
-      persistToStorage: () => {
-        // Persistence is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
       
-      loadFromStorage: () => {
-        // Loading from storage is handled automatically by zustand persist middleware
-        // This method exists for API consistency but doesn't need implementation
-      },
     }),
     {
       name: 'favorites-store',

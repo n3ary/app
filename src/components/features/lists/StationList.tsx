@@ -283,7 +283,7 @@ export const StationList: FC<StationListProps> = memo(({ stations, utilities, ve
                 </Box>
               </Stack>
               {/* Expandable vehicle list section */}
-              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+              <Collapse in={isExpanded} timeout="auto">
                 <StationVehicleList 
                   vehicles={vehicles}
                   expanded={isExpanded}

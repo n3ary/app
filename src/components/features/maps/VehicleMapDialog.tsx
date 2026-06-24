@@ -104,7 +104,7 @@ export const VehicleMapDialog: FC<VehicleMapDialogProps> = React.memo(({
   // Find target vehicle and trip
   const targetStationVehicle = vehicleId ? vehicles.find(sv => sv.vehicle.id === vehicleId) : null;
   const targetVehicle = targetStationVehicle?.vehicle || null;
-  const vehicleTrip = targetVehicle ? trips.find(trip => trip.trip_id === targetVehicle.trip_id) : null;
+  const vehicleTrip = targetVehicle ? (Array.isArray(trips) ? trips : []).find(trip => trip.trip_id === targetVehicle.trip_id) : null;
 
   // Calculate map center
   const mapCenter = useMemo(() => {

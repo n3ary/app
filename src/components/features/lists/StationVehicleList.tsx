@@ -68,7 +68,7 @@ interface StationVehicleListProps {
 const NextTomorrowFallback: FC<{ station: any; message: string }> = ({ station, message }) => {
   const { scheduleData } = useScheduleStore();
   const { routes } = useRouteStore();
-  const { trips } = useTripStore();
+  const trips = useTripStore((s) => s.trips) || [];
   const [tomorrowDialogOpen, setTomorrowDialogOpen] = useState(false);
 
   const nextTomorrow = useMemo(() => {
@@ -127,6 +127,14 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
   const scheduleDataForDropOff = useScheduleStore((s) => s.scheduleData);
   // Whether the user has opted INTO seeing drop-off-only rows (off by default).
   const showDropOffOnly = useConfigStore((s) => s.showDropOffOnly);
+
+  // Static data subscribed ONCE here, passed to all VehicleCards as props.
+  // This eliminates 5+ duplicate store subscriptions per card.
+  const allTrips = useTripStore((s) => Array.isArray(s.trips) ? s.trips : []);
+  const allStops = useStationStore((s) => Array.isArray(s.stops) ? s.stops : []);
+  const allVehicles = useVehicleStore((s) => Array.isArray(s.vehicles) ? s.vehicles : []);
+  const allRoutes = useRouteStore((s) => Array.isArray(s.routes) ? s.routes : []);
+  const { isFavorite } = useFavoritesStore();
 
   // Apply route filtering with departed vehicle limiting (must be before any returns)
   const filteredVehicles = useMemo(() => {
@@ -191,9 +199,6 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
         : filteredVehicles.filter((v) => !dropOffOnlyIds.has(v.vehicle.id)),
     [filteredVehicles, dropOffOnlyIds, showDropOffOnly],
   );
-
-  // Don't render when collapsed (performance optimization)
-  if (!expanded) return null;
 
   // Show loading indicator when vehicles are being loaded
   if (vehicleLoading && vehicles.length === 0) {
@@ -271,6 +276,13 @@ export const StationVehicleList: FC<StationVehicleListProps> = memo(({ vehicles,
           station={station}
           vehicleRefreshTimestamp={vehicleRefreshTimestamp}
           allStationVehicles={vehicles}
+          stopTimes={stopTimesForDropOff}
+          trips={allTrips}
+          stops={allStops}
+          scheduleData={scheduleDataForDropOff}
+          allVehicles={allVehicles}
+          routes={allRoutes}
+          isFavorite={isFavorite}
         />
       ))}
       
@@ -301,7 +313,15 @@ interface VehicleCardProps {
   arrivalTime?: any;
   station: any;
   vehicleRefreshTimestamp?: number | null;
-  allStationVehicles: StationVehicle[]; // Keep this for the map dialog
+  allStationVehicles: StationVehicle[];
+  // Static data passed from parent (single subscription, shared across all cards)
+  stopTimes: any[];
+  trips: any[];
+  stops: any[];
+  scheduleData: any;
+  allVehicles: any[];
+  routes: any[];
+  isFavorite: (routeId: string) => boolean;
 }
 
 // Data Age Icon Component - displays GPS freshness indicator
@@ -319,7 +339,7 @@ const DataAgeIcon: FC<DataAgeIconProps> = ({ status }) => {
   }
 };
 
-const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalTime, station, vehicleRefreshTimestamp, allStationVehicles }) => {
+const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalTime, station, vehicleRefreshTimestamp, allStationVehicles, stopTimes, trips, stops, scheduleData, allVehicles, routes, isFavorite }) => {
   const [stopsExpanded, setStopsExpanded] = useState(false);
   const [mapDialogOpen, setMapDialogOpen] = useState(false);
   const [dataToastOpen, setDataToastOpen] = useState(false);
@@ -333,14 +353,7 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
     : null;
   
   // Check if this vehicle's route is a favorite
-  const { isFavorite } = useFavoritesStore();
   const isRouteFavorite = route && isFavorite(String(route.route_id));
-  
-  // Get real stop data from stores
-  const { stopTimes } = useStopTimeStore();
-  const { trips } = useTripStore();
-  const { stops } = useStationStore();
-  const { scheduleData } = useScheduleStore();
 
   // Scheduled (synthetic) vehicle: no live GPS, positioned at its start station
   // (future) or interpolated along the route (ghost). Rendered through this same
@@ -366,10 +379,6 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
     stopTimes,
     scheduleData,
   );
-  
-  // Get all data needed for the map dialog
-  const { vehicles: allVehicles } = useVehicleStore();
-  const { routes } = useRouteStore();
   
   // Get actual stops for this vehicle's trip. Live vehicles use the Tranzy
   // stop-time store; scheduled vehicles use the GTFS schedule payload (their
@@ -753,17 +762,19 @@ const VehicleCard: FC<VehicleCardProps> = memo(({ vehicle, route, trip, arrivalT
       </CardContent>
       
       {/* Vehicle Map Dialog */}
-      <VehicleMapDialog
-        open={mapDialogOpen}
-        onClose={() => setMapDialogOpen(false)}
-        vehicleId={vehicle.id}
-        targetStationId={station?.stop_id || null}
-        vehicles={allStationVehicles}
-        routes={routes}
-        stations={stops}
-        trips={isScheduled && trip ? [...trips, trip] : trips}
-        stopTimes={mapStopTimes}
-      />
+      {mapDialogOpen && (
+        <VehicleMapDialog
+          open={mapDialogOpen}
+          onClose={() => setMapDialogOpen(false)}
+          vehicleId={vehicle.id}
+          targetStationId={station?.stop_id || null}
+          vehicles={allStationVehicles}
+          routes={routes}
+          stations={stops}
+          trips={isScheduled && trip ? [...trips, trip] : trips}
+          stopTimes={mapStopTimes}
+        />
+      )}
 
       {/* Today / Tomorrow scheduled departure board.
         *
