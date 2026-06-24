@@ -19,8 +19,14 @@
   to = "https://api.tranzy.ai/:splat"
   status = 200
   force = true
-  [redirects.headers]
-    Cache-Control = "no-store, no-cache, must-revalidate"
+
+# Prevent caching on API proxy responses
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
 
 # SPA redirect for client-side routing
 [[redirects]]
