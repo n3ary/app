@@ -64,13 +64,9 @@ export const StationView: FC<StationViewProps> = ({ onNavigateToSettings }) => {
     );
   }
 
-  // Show first-time loading state when cache is empty and data is loading
-  // In schedule-only mode (no API key), don't wait for vehicles
-  const apiKey = useConfigStore(state => state.apiKey);
-  const needsVehicles = !!apiKey;
-  const isWaitingForData = stops.length === 0 || (needsVehicles && vehicles.length === 0);
-  
-  if (isWaitingForData) {
+  // Show first-time loading state only when stops aren't cached yet.
+  // Vehicles load asynchronously and populate after initial render.
+  if (stops.length === 0) {
     return (
       <FirstTimeLoadingState 
         message="Loading nearby stations..."
