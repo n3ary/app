@@ -1,0 +1,15 @@
+{
+  "name": "@neary/build-sqlite",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Local-only GTFS .zip -> SQLite converter. Mirrors the step that will eventually run in the neary-gtfs GitHub Action. Output is consumed by apps/web's SQLite-WASM worker.",
+  "scripts": {
+    "build": "node index.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "csv-parse": "^6.2.0",
+    "node-stream-zip": "^1.15.0"
+  }
+}

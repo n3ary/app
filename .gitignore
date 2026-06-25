@@ -16,6 +16,9 @@ dist-ssr
 .svelte-kit
 build
 
+# Generated SQLite blobs (regenerated locally via scripts/build-sqlite)
+apps/web/static/dev-data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
