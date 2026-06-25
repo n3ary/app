@@ -21,7 +21,7 @@
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import {
     Box, Card, CardContent, Chip, List, ListItem, ListItemText,
-    RouteBadge, Stack, StatusBar, Typography,
+    RouteBadge, Stack, Typography,
   } from '$lib/ui';
   import { MapPin } from 'lucide-svelte';
 
@@ -73,8 +73,6 @@
 <svelte:head>
   <title>Data test — neary v2</title>
 </svelte:head>
-
-<StatusBar />
 
 <main class="mx-auto max-w-3xl px-4 py-6 space-y-8">
   <header>

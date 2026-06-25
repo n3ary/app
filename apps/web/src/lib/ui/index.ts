@@ -34,5 +34,11 @@ export { default as RouteBadge } from './RouteBadge.svelte';
 export { default as VehicleCard } from './VehicleCard.svelte';
 export { default as StationCard } from './StationCard.svelte';
 
+// App shell.
+export { default as Header } from './Header.svelte';
+export type { HeaderHealth, HealthState } from './Header.svelte';
+export { default as StatusDot } from './StatusDot.svelte';
+export { default as AppLayout } from './AppLayout.svelte';
+
 export { cn } from './cn';
 

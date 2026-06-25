@@ -63,11 +63,19 @@ async function bootstrap(): Promise<Database> {
       if (!res.ok || !res.body) {
         throw new Error(`Seed download failed (${res.status}). Did you run scripts/build-sqlite?`);
       }
-      // Stream-decompress gzip in-place; modern browsers (incl. iOS Safari)
-      // ship DecompressionStream natively.
-      const decompressed = new Response(res.body.pipeThrough(new DecompressionStream('gzip')));
-      const bytes = new Uint8Array(await decompressed.arrayBuffer());
-      console.log(`[gtfs.worker] Decompressed ${bytes.byteLength} bytes; importing into OPFS…`);
+      // The server may or may not have applied Content-Encoding: gzip on
+      // a `.gz` filename. Vite's dev server (sirv) auto-decompresses;
+      // raw.githubusercontent.com (production CDN) does not. Detect by
+      // gzip magic bytes (1f 8b) and decompress only if still compressed.
+      let bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+        console.log('[gtfs.worker] Body is still gzipped; decompressing client-side.');
+        const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'));
+        bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      } else {
+        console.log('[gtfs.worker] Body already decompressed by transport.');
+      }
+      console.log(`[gtfs.worker] Importing ${bytes.byteLength} bytes into OPFS…`);
       poolUtil.importDb(OPFS_FILE, bytes);
     } else {
       console.log('[gtfs.worker] OPFS already seeded; opening directly.');
