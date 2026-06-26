@@ -420,17 +420,22 @@
     }
   });
 
-  // User position layer.
+  // User position layer. `locationStore.position` is a native
+  // `GeolocationPosition`, so coords come from `.coords.latitude` /
+  // `.coords.longitude` — NOT the LatLon shape we use everywhere
+  // else in the domain.
   $effect(() => {
     if (!L || !mapInstance) return;
     const pos = locationStore.position;
-    if (!pos) {
+    const coords = pos?.coords;
+    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
       userMarker?.remove();
       userMarker = null;
       return;
     }
+    const latlng: [number, number] = [coords.latitude, coords.longitude];
     if (!userMarker) {
-      userMarker = L.circleMarker([pos.lat, pos.lon], {
+      userMarker = L.circleMarker(latlng, {
         radius: 7,
         color: '#fff',
         weight: 2,
@@ -438,7 +443,7 @@
         fillOpacity: 1,
       }).addTo(mapInstance);
     } else {
-      userMarker.setLatLng([pos.lat, pos.lon]);
+      userMarker.setLatLng(latlng);
     }
   });
 
