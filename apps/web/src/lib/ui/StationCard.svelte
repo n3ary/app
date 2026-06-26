@@ -12,7 +12,10 @@
   fighting the card.
 -->
 <script lang="ts">
-  import { Bus, ChevronDown, MapPin } from 'lucide-svelte';
+  import {
+    ArrowDownLeft, ArrowUpRight, AlertTriangle, Bus, ChevronDown, Clock,
+    MapPin, type Icon as LucideIcon,
+  } from 'lucide-svelte';
   import type { Route, Station, Vehicle } from '$lib/domain/types';
   import {
     BUCKET_ORDER, bucketLabel, etaUrgency, type ArrivalBucket,
@@ -121,6 +124,27 @@
       }));
   });
   const isEmpty = $derived(groups.length === 0);
+
+  // Per-bucket section header styling. The icon mirrors the bucket
+  // verb (incoming → clock, departing → outbound arrow, etc.) and
+  // the accent color matches the urgency band the VehicleCards in
+  // that section already render with, so the eye reads them as one.
+  // Lives here because it's purely visual mapping; the bucket itself
+  // and its human-readable label are still the domain's call.
+  const BUCKET_META: Record<ArrivalBucket, { icon: typeof LucideIcon; accent: 'success' | 'danger' | 'warning' | 'muted' }> = {
+    departing:    { icon: ArrowUpRight,   accent: 'danger' },
+    'at-station': { icon: MapPin,         accent: 'success' },
+    arriving:     { icon: ArrowDownLeft,  accent: 'success' },
+    incoming:     { icon: Clock,          accent: 'muted' },
+    departed:     { icon: ArrowUpRight,   accent: 'muted' },
+    'off-route':  { icon: AlertTriangle,  accent: 'warning' },
+  };
+  const ACCENT_FG: Record<'success' | 'danger' | 'warning' | 'muted', string> = {
+    success: 'text-[color:var(--color-success)]',
+    danger:  'text-[color:var(--color-danger)]',
+    warning: 'text-[color:var(--color-warning)]',
+    muted:   'text-[color:var(--color-fg-muted)]',
+  };
 </script>
 
 <Card variant="station" class={className}>
@@ -184,14 +208,30 @@
       {:else}
         <Stack spacing={1.5} class="pt-1">
           {#each groups as group (group.bucket)}
+            {@const meta = BUCKET_META[group.bucket]}
+            {@const HeaderIcon = meta.icon}
             <Box>
-              <Typography
-                variant="caption"
-                class="px-1 pb-1 uppercase tracking-wide text-[color:var(--color-fg-muted)]"
+              <Stack
+                direction="row"
+                spacing={1}
+                align="center"
+                class="px-1 py-1 border-b border-[color:var(--color-border)]/60"
               >
-                {group.label} · {group.vehicles.length}
-              </Typography>
-              <Stack spacing={0.5}>
+                <HeaderIcon size={14} class={`shrink-0 ${ACCENT_FG[meta.accent]}`} />
+                <Typography
+                  variant="caption"
+                  class={`font-semibold tracking-tight ${meta.accent === 'danger' ? ACCENT_FG.danger : ''}`}
+                >
+                  {group.label}
+                </Typography>
+                <span
+                  aria-label={`${group.vehicles.length} ${group.label.toLowerCase()} vehicle${group.vehicles.length === 1 ? '' : 's'}`}
+                  class="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-mono rounded-full bg-[color:var(--color-border)]/50 text-[color:var(--color-fg-muted)]"
+                >
+                  {group.vehicles.length}
+                </span>
+              </Stack>
+              <Stack spacing={0.5} class="pt-1">
                 {#each group.vehicles as vehicle (vehicle.id)}
                   <VehicleCard
                     {vehicle}
