@@ -65,15 +65,46 @@ let currentDb: Database | null = null;
 let bootstrapping: Promise<Database> | null = null;
 
 async function getPool() {
-  if (!poolPromise) {
-    poolPromise = (async () => {
-      const sqlite3: Sqlite3Static = await sqlite3InitModule({
-        print: (m: string) => console.log('[gtfs.worker:sqlite]', m),
-        printErr: (m: string) => console.error('[gtfs.worker:sqlite]', m),
-      });
-      return sqlite3.installOpfsSAHPoolVfs({ name: OPFS_POOL_NAME });
-    })();
-  }
+  if (poolPromise) return poolPromise;
+  poolPromise = (async () => {
+    const sqlite3: Sqlite3Static = await sqlite3InitModule({
+      print: (m: string) => console.log('[gtfs.worker:sqlite]', m),
+      printErr: (m: string) => console.error('[gtfs.worker:sqlite]', m),
+    });
+    // OPFS access-handle pool. SAH is exclusive per-file across the
+    // browser, so a stale handle from another tab or a not-yet-GC'd
+    // worker can block init. `forceReinitIfPreviouslyFailed` lets a
+    // retry attempt re-run init instead of replaying the cached
+    // rejection. We also do one in-flight retry against transient
+    // races (HMR worker swap, another tab still releasing).
+    const opts = {
+      name: OPFS_POOL_NAME,
+      forceReinitIfPreviouslyFailed: true,
+    } as const;
+    try {
+      return await sqlite3.installOpfsSAHPoolVfs(opts);
+    } catch (firstErr) {
+      console.warn('[gtfs.worker] OPFS pool init failed, retrying in 250ms…', firstErr);
+      await new Promise((r) => setTimeout(r, 250));
+      try {
+        return await sqlite3.installOpfsSAHPoolVfs(opts);
+      } catch (secondErr) {
+        throw new Error(
+          'Unable to open the offline schedule database. Another browser ' +
+          'tab on this site is probably holding the file open — close other ' +
+          'Neary tabs and reload. (Underlying: ' +
+          (secondErr instanceof Error ? secondErr.message : String(secondErr)) +
+          ')',
+        );
+      }
+    }
+  })().catch((e) => {
+    // Drop the cached rejection so a later setFeed() can try again
+    // (e.g. after the user has closed the conflicting tab and tapped
+    // the agency picker to retry).
+    poolPromise = null;
+    throw e;
+  });
   return poolPromise;
 }
 
