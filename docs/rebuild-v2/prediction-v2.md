@@ -265,9 +265,16 @@ Output: an `ArrivalPlan` per stop the caller asked about, with `{etaMin, source,
 
 #### C.3 `predictPositionOnShape` keeps its current contract
 
-Same signature, same return shape. Internally it now consults Stage C.1 for the *current* segment's speed and dead-reckons forward using `(nowMs − vehicle.asOfMs)` — i.e. the dot on the map shows where the bus *should be right now*, not where the schedule says it should be at the next 30 s grid mark. Falls back to schedule-only when no GPS exists.
+Same signature, same return shape. The big change is that the marker now moves *continuously* for every visible vehicle on every `nowTicker` tick, regardless of whether the vehicle has live GPS or not. What changes per vehicle is the *source of the position* and the confidence label, not whether the marker animates:
 
-This is the big behavioural change. It needs the `nowTicker` cadence to drop to ~5 s (Q.4 below).
+- **Live GPS, HEALTHY:** consult Stage C.1 for the *current* segment's speed and dead-reckon forward using `(nowMs − vehicle.asOfMs) × speedKmh`. The dot shows where the bus *should be right now*, anchored to its last real GPS sample.
+- **Live GPS, STALE:** same dead-reckoning math, but ArrivalPlan source downgrades to `schedule` with one band of confidence loss.
+- **Live GPS, VERY_STALE:** marker frozen at last known projected `distAlongM`, yellow border (Q.6).
+- **No GPS at all (schedule-only):** position interpolated continuously between the trip's scheduled stops using `nowMs`. Stop coordinates come from `stops.txt`; the in-between position is the linear-by-time interpolation along the shape (same math today's `predictPositionOnShape` already does — the only change is the 5 s tick instead of 30 s, so the marker slides smoothly instead of jumping).
+
+The point: **every visible vehicle moves smoothly**. Schedule-only vehicles aren't second-class citizens on the map — the schedule + stop locations + the current clock is enough to predict their position too. A bus on a route with no GPS reporting still glides between its scheduled stops, just without the live anchor a GPS-equipped bus gets.
+
+Falls back to the straight-line `predictPosition` (no shape) when a trip has no `shape_id` — already handled by today's code path.
 
 ### Reconciliation
 
@@ -319,11 +326,16 @@ Pure TS, no UI, no DOM. Heavily unit-tested. Doesn't ship to users — sits in t
 
 Replace today's `predictEta.ts`. Update `assembleLiveBoard` to call the new module. The Stations board's ETAs start using the cascade per segment. Map view unchanged at this phase. Shippable behind a feature flag if we want to A/B against v1-ETA-style.
 
-### Phase P5 — GPS-aware position rendering
+### Phase P5 — continuous position rendering for every vehicle
 
-The big one. `predictPositionOnShape` consumes the live observation and dead-reckons. `nowTicker` cadence drops (or a separate faster ticker is introduced just for the map). Map markers start tracking live buses.
+The big one. `predictPositionOnShape` consumes the live observation when present and dead-reckons; when no live observation exists, the same function interpolates the schedule-only position from `nowMs` + stop lat/lon. Either way **every marker moves continuously**, because the 5 s `nowTicker` (from P6) re-runs the predictor for every visible vehicle.
 
-This is the phase where the user's "GPS as spine" wish lands. Cannot ship before P3 (no speed) and P4 (no per-segment ArrivalPlan to read from).
+The behavioural shift vs today is twofold:
+
+1. GPS-equipped vehicles stop being snapped to scheduled stop times — they track where the bus actually is, anchored to the last GPS sample and extrapolated forward.
+2. Schedule-only vehicles stop being frozen between `nowTicker` ticks — they slide smoothly between their scheduled stops on the same 5 s cadence.
+
+This is the phase where the user's "GPS as spine" wish lands for live-GPS vehicles, while schedule-only vehicles also benefit from the smoother UI cadence. Cannot ship before P3 (no speed estimator) and P4 (no per-segment ArrivalPlan to anchor against).
 
 ### Phase P6 — fast tick + the refresh-button contract
 
@@ -474,3 +486,4 @@ Things this design deliberately does *not* attempt, with reasons:
 
 - 2026-06-27 — draft created. Sources: v1 deep-dive (Explore subagent), `neary-gtfs` interpolation validation (Explore subagent), current-v2 pipeline trace (earlier audit), industry context (OTP / OneBusAway / GTFS-RT TripUpdates). Awaiting decisions on Q.1–Q.7.
 - 2026-06-27 — Q.1 decided **per-feed** (not per-route). Q.3 decided **keep v1's city-centre tier** as a 4th step in the cascade. Q.4 decided **drop `nowTicker` to 5 s globally** (no per-page split). Q.6 decided **freeze at last known position with yellow border** on VERY_STALE GPS. §6.5 added: explainer of the three loops (live poll / nowTicker / refreshBus), recommended config, and the refresh-button contract. Q.2 / Q.5 / Q.7 still open.
+- 2026-06-27 — P5 scope clarified: the map moves *every* visible vehicle on each `nowTicker` tick, not just live-GPS ones. Schedule-only vehicles interpolate continuously between their scheduled stops; live-GPS vehicles dead-reckon from their last sample. Source determines confidence + reckoning rules, not whether the marker animates. §5.C.3 + Phase P5 description rewritten.
