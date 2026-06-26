@@ -232,43 +232,67 @@
     }
   });
 
-  // Lazy init the Leaflet instance the first time both the library
-  // and the container are ready. Reactive on mapEl + L + view.
+  // Lazy init the Leaflet instance the first time the container has
+  // non-zero size. We can't just init when mapEl + L + view are all
+  // present — the Card's flex height is 0 for one frame after it
+  // mounts, and Leaflet caches that 0-size on init. Instead, gate
+  // on a ResizeObserver tick that reports a real width × height,
+  // then disconnect that gate and start observing for future
+  // resizes so the map re-tiles when the viewport changes.
   $effect(() => {
     if (!L || mapInstance || !mapEl || view == null) return;
+    const el = mapEl;
     const Lref = L;
-    try {
-      const rect = mapEl.getBoundingClientRect();
+
+    const doInit = (w: number, h: number) => {
       // eslint-disable-next-line no-console
-      console.debug('[map] init container', rect.width, 'x', rect.height,
-        'visible?', rect.width > 0 && rect.height > 0);
-      mapInstance = Lref.map(mapEl, {
-        zoomControl: false,
-        attributionControl: true,
-        center: [46.77, 23.6],
-        zoom: 13,
-      });
-      // Expose for quick console poking. Dev-only — strip later.
-      (window as unknown as { __nearyMap?: import('leaflet').Map }).__nearyMap = mapInstance;
-      Lref.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap contributors',
-      }).addTo(mapInstance);
-      stopsLayer = Lref.layerGroup().addTo(mapInstance);
-      vehiclesLayer = Lref.layerGroup().addTo(mapInstance);
-      queueMicrotask(() => mapInstance?.invalidateSize());
-      requestAnimationFrame(() => mapInstance?.invalidateSize());
-      if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
-        resizeObserver.observe(mapEl);
+      console.debug('[map] init container', w, 'x', h);
+      try {
+        mapInstance = Lref.map(el, {
+          zoomControl: false,
+          attributionControl: true,
+          center: [46.77, 23.6],
+          zoom: 13,
+        });
+        (window as unknown as { __nearyMap?: import('leaflet').Map }).__nearyMap = mapInstance;
+        Lref.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors',
+        }).addTo(mapInstance);
+        stopsLayer = Lref.layerGroup().addTo(mapInstance);
+        vehiclesLayer = Lref.layerGroup().addTo(mapInstance);
+        // Future-resize listener (rotation, splitscreen, sidebar).
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
+          resizeObserver.observe(el);
+        }
+        // eslint-disable-next-line no-console
+        console.debug('[map] init done; children', el.children.length);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[map] init failed', e);
+        error = e instanceof Error ? e.message : String(e);
       }
-      // eslint-disable-next-line no-console
-      console.debug('[map] init done; children', mapEl.children.length);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('[map] init failed', e);
-      error = e instanceof Error ? e.message : String(e);
+    };
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      doInit(rect.width, rect.height);
+      return;
     }
+
+    // Container has 0 size right now — wait for the layout to give
+    // it real dimensions before initialising. ResizeObserver fires
+    // immediately on observe() and again on every size change, so
+    // the first non-zero entry triggers init and we disconnect.
+    if (typeof ResizeObserver === 'undefined') return;
+    const gate = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r || r.width <= 0 || r.height <= 0) return;
+      gate.disconnect();
+      doInit(r.width, r.height);
+    });
+    gate.observe(el);
   });
 
   onDestroy(() => {
