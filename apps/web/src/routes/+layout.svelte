@@ -60,6 +60,7 @@
     repo
       .setFeed($state.snapshot(feed) as typeof feed)
       .then(() => {
+        feedsStore.boundFeedId = feed.id;
         statusBus.push({
           id: 'gtfs-bind',
           kind: 'success',
@@ -75,6 +76,7 @@
         });
         // Roll back the binding tracker so the user can retry by re-selecting.
         lastBoundFeedId = null;
+        feedsStore.boundFeedId = null;
       });
   });
 

@@ -15,6 +15,10 @@ class FeedsStore {
   feeds = $state<Feed[] | null>(null);
   loading = $state(false);
   error = $state<string | null>(null);
+  /** Id of the feed currently bound to the GTFS worker (set by +layout
+   *  after `repo.setFeed(...)` resolves). Consumers gate their queries
+   *  on this rather than `userPrefs.feedId` to avoid racing the bind. */
+  boundFeedId = $state<string | null>(null);
 
   /** Idempotent — safe to call from multiple effects. */
   async load(): Promise<void> {

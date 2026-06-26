@@ -44,36 +44,44 @@
   };
 </script>
 
-{#if active}
-  <div
-    class={cn(
-      'relative w-full overflow-hidden text-xs flex items-center px-3 h-7 transition-colors',
-      KIND_CLASS[active.kind],
-    )}
-    role="status"
-  >
-    <!-- Indeterminate stripe behind loading rows -->
-    {#if active.kind === 'loading'}
-      <span
-        aria-hidden="true"
-        class="absolute inset-y-0 left-0 w-1/3 bg-[color:var(--color-primary)]/40 animate-[statusbar-stripe_1.4s_ease-in-out_infinite]"
-      ></span>
-    {/if}
-    <!-- Determinate fill for progress entries -->
-    {#if active.kind === 'progress' && typeof active.progress === 'number'}
-      <span
-        aria-hidden="true"
-        class="absolute inset-y-0 left-0 bg-[color:var(--color-primary)]/40 transition-[width]"
-        style={`width:${Math.max(0, Math.min(100, active.progress))}%`}
-      ></span>
-    {/if}
-    <span class="relative z-10 truncate">
-      {active.kind === 'loading' && loadingMessages.length > 1
-        ? `Loading: ${loadingMessages.join(', ')}`
-        : active.message}
-    </span>
-  </div>
-{/if}
+{#snippet body()}
+  {#if active}
+    <div
+      class={cn(
+        'relative w-full h-7 overflow-hidden text-xs flex items-center px-3 transition-colors',
+        KIND_CLASS[active.kind],
+      )}
+      role="status"
+    >
+      <!-- Indeterminate stripe behind loading rows -->
+      {#if active.kind === 'loading'}
+        <span
+          aria-hidden="true"
+          class="absolute inset-y-0 left-0 w-1/3 bg-[color:var(--color-primary)]/40 animate-[statusbar-stripe_1.4s_ease-in-out_infinite]"
+        ></span>
+      {/if}
+      <!-- Determinate fill for progress entries -->
+      {#if active.kind === 'progress' && typeof active.progress === 'number'}
+        <span
+          aria-hidden="true"
+          class="absolute inset-y-0 left-0 bg-[color:var(--color-primary)]/40 transition-[width]"
+          style={`width:${Math.max(0, Math.min(100, active.progress))}%`}
+        ></span>
+      {/if}
+      <span class="relative z-10 truncate">
+        {active.kind === 'loading' && loadingMessages.length > 1
+          ? `Loading: ${loadingMessages.join(', ')}`
+          : active.message}
+      </span>
+    </div>
+  {/if}
+{/snippet}
+
+<!-- Always reserve the row so transient status messages don't shove
+     the page content up and down. -->
+<div class="h-7 w-full">
+  {@render body()}
+</div>
 
 <style>
   @keyframes statusbar-stripe {

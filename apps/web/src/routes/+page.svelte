@@ -19,6 +19,7 @@
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import { assembleStationBoard, dedupRoutes } from '$lib/domain/stationBoard';
   import type { Vehicle } from '$lib/domain/types';
+  import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
@@ -54,18 +55,22 @@
   });
 
   $effect(() => {
-    const fid = userPrefs.feedId;
+    // Wait until the worker has actually been bound to the user's chosen
+    // feed (set by +layout after repo.setFeed resolves). Without this gate
+    // the page can race the bind and briefly flash a 'not bound' error.
+    const fid = feedsStore.boundFeedId;
     if (!fid) return;
     const lat = queryLat;
     const lon = queryLon;
     (async () => {
       try {
         const repo = getGtfsRepo();
-        await repo.ready();
         boards = await repo.getStationBoardsNear(
           lat, lon, SEARCH_RADIUS_M, MAX_STATIONS, Date.now(), ARRIVALS_WINDOW_MIN,
         );
         boardsError = null;
+        // Auto-expand if there's exactly one station — saves a tap.
+        if (boards.length === 1) expandedStopId = boards[0].stop.id;
       } catch (e) {
         boardsError = e instanceof Error ? e.message : String(e);
       }
