@@ -88,6 +88,27 @@ export function etaUrgency(
   }
 }
 
+/** Schedule-only equivalent of `etaUrgency`. Used by views that have a
+ *  scheduled departure time but no live vehicle (e.g. the route
+ *  schedule list before live data is wired in). Mirrors the bucket
+ *  rules from `etaUrgency`:
+ *
+ *    delta < -1 min  → 'neutral' (already departed; not actionable)
+ *    -1 ≤ delta < 1  → 'stop'    (about to leave; render bold red,
+ *                                 caller typically labels it 'Departing')
+ *    1 ≤ delta ≤ imminentEtaThresholdMin → 'go' (bold accent)
+ *    delta > imminentEtaThresholdMin     → 'neutral'
+ */
+export function scheduleUrgency(
+  deltaMin: number,
+  config: NearyConfig = DEFAULT_CONFIG,
+): Urgency {
+  if (deltaMin <= -1) return 'neutral';
+  if (deltaMin < 1) return 'stop';
+  if (deltaMin <= config.imminentEtaThresholdMin) return 'go';
+  return 'neutral';
+}
+
 export interface BucketInputs {
   /** Signed: positive = future, negative = past. */
   etaMinutes: number;

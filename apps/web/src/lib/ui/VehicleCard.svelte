@@ -18,6 +18,7 @@
   import { formatHHMM, formatRelativeMin } from '$lib/domain/types';
   import type { Urgency } from '$lib/domain/buckets';
   import RouteBadge from './RouteBadge.svelte';
+  import { urgencyClass } from './urgencyClass';
   import { cn } from './cn';
 
   type Props = {
@@ -61,13 +62,7 @@
   });
 
   // CSS for the time column — mechanical lookup from a domain decision.
-  const URGENCY_CLASS: Record<Urgency | 'none', string> = {
-    go: 'font-bold text-[color:var(--color-success)]',
-    stop: 'font-bold text-[color:var(--color-danger)]',
-    neutral: 'text-[color:var(--color-fg-muted)]',
-    none: 'text-[color:var(--color-fg-muted)]',
-  };
-  const etaClass = $derived(URGENCY_CLASS[urgency ?? 'none']);
+  const etaClass = $derived(urgencyClass(urgency));
 
   const headsign = $derived(
     vehicle.headsign ?? vehicle.schedule?.headsign ?? '—',

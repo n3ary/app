@@ -30,6 +30,8 @@
   import {
     formatHHMM, formatRelativeMin, isNightRoute, vehicleTypeLabel,
   } from '$lib/domain/types';
+  import { scheduleUrgency } from '$lib/domain/buckets';
+  import { urgencyClass } from '$lib/ui/urgencyClass';
   import type { ScheduleTrip, ScheduleTripStop } from '$lib/data/gtfs/types';
   import {
     minSinceMidnightInTz, scheduleWindowFor,
@@ -173,10 +175,15 @@
   // trip resolved; disable otherwise so the user can't click into
   // an empty content area.
   const canShowThisTrip = $derived(direction != null && focusStops.length > 0);
+  // 'This trip' label only applies when a specific trip was pinned via
+  // ?trip= (i.e. the user came from a vehicle row on a station). When
+  // no trip is pinned we're really previewing the next upcoming trip,
+  // so the label reads accordingly.
+  const thisTripLabel = $derived(focusTripId ? 'This trip' : 'Next trip');
   const tabItems = $derived(
     canShowThisTrip
       ? [
-          { value: 'this-trip', label: 'This trip' },
+          { value: 'this-trip', label: thisTripLabel },
           { value: 'today', label: 'Today' },
           { value: 'tomorrow', label: 'Tomorrow' },
         ]
@@ -202,7 +209,18 @@
   );
 
   // ── Helpers (UI-only) ───────────────────────────────────────────────
-  const formatRelative = (min: number) => formatRelativeMin(min - nowMin);
+  // Relative-time text + urgency class for a scheduled minute-since-
+  // midnight value. Urgency rule lives in the domain (`scheduleUrgency`);
+  // the 'Departing' label is the same convention StationCard uses for
+  // the departing-bucket vehicle row.
+  function relText(min: number): string {
+    const delta = min - nowMin;
+    if (delta < 1 && delta > -1) return 'Departing';
+    return formatRelativeMin(delta);
+  }
+  function relClass(min: number): string {
+    return urgencyClass(scheduleUrgency(min - nowMin));
+  }
 
   function navigateWith(updates: Record<string, string | null>) {
     const params = new URLSearchParams(page.url.searchParams);
@@ -256,6 +274,11 @@
         <Typography variant="caption" class="text-[color:var(--color-fg-muted)] font-mono shrink-0">
           {isOrigin ? 'dep' : 'arr'} {formatHHMM(s.arrivalMin)}
         </Typography>
+        {#if isOrigin}
+          <Typography variant="caption" class={`font-mono shrink-0 ${relClass(s.arrivalMin)}`}>
+            · {relText(s.arrivalMin)}
+          </Typography>
+        {/if}
         <IconButton
           aria-label={`Open station ${s.stopName}`}
           onclick={() => goto(`/station/${s.stopId}`)}
@@ -338,13 +361,22 @@
               {@render tripTimeline(focusStops, anchorStopId)}
             {:else}
               <!-- Today / Tomorrow: one row per trip, click to expand
-                   the stop timeline below the row. -->
+                   the stop timeline below the row. Tomorrow gets a
+                   first/last summary above the list so the card
+                   isn't a wall of times with no orientation. -->
               <Stack spacing={0.5}>
                 {#if trips.length === 0}
                   <Typography variant="body2" class="text-[color:var(--color-fg-muted)] py-2">
                     No more departures {view === 'tomorrow' ? 'tomorrow morning' : 'today'}.
                   </Typography>
                 {:else}
+                  {#if view === 'tomorrow'}
+                    <Typography variant="caption" class="text-[color:var(--color-fg-muted)] pb-1">
+                      {trips.length} departure{trips.length === 1 ? '' : 's'} ·
+                      first {formatHHMM(trips[0].tripStartMin)} ·
+                      last {formatHHMM(trips[trips.length - 1].tripStartMin)}
+                    </Typography>
+                  {/if}
                   {#each trips as t (t.tripId)}
                     {@const isOpen = expandedTripId === t.tripId}
                     {@const stops = tripStops.get(t.tripId)}
@@ -356,8 +388,8 @@
                         class="flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-left text-[color:var(--color-fg)] hover:bg-[color:var(--color-border)]/30"
                       >
                         <Chip size="small" class="font-mono shrink-0">{formatHHMM(t.tripStartMin)}</Chip>
-                        <span class="flex-1 min-w-0 text-xs text-[color:var(--color-fg-muted)]">
-                          {#if view === 'today'}{formatRelative(t.tripStartMin)}{/if}
+                        <span class={`flex-1 min-w-0 text-xs ${relClass(t.tripStartMin)}`}>
+                          {#if view === 'today'}{relText(t.tripStartMin)}{/if}
                         </span>
                         <ChevronDown
                           size={16}
@@ -414,8 +446,8 @@
                     {#each dirTrips as t (t.tripId)}
                       <Stack direction="row" spacing={1} align="center" class="px-2 py-1">
                         <Chip size="small" class="font-mono shrink-0">{formatHHMM(t.tripStartMin)}</Chip>
-                        <span class="flex-1 min-w-0 text-xs text-[color:var(--color-fg-muted)]">
-                          {formatRelative(t.tripStartMin)}
+                        <span class={`flex-1 min-w-0 text-xs ${relClass(t.tripStartMin)}`}>
+                          {relText(t.tripStartMin)}
                         </span>
                       </Stack>
                     {/each}
