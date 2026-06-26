@@ -11,7 +11,7 @@
   import { Heart } from 'lucide-svelte';
   import {
     Card, CardContent, IconButton, NoFeedState, RouteBadge, Spinner, Stack,
-    Typography, TypeBubble,
+    Typography, TypeBadge,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { Route, VehicleType } from '$lib/domain/types';
@@ -130,21 +130,26 @@
       {#if presentTypes.length > 1}
         <Card>
           <CardContent>
-            <Stack spacing={0.5}>
-              <Typography variant="overline" class="uppercase tracking-wide text-[color:var(--color-fg-muted)]">
-                Filter by mode
-              </Typography>
-              <Stack direction="row" spacing={0.5} align="center" wrap>
+            <Stack spacing={1}>
+              <Stack spacing={0.5}>
+                <Typography variant="h5">Filter by mode</Typography>
+                <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                  {typeFilter.size === 0
+                    ? `Showing all ${allRoutes.length} routes. Tap a mode to narrow down.`
+                    : `${filteredRoutes.length} of ${allRoutes.length} routes match.`}
+                </Typography>
+              </Stack>
+              <Stack direction="row" spacing={1} align="center" wrap>
                 {#each presentTypes as t (t)}
-                  <TypeBubble type={t} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
+                  <TypeBadge type={t} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
                 {/each}
                 {#if typeFilter.size > 0}
                   <button
                     type="button"
-                    class="ml-2 text-xs underline text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)]"
+                    class="text-xs underline text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)]"
                     onclick={() => (typeFilter = new Set())}
                   >
-                    Clear
+                    Clear filter
                   </button>
                 {/if}
               </Stack>
