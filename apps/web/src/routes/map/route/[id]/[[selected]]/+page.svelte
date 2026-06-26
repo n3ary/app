@@ -225,7 +225,7 @@
     originStopName
     ?? (route ? `${vehicleTypeLabel(route.type ?? 'unknown')} ${route.shortName}` : ''),
   );
-  const headerSubtitle = $derived(headsign);
+  const headerSubtitle = $derived(headsign ? `→ ${headsign}` : null);
 
   // ── Navigation helpers ─────────────────────────────────────────────
   // Does the opposite direction even exist on this route? Some Cluj
@@ -533,7 +533,7 @@
       // its center, so the popup floats above the vehicle rather
       // than half-covering it.
       if (m.headsign) {
-        marker.bindPopup(`→ ${escapeHtml(m.headsign)}`, {
+        marker.bindPopup(escapeHtml(m.headsign), {
           closeButton: false,
           offset: L.point(0, -16),
         });
