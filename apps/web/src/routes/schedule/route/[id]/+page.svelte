@@ -27,10 +27,12 @@
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { Route } from '$lib/domain/types';
-  import { vehicleTypeLabel } from '$lib/domain/types';
+  import {
+    formatHHMM, formatRelativeMin, isNightRoute, vehicleTypeLabel,
+  } from '$lib/domain/types';
   import type { ScheduleTrip, ScheduleTripStop } from '$lib/data/gtfs/types';
   import {
-    dateKeyInTz, minSinceMidnightInTz,
+    minSinceMidnightInTz, scheduleWindowFor,
   } from '$lib/domain/pipeline/timeUtils';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
@@ -81,28 +83,16 @@
 
   const tz = $derived(feedsStore.activeTimezone);
 
-  // Night route: Cluj convention is shortName ending in 'N'. Other
-  // feeds following the same convention get it for free.
-  const isNightRoute = $derived(route ? /n$/i.test(route.shortName) : false);
+  // Night-route flag drives the today-window width and the header chip.
+  // Heuristic + future per-feed override live in the domain layer.
+  const nightRoute = $derived(route ? isNightRoute(route) : false);
 
   // Departures window for the currently-selected view's day.
-  const queryParams = $derived.by(() => {
-    const nowMs = nowTicker.ms;
-    if (view !== 'tomorrow') {
-      return {
-        localDate: dateKeyInTz(nowMs, tz),
-        fromMin: minSinceMidnightInTz(nowMs, tz),
-        // Today: 24h window so night routes' 24:00+ trips surface.
-        windowMin: isNightRoute ? 24 * 60 : 18 * 60,
-      };
-    }
-    const tomorrowMs = nowMs + 24 * 60 * 60 * 1000;
-    return {
-      localDate: dateKeyInTz(tomorrowMs, tz),
-      fromMin: 0,
-      windowMin: 12 * 60,
-    };
-  });
+  // Logic owned by `scheduleWindowFor` so this view is pure markup +
+  // reactive glue.
+  const queryParams = $derived(
+    scheduleWindowFor({ view, isNight: nightRoute, nowMs: nowTicker.ms, timeZone: tz }),
+  );
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;
@@ -211,23 +201,8 @@
     direction != null && headsign ? `→ ${headsign}` : null,
   );
 
-  // ── Helpers ─────────────────────────────────────────────────────────
-  function formatHHMM(min: number): string {
-    const h = Math.floor(min / 60) % 24;
-    const m = Math.round(min % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
-  /** Relative time ('in 12 min', 'departed 3 min ago', 'now') for a
-   *  given today-local minute. Tomorrow trips never call this. */
-  function formatRelative(min: number): string {
-    const delta = min - nowMin;
-    if (delta < -1) return `departed ${-delta} min ago`;
-    if (delta < 1) return 'now';
-    if (delta < 60) return `in ${delta} min`;
-    const h = Math.floor(delta / 60);
-    const m = delta % 60;
-    return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
-  }
+  // ── Helpers (UI-only) ───────────────────────────────────────────────
+  const formatRelative = (min: number) => formatRelativeMin(min - nowMin);
 
   function navigateWith(updates: Record<string, string | null>) {
     const params = new URLSearchParams(page.url.searchParams);
@@ -324,7 +299,7 @@
             <Stack spacing={0.25} class="flex-1 min-w-0">
               <Stack direction="row" spacing={1} align="center" wrap>
                 <Typography variant="h5" class="truncate">{headerTitle}</Typography>
-                {#if isNightRoute}
+                {#if nightRoute}
                   <Chip size="small" variant="outlined">
                     {#snippet icon()}<Moon size={12} />{/snippet}
                     Night

@@ -58,3 +58,46 @@ export function minSinceMidnightInTz(nowMs: number, timeZone: string): number {
   const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
   return h * 60 + m;
 }
+
+/** A day-window query against the GTFS schedule: which calendar day,
+ *  what cutoff (minutes since local midnight), how far ahead to look. */
+export interface ScheduleWindow {
+  localDate: string;
+  fromMin: number;
+  windowMin: number;
+}
+
+/**
+ * Compute the day + minute window the Schedule view should query.
+ *
+ * - `today` / `this-trip` look at the feed's "today" from now-onwards.
+ *   Night routes extend the window to a full 24h so post-midnight
+ *   trips (GTFS times like 25:30) surface in the list.
+ * - `tomorrow` looks at the next calendar day from 00:00 to noon —
+ *   the morning is the only thing a commuter ever wants to plan the
+ *   night before.
+ *
+ * Pure: takes a clock value + flags, returns numbers. No reactive
+ * dependency.
+ */
+export function scheduleWindowFor(args: {
+  view: 'this-trip' | 'today' | 'tomorrow';
+  isNight: boolean;
+  nowMs: number;
+  timeZone: string;
+}): ScheduleWindow {
+  const { view, isNight, nowMs, timeZone } = args;
+  if (view === 'tomorrow') {
+    const tomorrowMs = nowMs + 24 * 60 * 60 * 1000;
+    return {
+      localDate: dateKeyInTz(tomorrowMs, timeZone),
+      fromMin: 0,
+      windowMin: 12 * 60,
+    };
+  }
+  return {
+    localDate: dateKeyInTz(nowMs, timeZone),
+    fromMin: minSinceMidnightInTz(nowMs, timeZone),
+    windowMin: isNight ? 24 * 60 : 18 * 60,
+  };
+}

@@ -15,7 +15,7 @@
 <script lang="ts">
   import { Calendar, CheckCircle2, Clock, Radio } from 'lucide-svelte';
   import type { Vehicle } from '$lib/domain/types';
-  import { formatHHMM } from '$lib/domain/types';
+  import { formatHHMM, formatRelativeMin } from '$lib/domain/types';
   import type { Urgency } from '$lib/domain/buckets';
   import RouteBadge from './RouteBadge.svelte';
   import { cn } from './cn';
@@ -55,12 +55,7 @@
 
   // ETA / scheduled-time secondary line.
   const secondaryLine = $derived.by(() => {
-    if (vehicle.eta) {
-      const m = vehicle.eta.minutes;
-      if (m < 0) return `${-m} min ago`;
-      if (m === 0) return 'Now';
-      return `in ${m} min`;
-    }
+    if (vehicle.eta) return formatRelativeMin(vehicle.eta.minutes);
     if (vehicle.schedule) return `Scheduled ${formatHHMM(vehicle.schedule.scheduledDeparture)}`;
     return 'En route';
   });

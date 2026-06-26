@@ -260,10 +260,39 @@ export function pickContrastingText(hex: string): '#000' | '#fff' {
   return L > 0.6 ? '#000' : '#fff';
 }
 
-/** Format a scheduled-departure minutes-since-midnight value as "HH:MM". */
+/** Format a scheduled-departure minutes-since-midnight value as "HH:MM".
+ *  Wraps the hour modulo 24 so GTFS extended times (e.g. 25:30 for a
+ *  night route running past midnight) display as their wall-clock
+ *  equivalent ("01:30") rather than being clamped to "23:59". */
 export function formatHHMM(minutesSinceMidnight: number): string {
-  const safe = Math.max(0, Math.min(24 * 60 - 1, Math.round(minutesSinceMidnight)));
-  const h = Math.floor(safe / 60);
+  const safe = Math.max(0, Math.round(minutesSinceMidnight));
+  const h = Math.floor(safe / 60) % 24;
   const m = safe % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Render a delta in minutes (target − now) as user-facing relative
+ *  time: 'now', 'in 12 min', 'in 1h 30m', '3 min ago'.
+ *  Shared by the schedule view, the vehicle card and any other
+ *  ETA-style label. */
+export function formatRelativeMin(deltaMin: number): string {
+  if (deltaMin <= -1) {
+    const m = -deltaMin;
+    return `${m} min ago`;
+  }
+  if (deltaMin < 1) return 'now';
+  if (deltaMin < 60) return `in ${deltaMin} min`;
+  const h = Math.floor(deltaMin / 60);
+  const m = deltaMin % 60;
+  return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+}
+
+/** Per-feed convention: night routes have a short-name ending in 'N'
+ *  (Cluj). The schedule view widens the today-window to 24h for these
+ *  so post-midnight trips are reachable; the header surfaces a "Night"
+ *  chip. Centralised so other feeds that adopt the same convention get
+ *  it for free, and so we can swap to a feed-config-driven rule later
+ *  without combing through views. */
+export function isNightRoute(route: Route): boolean {
+  return /n$/i.test(route.shortName);
 }
