@@ -70,6 +70,22 @@
 
   const interactive = $derived(typeof onclick === 'function');
 
+  // Outer-card onclick. We don't fire it for clicks that bubbled up
+  // from the inner schedule-link, otherwise tapping the link would
+  // also activate the row. We deliberately avoid `e.stopPropagation`
+  // on the link itself — SvelteKit's client-router intercepts link
+  // clicks at the document level during the bubble phase, and
+  // stopping propagation forces a full page reload (which tears the
+  // GTFS worker down and reseeds OPFS from scratch).
+  const handleCardClick = $derived(
+    interactive
+      ? (e: MouseEvent) => {
+          if ((e.target as Element | null)?.closest('a')) return;
+          onclick?.();
+        }
+      : undefined,
+  );
+
   // Low confidence → fade. The domain owns the rule (see scheduleScanner
   // + reconciler); the UI just reads `vehicle.confidence`. By convention:
   //   'low'    schedule-only row at an intermediate stop — no GPS, no
@@ -85,7 +101,7 @@
 <div
   role={interactive ? 'button' : undefined}
   tabindex={interactive ? 0 : undefined}
-  onclick={onclick}
+  onclick={handleCardClick}
   onkeydown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') onclick?.(); } : undefined}
   class={cn(
     'flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
@@ -133,7 +149,6 @@
         'hover:ring-2 hover:ring-[color:var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
         KIND.iconBg,
       )}
-      onclick={(e) => e.stopPropagation()}
     >
       <KindIcon size={12} strokeWidth={2.5} />
     </a>
