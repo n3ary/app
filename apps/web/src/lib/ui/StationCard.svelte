@@ -15,7 +15,7 @@
   import { Bus, ChevronDown, MapPin } from 'lucide-svelte';
   import type { Route, Station, Vehicle } from '$lib/domain/types';
   import {
-    BUCKET_LABEL, BUCKET_ORDER, type ArrivalBucket,
+    BUCKET_LABEL, BUCKET_ORDER, etaUrgency, type ArrivalBucket,
   } from '$lib/domain/buckets';
   import type { BoardRow } from '$lib/domain/stationBoard';
   import Avatar from './Avatar.svelte';
@@ -185,7 +185,10 @@
               </Typography>
               <Stack spacing={0.5}>
                 {#each group.vehicles as vehicle (vehicle.id)}
-                  <VehicleCard {vehicle} bucket={group.bucket} />
+                  <VehicleCard
+                    {vehicle}
+                    urgency={etaUrgency(group.bucket, vehicle.eta?.minutes ?? 0)}
+                  />
                 {/each}
               </Stack>
             </Box>

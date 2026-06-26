@@ -324,20 +324,21 @@ tie-break by `vehicle.id`.
 ### ETA coloring (per bucket)
 
 Time is the single most important piece of information on a vehicle row,
-so `VehicleCard` colors the secondary line by bucket. Threshold for
-"imminent incoming" is `NearyConfig.imminentEtaThresholdMin` (default 5).
+so `VehicleCard` colors the secondary line by an **urgency tier** computed
+in the domain (`etaUrgency(bucket, etaMinutes, config?)` in
+[buckets.ts](../../apps/web/src/lib/domain/buckets.ts)). The UI never
+re-derives "which buckets are urgent"; it just maps the urgency enum to a
+CSS class.
 
-| Bucket       | Secondary-line style                                         |
-| ------------ | ------------------------------------------------------------ |
-| `departing`  | bold, danger color (red)                                     |
-| `at-station` | bold, success color (green) — vehicle is right here          |
-| `arriving`   | bold, success color (green) — imminent                       |
-| `incoming`   | bold green when `eta.minutes ≤ imminentEtaThresholdMin`, otherwise muted neutral |
-| `departed`   | muted neutral                                                |
-| `off-route`  | muted neutral (hidden from station boards anyway)            |
+| `urgency` | When                                                              | UI styling                  |
+| --------- | ----------------------------------------------------------------- | --------------------------- |
+| `'stop'`  | `bucket === 'departing'`                                          | bold + danger color (red)   |
+| `'go'`    | `bucket ∈ {'at-station', 'arriving'}` OR (`'incoming'` AND `eta.minutes ≤ imminentEtaThresholdMin`) | bold + success color (green) |
+| `'neutral'` | everything else (departed, off-route, distant incoming, no bucket) | muted neutral             |
 
-When `VehicleCard` is rendered without a bucket (map popup, standalone),
-the secondary line stays muted neutral.
+Threshold for "imminent incoming" is `NearyConfig.imminentEtaThresholdMin`
+(default 5). When `VehicleCard` is rendered without an `urgency` prop
+(standalone showcase, future map popup), the row stays muted neutral.
 
 ### Departed collapse (one row per route)
 

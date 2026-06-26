@@ -51,13 +51,42 @@ export const BUCKET_LABEL: Record<ArrivalBucket, string> = {
 // Thresholds — sourced from DEFAULT_CONFIG (lib/domain/config.ts) so a
 // single object controls every magic number in the app. Re-exported as
 // individual consts to keep existing imports stable.
-import { DEFAULT_CONFIG } from './config';
+import { DEFAULT_CONFIG, type NearyConfig } from './config';
 
 export const PROXIMITY_AT_STATION_M = DEFAULT_CONFIG.proximityAtStationM;
 export const OFF_ROUTE_DISTANCE_M = DEFAULT_CONFIG.offRouteDistanceM;
 export const ARRIVING_THRESHOLD_MIN = DEFAULT_CONFIG.arrivingThresholdMin;
 export const DEPARTING_SPEED_KMH = DEFAULT_CONFIG.departingSpeedKmh;
 export const SCHEDULED_DWELL_GAP_MIN = DEFAULT_CONFIG.minDwellGapMin;
+
+/** ETA-urgency classification used by the UI to color the time column.
+ *  The decision lives in the domain so the UI doesn't have to know about
+ *  buckets, thresholds, or config:
+ *
+ *    'go'      — vehicle is boardable now or imminently. UI: bold success.
+ *    'stop'    — vehicle is leaving / has left the boarding window. UI: bold danger.
+ *    'neutral' — nothing time-critical. UI: muted.
+ *
+ *  Map view doesn't compute urgency — it consumes raw vehicles. */
+export type Urgency = 'go' | 'stop' | 'neutral';
+
+export function etaUrgency(
+  bucket: ArrivalBucket,
+  etaMinutes: number,
+  config: NearyConfig = DEFAULT_CONFIG,
+): Urgency {
+  switch (bucket) {
+    case 'departing':
+      return 'stop';
+    case 'at-station':
+    case 'arriving':
+      return 'go';
+    case 'incoming':
+      return etaMinutes <= config.imminentEtaThresholdMin ? 'go' : 'neutral';
+    default:
+      return 'neutral';
+  }
+}
 
 export interface BucketInputs {
   /** Signed: positive = future, negative = past. */

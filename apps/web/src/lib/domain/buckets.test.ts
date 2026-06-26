@@ -3,6 +3,7 @@ import {
   bucketOf,
   compareForBoard,
   bucketCounts,
+  etaUrgency,
   filterForStationView,
   type ArrivalBucket,
 } from './buckets';
@@ -164,6 +165,32 @@ describe('compareForBoard', () => {
     ];
     items.sort(compareForBoard);
     expect(items.map((i) => i.vehicle.id)).toEqual(['b', 'c', 'a']);
+  });
+});
+
+describe('etaUrgency', () => {
+  it("returns 'stop' for the departing bucket", () => {
+    expect(etaUrgency('departing', 0)).toBe('stop');
+  });
+
+  it("returns 'go' for at-station and arriving", () => {
+    expect(etaUrgency('at-station', 0)).toBe('go');
+    expect(etaUrgency('arriving', 1)).toBe('go');
+  });
+
+  it("returns 'go' for incoming within the imminent threshold", () => {
+    expect(etaUrgency('incoming', 5)).toBe('go');
+    expect(etaUrgency('incoming', 3)).toBe('go');
+  });
+
+  it("returns 'neutral' for incoming beyond the imminent threshold", () => {
+    expect(etaUrgency('incoming', 6)).toBe('neutral');
+    expect(etaUrgency('incoming', 20)).toBe('neutral');
+  });
+
+  it("returns 'neutral' for departed and off-route", () => {
+    expect(etaUrgency('departed', -3)).toBe('neutral');
+    expect(etaUrgency('off-route', 99)).toBe('neutral');
   });
 });
 

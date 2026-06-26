@@ -16,23 +16,20 @@
   import { Calendar, CheckCircle2, Clock, Radio } from 'lucide-svelte';
   import type { Vehicle } from '$lib/domain/types';
   import { formatHHMM } from '$lib/domain/types';
-  import type { ArrivalBucket } from '$lib/domain/buckets';
-  import { DEFAULT_CONFIG } from '$lib/domain/config';
+  import type { Urgency } from '$lib/domain/buckets';
   import RouteBadge from './RouteBadge.svelte';
   import { cn } from './cn';
 
   type Props = {
     vehicle: Vehicle;
-    /** Optional station-view bucket. When provided, the ETA text is
-     *  colored: bold green for arriving / at-station / soon-incoming,
-     *  bold red for departing, neutral otherwise. Map / standalone
-     *  contexts omit it and the row stays neutral. */
-    bucket?: ArrivalBucket;
+    /** ETA urgency, computed in the domain (see `etaUrgency`). When
+     *  omitted (map popup, standalone), the secondary line stays muted. */
+    urgency?: Urgency;
     onclick?: () => void;
     class?: string;
   };
 
-  let { vehicle, bucket, onclick, class: className }: Props = $props();
+  let { vehicle, urgency, onclick, class: className }: Props = $props();
 
   // Per-kind visuals. Spec §2 visual-variant table. Schedule-only kinds
   // (`scheduled` and `predicted`) get the same dashed treatment for now —
@@ -60,29 +57,14 @@
     return 'En route';
   });
 
-  // Color the ETA text by bucket (when provided) so the most important
-  // piece of information on a row — the time — jumps out.
-  //   departing                    → bold red
-  //   at-station / arriving        → bold green (vehicle is here / right here)
-  //   incoming with eta ≤ threshold → bold green (boardable soon)
-  //   incoming with eta > threshold → neutral
-  //   departed / off-route / none  → neutral
-  const etaClass = $derived.by(() => {
-    if (!bucket) return 'text-[color:var(--color-fg-muted)]';
-    if (bucket === 'departing') {
-      return 'font-bold text-[color:var(--color-danger)]';
-    }
-    if (bucket === 'at-station' || bucket === 'arriving') {
-      return 'font-bold text-[color:var(--color-success)]';
-    }
-    if (bucket === 'incoming') {
-      const m = vehicle.eta?.minutes ?? Infinity;
-      return m <= DEFAULT_CONFIG.imminentEtaThresholdMin
-        ? 'font-bold text-[color:var(--color-success)]'
-        : 'text-[color:var(--color-fg-muted)]';
-    }
-    return 'text-[color:var(--color-fg-muted)]';
-  });
+  // CSS for the time column — mechanical lookup from a domain decision.
+  const URGENCY_CLASS: Record<Urgency | 'none', string> = {
+    go: 'font-bold text-[color:var(--color-success)]',
+    stop: 'font-bold text-[color:var(--color-danger)]',
+    neutral: 'text-[color:var(--color-fg-muted)]',
+    none: 'text-[color:var(--color-fg-muted)]',
+  };
+  const etaClass = $derived(URGENCY_CLASS[urgency ?? 'none']);
 
   const headsign = $derived(
     vehicle.headsign ?? vehicle.schedule?.headsign ?? '—',
