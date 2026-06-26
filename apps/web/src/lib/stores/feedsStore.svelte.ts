@@ -38,6 +38,15 @@ class FeedsStore {
     if (!id || !this.feeds) return null;
     return this.feeds.find((f) => f.id === id) ?? null;
   }
+
+  /** The bound feed's IANA timezone, falling back to 'UTC' while the
+   *  registry is still loading or the worker isn\u2019t bound yet. Single
+   *  source for every consumer of the schedule-pipeline (page-level
+   *  composers, prediction helpers) so we never silently mix
+   *  system-local time with feed-local time. */
+  get activeTimezone(): string {
+    return this.byId(this.boundFeedId)?.timezone ?? 'UTC';
+  }
 }
 
 export const feedsStore = new FeedsStore();

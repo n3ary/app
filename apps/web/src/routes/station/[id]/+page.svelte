@@ -21,6 +21,7 @@
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
@@ -34,17 +35,10 @@
   let notFound = $state(false);
   let routeFilter = $state<number | null>(null);
 
-  // Same feed-timezone derivation pattern as / page (single source).
-  const feedTimezone = $derived(
-    feedsStore.byId(feedsStore.boundFeedId)?.timezone ?? 'UTC',
-  );
-
-  // Tick once a minute so ETAs/buckets refresh without re-querying SQLite.
-  let nowMs = $state(Date.now());
-  $effect(() => {
-    const t = setInterval(() => (nowMs = Date.now()), 30_000);
-    return () => clearInterval(t);
-  });
+  // Feed tz + wall clock both live in shared stores (feedsStore /
+  // nowTicker) so every consumer pages on a single source.
+  const feedTimezone = $derived(feedsStore.activeTimezone);
+  const nowMs = $derived(nowTicker.ms);
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;

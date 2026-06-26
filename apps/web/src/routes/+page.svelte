@@ -25,6 +25,7 @@
   import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -86,13 +87,10 @@
     routeFilters[stopId] = routeFilters[stopId] === routeId ? null : routeId;
   }
 
-  // Single source of truth for the feed's IANA timezone used by the
-  // station-board pipeline (reconciler + bucketer both consume it). Read
-  // it once here so every {@const} below operates on the same value and
-  // we never silently mix system-local with feed-local minutes.
-  const feedTimezone = $derived(
-    feedsStore.byId(feedsStore.boundFeedId)?.timezone ?? 'UTC',
-  );
+  // Feed tz + wall clock both live in shared stores (feedsStore /
+  // nowTicker) so every consumer pages on a single source. See those
+  // files for the rationale.
+  const feedTimezone = $derived(feedsStore.activeTimezone);
 
   // Surface GPS state on the global StatusBar instead of a page-level
   // card — the StatusBar already exists for cross-cutting loading info
@@ -117,12 +115,9 @@
     });
   });
 
-  // Tick once a minute so ETAs/buckets refresh without re-querying SQLite.
-  let nowMs = $state(Date.now());
-  $effect(() => {
-    const t = setInterval(() => (nowMs = Date.now()), 30_000);
-    return () => clearInterval(t);
-  });
+  // Wall clock for ETA/bucket recompute \u2014 single shared ticker, see
+  // nowTicker.svelte.ts.
+  const nowMs = $derived(nowTicker.ms);
 
   $effect(() => {
     // Wait until the worker has actually been bound to the user's chosen
