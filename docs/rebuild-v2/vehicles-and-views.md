@@ -304,23 +304,29 @@ row on the station card) drop into the same shape, keyed by `routeId`.
 
 Within a station's arrivals board:
 
-1. `at-station` → 0
-2. `departing` → 1
+1. `departing` → 0
+2. `at-station` → 1
 3. `arriving` → 2
 4. `incoming` → 3
-5. `departed` → 4
+5. `departed` → 4 (hidden by default — see filters below)
 6. `off-route` → hidden by default
 
 Tie-break: ascending `eta.minutes` (so "incoming in 3 min" beats "incoming in
 7 min"), then by `vehicle.id`.
 
-### Drop-off-only
+### Station-view filters (`filterForStationView`)
 
-When `userPrefs.showDropOffOnly === false` (default in v2), vehicles with
-`vehicle.dropOffOnly === true` are **filtered out before bucketing**. The
-information comes from GTFS `stop_times.pickup_type=1` for the trip+stop
-pair. When the user enables the toggle, those rows appear with a small
-"drop-off only" chip in the row.
+Three user-tunable filters apply **before** the board renders. Map view
+ignores all of these and always shows every vehicle.
+
+| `userPrefs` flag             | Default | Effect on station view                                                |
+| ---------------------------- | ------- | --------------------------------------------------------------------- |
+| `showDropOffOnly`            | `true`  | When `false`, drop vehicles with `vehicle.dropOffOnly === true` (GTFS `stop_times.pickup_type = 1`). When `true`, show them with a "drop off only" chip. |
+| `showDepartedVehicles`       | `false` | When `false`, drop the `departed` bucket entirely. When `true`, show recently-departed vehicles (within the 5-min recency window). |
+| `showScheduleOnlyVehicles`   | `true`  | When `false`, drop vehicles of `kind = 'predicted'` or `'scheduled'` (no live GPS available). |
+
+`off-route` is always hidden from station boards; it only surfaces in the
+debug view.
 
 ---
 

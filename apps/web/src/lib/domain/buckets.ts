@@ -6,19 +6,21 @@
  *
  * Six buckets in display order:
  *
- *   at-station   physically at the stop (or scheduled to be dwelling mid-stop)
  *   departing    about to leave / picking up speed at the stop
+ *   at-station   physically at the stop (or scheduled to be dwelling mid-stop)
  *   arriving     close to arrival (≤ 2 min OR within 1 min of scheduled arrival)
  *   incoming     future, > 2 min away
- *   departed     already passed (within 5 min recency window)
+ *   departed     already passed (within 5 min recency window). Hidden from
+ *                station boards unless `userPrefs.showDepartedVehicles` is on;
+ *                map view always shows them.
  *   off-route    sanity bucket — surfaces only in debug view
  */
 
 import type { Vehicle } from './types';
 
 export type ArrivalBucket =
-  | 'at-station'
   | 'departing'
+  | 'at-station'
   | 'arriving'
   | 'incoming'
   | 'departed'
@@ -26,8 +28,8 @@ export type ArrivalBucket =
 
 /** Display order (lower = earlier). Tie-break by ascending eta minutes. */
 export const BUCKET_ORDER: Record<ArrivalBucket, number> = {
-  'at-station': 0,
-  departing: 1,
+  departing: 0,
+  'at-station': 1,
   arriving: 2,
   incoming: 3,
   departed: 4,
@@ -158,8 +160,8 @@ export function compareForBoard(
  *  the station card's count chips. */
 export function bucketCounts(buckets: ArrivalBucket[]): Record<ArrivalBucket, number> {
   const counts: Record<ArrivalBucket, number> = {
-    'at-station': 0,
     departing: 0,
+    'at-station': 0,
     arriving: 0,
     incoming: 0,
     departed: 0,
@@ -167,4 +169,26 @@ export function bucketCounts(buckets: ArrivalBucket[]): Record<ArrivalBucket, nu
   };
   for (const b of buckets) counts[b]++;
   return counts;
+}
+
+/**
+ * Filter a list of bucketed entries for station-view display.
+ *
+ *   showDepartedVehicles=false  drops `departed` (always allowed on map view)
+ *   showDropOffOnly=false       drops entries where vehicle.dropOffOnly is true
+ *
+ *  `off-route` is always dropped from station view (debug only).
+ */
+export function filterForStationView<
+  T extends { vehicle: Vehicle; bucket: ArrivalBucket },
+>(
+  entries: T[],
+  prefs: { showDepartedVehicles: boolean; showDropOffOnly: boolean },
+): T[] {
+  return entries.filter((e) => {
+    if (e.bucket === 'off-route') return false;
+    if (e.bucket === 'departed' && !prefs.showDepartedVehicles) return false;
+    if (e.vehicle.dropOffOnly && !prefs.showDropOffOnly) return false;
+    return true;
+  });
 }

@@ -114,13 +114,13 @@
 
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
-            <Typography variant="body2">Show "Drop off only" indicators</Typography>
-            <Typography variant="caption">Flag stations / vehicles that don't pick up passengers.</Typography>
+            <Typography variant="body2">Show drop-off-only vehicles</Typography>
+            <Typography variant="caption">Include vehicles that stop at this station only to let passengers off (you can't board). They get a "drop off only" chip when shown.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showDropOffOnly}
             onchange={(v) => (userPrefs.showDropOffOnly = v)}
-            aria-label="Show drop-off-only indicators"
+            aria-label="Show drop-off-only vehicles"
           />
         </Stack>
 
@@ -133,6 +133,18 @@
             checked={userPrefs.showScheduleOnlyVehicles}
             onchange={(v) => (userPrefs.showScheduleOnlyVehicles = v)}
             aria-label="Show schedule-only vehicles"
+          />
+        </Stack>
+
+        <Stack direction="row" align="center" justify="between">
+          <Box class="flex-1 min-w-0">
+            <Typography variant="body2">Show recently departed vehicles</Typography>
+            <Typography variant="caption">Include vehicles that left within the last 5 minutes in station boards. Map view always shows them.</Typography>
+          </Box>
+          <Switch
+            checked={userPrefs.showDepartedVehicles}
+            onchange={(v) => (userPrefs.showDepartedVehicles = v)}
+            aria-label="Show recently departed vehicles"
           />
         </Stack>
       </Stack>

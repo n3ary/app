@@ -23,6 +23,10 @@ class UserPrefs {
    *  station boards and maps. Pre-rename name was `showGhostVehicles`;
    *  legacy values auto-migrate on read. */
   showScheduleOnlyVehicles = $state(true);
+  /** Show vehicles that have already departed (within the 5 min recency
+   *  window) on station boards. Map view always shows them. Defaults off:
+   *  most users only care about what's still coming. */
+  showDepartedVehicles = $state(false);
   /** User's optional Tranzy API key — when set, live data layer activates. */
   apiKey = $state<string | null>(null);
 
@@ -36,6 +40,7 @@ class UserPrefs {
         feedId: string | null;
         showDropOffOnly: boolean;
         showScheduleOnlyVehicles: boolean;
+        showDepartedVehicles: boolean;
         /** Legacy key, migrated to showScheduleOnlyVehicles. */
         showGhostVehicles: boolean;
         apiKey: string | null;
@@ -48,6 +53,7 @@ class UserPrefs {
       } else if (typeof o.showGhostVehicles === 'boolean') {
         this.showScheduleOnlyVehicles = o.showGhostVehicles;
       }
+      if (typeof o.showDepartedVehicles === 'boolean') this.showDepartedVehicles = o.showDepartedVehicles;
       if (typeof o.apiKey === 'string' || o.apiKey === null) this.apiKey = o.apiKey;
     } catch {
       // Corrupt or unreadable storage — fall back to defaults silently.
@@ -61,6 +67,7 @@ class UserPrefs {
       feedId: this.feedId,
       showDropOffOnly: this.showDropOffOnly,
       showScheduleOnlyVehicles: this.showScheduleOnlyVehicles,
+      showDepartedVehicles: this.showDepartedVehicles,
       apiKey: this.apiKey,
     };
   }

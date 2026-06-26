@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bucketOf, compareForBoard, bucketCounts, type ArrivalBucket } from './buckets';
+import {
+  bucketOf,
+  compareForBoard,
+  bucketCounts,
+  filterForStationView,
+  type ArrivalBucket,
+} from './buckets';
 import type { Vehicle } from './types';
 
 function inputs(o: Partial<Parameters<typeof bucketOf>[1]> & { nowMin: number }) {
@@ -139,15 +145,16 @@ describe('bucketOf', () => {
 });
 
 describe('compareForBoard', () => {
-  it('orders by bucket then by eta then by id', () => {
+  it('orders by bucket (departing first, at-station, arriving, incoming, departed) then by eta then by id', () => {
     const items = [
       { vehicle: v('z'), bucket: 'incoming' as ArrivalBucket, etaMinutes: 5 },
       { vehicle: v('a'), bucket: 'at-station' as ArrivalBucket, etaMinutes: 0 },
       { vehicle: v('b'), bucket: 'incoming' as ArrivalBucket, etaMinutes: 3 },
       { vehicle: v('c'), bucket: 'incoming' as ArrivalBucket, etaMinutes: 3 },
+      { vehicle: v('d'), bucket: 'departing' as ArrivalBucket, etaMinutes: 0 },
     ];
     items.sort(compareForBoard);
-    expect(items.map((i) => i.vehicle.id)).toEqual(['a', 'b', 'c', 'z']);
+    expect(items.map((i) => i.vehicle.id)).toEqual(['d', 'a', 'b', 'c', 'z']);
   });
 });
 
@@ -158,5 +165,45 @@ describe('bucketCounts', () => {
     expect(counts.arriving).toBe(1);
     expect(counts.departed).toBe(1);
     expect(counts['at-station']).toBe(0);
+  });
+});
+
+describe('filterForStationView', () => {
+  const base = (b: ArrivalBucket, dropOffOnly = false) => ({
+    vehicle: { ...v('x'), dropOffOnly } as Vehicle,
+    bucket: b,
+  });
+
+  it('always drops off-route', () => {
+    const out = filterForStationView(
+      [base('off-route'), base('incoming')],
+      { showDepartedVehicles: true, showDropOffOnly: true },
+    );
+    expect(out.map((e) => e.bucket)).toEqual(['incoming']);
+  });
+
+  it('drops departed when showDepartedVehicles is off', () => {
+    const out = filterForStationView(
+      [base('departed'), base('incoming')],
+      { showDepartedVehicles: false, showDropOffOnly: true },
+    );
+    expect(out.map((e) => e.bucket)).toEqual(['incoming']);
+  });
+
+  it('keeps departed when showDepartedVehicles is on', () => {
+    const out = filterForStationView(
+      [base('departed'), base('incoming')],
+      { showDepartedVehicles: true, showDropOffOnly: true },
+    );
+    expect(out.map((e) => e.bucket)).toEqual(['departed', 'incoming']);
+  });
+
+  it('drops drop-off-only vehicles when showDropOffOnly is off', () => {
+    const out = filterForStationView(
+      [base('arriving', true), base('arriving', false)],
+      { showDepartedVehicles: true, showDropOffOnly: false },
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].vehicle.dropOffOnly).toBeFalsy();
   });
 });
