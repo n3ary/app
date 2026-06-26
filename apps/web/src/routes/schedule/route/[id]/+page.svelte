@@ -71,9 +71,10 @@
   // Departures per direction. In single-direction mode only one is
   // populated; in multi-direction mode both are.
   let tripsByDir = $state<{ 0: ScheduleTrip[]; 1: ScheduleTrip[] }>({ 0: [], 1: [] });
-  // Focus trip's stop timeline (single-direction mode only).
+  // Focus trip's stop timeline (single-direction mode only). Header
+  // headsign + origin-departure time are derived from this list so
+  // there's no second source of truth to keep in sync.
   let focusStops = $state<ScheduleTripStop[]>([]);
-  let focusTrip = $state<ScheduleTrip | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(false);
 
@@ -133,32 +134,16 @@
           ]);
           tripsByDir = { 0: d0, 1: d1 };
           focusStops = [];
-          focusTrip = null;
         } else {
           const trips = await repo.getRouteSchedule(rid, dir, qp.localDate, qp.fromMin, qp.windowMin);
           tripsByDir = dir === 0 ? { 0: trips, 1: [] } : { 0: [], 1: trips };
-          // Right-column focus = the URL-pinned trip if present in the
-          // result list, else the next-upcoming one, else null. Even
-          // when the focus trip already left origin (so it's not in
-          // `trips`), getStopsAlongTrip still works.
-          const pinned = ftId ? trips.find((t) => t.tripId === ftId) ?? null : null;
-          focusTrip = pinned ?? trips[0] ?? null;
-          // If a trip_id was pinned but not in the window (e.g. it
-          // already departed origin), still fetch its stops for the
-          // right column.
-          const stopsTripId = pinned?.tripId ?? ftId ?? focusTrip?.tripId ?? null;
+          // Right-column trip = URL-pinned trip if present, else the
+          // next-upcoming departure. getStopsAlongTrip works for any
+          // trip_id regardless of whether it's still in the from-now
+          // departures window (a bus that left origin 5 min ago still
+          // has a meaningful timeline to display).
+          const stopsTripId = ftId ?? trips[0]?.tripId ?? null;
           focusStops = stopsTripId ? await repo.getStopsAlongTrip(stopsTripId) : [];
-          // Resolve display headsign for the focus trip even when only
-          // its trip_id was URL-pinned (focusTrip would be null in
-          // that case).
-          if (!focusTrip && stopsTripId) {
-            focusTrip = {
-              tripId: stopsTripId,
-              tripStartMin: focusStops[0]?.arrivalMin ?? 0,
-              headsign: focusStops[focusStops.length - 1]?.stopName ?? null,
-              serviceId: '',
-            };
-          }
         }
         error = null;
       } catch (e) {
@@ -197,22 +182,28 @@
   }
 
   const isFav = $derived(route ? favoritesStore.has(route.id) : false);
-  // Headsign for the focused trip, falling back to the most-common
-  // headsign on the chosen direction's trip list. When direction is
-  // set we always have something to display (the route IS going
-  // somewhere); when direction is null (multi-direction mode) the
-  // title stays bare — each per-direction card carries its own.
-  const focusHeadsign = $derived(
-    focusTrip?.headsign
-    ?? (direction != null
-         ? (direction === 0 ? tripsByDir[0] : tripsByDir[1])[0]?.headsign
-         : null)
-    ?? null,
-  );
+  // Focus trip identity + headsign + start time derived from the
+  // loaded data — no separate `focusTrip` state to keep in sync.
+  // Trips on a route share their terminus stop name with their GTFS
+  // headsign in every feed we've seen, so the terminus stop name
+  // doubles as the headsign for display purposes.
+  const effectiveTripId = $derived.by<string | null>(() => {
+    if (focusTripId) return focusTripId;
+    const trips = direction === 0 ? tripsByDir[0] : direction === 1 ? tripsByDir[1] : [];
+    return trips[0]?.tripId ?? null;
+  });
+  const focusHeadsign = $derived(focusStops[focusStops.length - 1]?.stopName ?? null);
+  const focusStartMin = $derived(focusStops[0]?.arrivalMin ?? null);
+
+  // 'Bus 25 → Câmpului' when a direction is known, bare 'Bus 25'
+  // otherwise (multi-direction mode where each card carries its own
+  // headsign, or while still loading).
   const headerTitle = $derived.by(() => {
     if (!route) return '';
     const base = `${vehicleTypeLabel(route.type ?? 'unknown')} ${route.shortName}`;
-    return direction != null && focusHeadsign ? `${base} → ${focusHeadsign}` : base;
+    return direction != null && focusHeadsign
+      ? `${base} → ${focusHeadsign}`
+      : base;
   });
 </script>
 
@@ -302,7 +293,7 @@
                   </Typography>
                 {:else}
                   {#each trips as t (t.tripId)}
-                    {@const isFocused = focusTrip?.tripId === t.tripId}
+                    {@const isFocused = effectiveTripId === t.tripId}
                     {@const anchorArrivalMin = t.tripStartMin + anchorOffset}
                     <a
                       href={`/schedule/route/${routeId}?dir=${direction}${anchorStopId != null ? `&stop=${anchorStopId}` : ''}&trip=${encodeURIComponent(t.tripId)}${dayMode === 'tomorrow' ? '&day=tomorrow' : ''}`}
@@ -330,7 +321,7 @@
               <CardContent>
                 <Stack spacing={0.5}>
                   <Typography variant="overline" class="uppercase tracking-wide text-[color:var(--color-fg-muted)]">
-                    This trip{focusTrip ? ` · departs ${formatHHMM(focusTrip.tripStartMin)}` : ''}
+                    This trip{focusStartMin != null ? ` · departs ${formatHHMM(focusStartMin)}` : ''}
                   </Typography>
                   {#each focusStops as s, i (s.stopId)}
                     {@const isAnchor = anchorStopId === s.stopId}
