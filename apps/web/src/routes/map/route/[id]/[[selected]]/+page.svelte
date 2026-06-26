@@ -413,9 +413,17 @@
         iconAnchor: [22, 14],
       });
       const marker = L.marker([m.lat, m.lon], { icon });
-      marker.bindPopup(`<strong>${escapeHtml(view.route.shortName)}</strong>${
-        m.headsign ? ` → ${escapeHtml(m.headsign)}` : ''
-      }`, { closeButton: false });
+      // Popup only needs the headsign — the route number is already
+      // painted on the badge. `offset: [0, -16]` anchors the popup
+      // tail just above the top edge of the 28 px badge instead of
+      // its center, so the popup floats above the vehicle rather
+      // than half-covering it.
+      if (m.headsign) {
+        marker.bindPopup(`→ ${escapeHtml(m.headsign)}`, {
+          closeButton: false,
+          offset: L.point(0, -16),
+        });
+      }
       marker.addTo(vehiclesLayer);
     }
   });
