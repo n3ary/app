@@ -347,7 +347,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-5xl px-4 py-3 flex flex-col h-full">
+<div class="mx-auto w-full max-w-5xl px-4 py-3 flex flex-col flex-1 min-h-0">
   {#if userPrefs.feedId == null}
     <NoFeedState message="Pick a feed in Settings to view the route map." />
   {:else if direction == null}

@@ -61,16 +61,15 @@
   // In 'route' mode the badge always paints itself with the route's
   // own color. In 'neutral' mode every line flattens to a uniform
   // surface so a long line-up doesn't read like a clown car;
-  // favorites then call attention to themselves with red text (and
-  // the heart pip below) instead of a re-introduced background
-  // color, which would defeat the point of the neutral mode.
+  // favorites then call attention to themselves with green text
+  // (success-color — favorites are a positive cue, not an alarm).
   const useRouteColor = $derived(colorMode === 'route');
   const bg = $derived(useRouteColor ? route.color : 'var(--color-surface-elevated)');
   const fg = $derived(
     useRouteColor
       ? (route.textColor ?? pickContrastingText(route.color))
       : isFavorite
-        ? 'var(--color-danger)'
+        ? 'var(--color-success)'
         : 'var(--color-fg)',
   );
 
