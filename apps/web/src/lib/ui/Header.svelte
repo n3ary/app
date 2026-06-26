@@ -36,9 +36,9 @@
 </script>
 
 <header
-  class="sticky top-0 z-40 flex items-center gap-3 px-4 h-12
-         bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]
-         pt-[var(--space-safe-top)]"
+  class="sticky top-0 z-40 flex items-center gap-3 px-4
+         h-[calc(3rem+var(--space-safe-top))] pt-[var(--space-safe-top)]
+         bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]"
 >
   <h1 class="flex-1 text-base font-semibold truncate">{title}</h1>
 

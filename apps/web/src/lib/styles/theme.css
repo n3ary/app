@@ -24,9 +24,21 @@
 
   --radius-card: 0.5rem;
   --radius-chip: 9999px;
+}
 
-  --space-safe-top: env(safe-area-inset-top);
-  --space-safe-bottom: env(safe-area-inset-bottom);
+/*
+ * iOS PWA safe-area vars. Kept OUTSIDE the @theme block because
+ * Tailwind v4's @theme serialiser doesn't reliably preserve the
+ * runtime semantics of env() — putting these in plain :root
+ * guarantees the browser evaluates env(safe-area-inset-*) at
+ * paint time (= the inset that the OS reports) rather than at
+ * build time (= 0). Used by Header / BottomNavigation / AppLayout
+ * to extend backgrounds into the notch + home-indicator area and
+ * push content out of the way.
+ */
+:root {
+  --space-safe-top: env(safe-area-inset-top, 0px);
+  --space-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Manual dark override */

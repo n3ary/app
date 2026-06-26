@@ -45,7 +45,12 @@
 <div class="min-h-svh flex flex-col bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
   <Header {title} {health} {onrefresh} {refreshing} />
   <StatusBar />
-  <main class="flex-1 overflow-x-hidden pb-20">
+  <!-- Bottom padding clears the fixed BottomNavigation (h-14 ≈ 56 px)
+       PLUS the iOS home-indicator inset. Without var(--space-safe-bottom)
+       in this calc, the last content row on iPhones with a home
+       indicator gets covered by the inset (since the nav itself pads
+       up by safe-bottom, the page must too). -->
+  <main class="flex-1 overflow-x-hidden pb-[calc(3.5rem+var(--space-safe-bottom))]">
     {@render children?.()}
   </main>
   <BottomNavigation
