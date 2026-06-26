@@ -76,7 +76,7 @@ describe('selectBoardsForView', () => {
         { stop: stop(3, 1500), vehicles: [vehicle(r99)] }, // also favorite, but farther
       ],
       config: cfg,
-      favoriteRouteIds: new Set([99]),
+      favoriteRouteIds: new Set(['99']),
     });
     expect(res.boards.map((b) => b.stop.id)).toEqual([2]);
     expect(res.expandedStopId).toBe(2);
@@ -89,7 +89,7 @@ describe('selectBoardsForView', () => {
         { stop: stop(2, 2500), vehicles: [vehicle(r99)] }, // > 2000
       ],
       config: cfg,
-      favoriteRouteIds: new Set([99]),
+      favoriteRouteIds: new Set(['99']),
     });
     expect(res.boards).toEqual([]);
     expect(res.expandedStopId).toBeNull();
@@ -109,7 +109,7 @@ describe('selectBoardsForView', () => {
     const res = selectBoardsForView({
       candidates: [],
       config: cfg,
-      favoriteRouteIds: new Set([99]),
+      favoriteRouteIds: new Set(['99']),
     });
     expect(res.boards).toEqual([]);
     expect(res.expandedStopId).toBeNull();

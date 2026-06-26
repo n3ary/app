@@ -97,7 +97,7 @@ export function selectBoardsForView<S extends SelectableStop>(
     for (const c of candidates) {
       const d = c.stop.distance;
       if (typeof d !== 'number' || d > config.favoriteFallbackRadiusM) continue;
-      if (c.vehicles.some((v) => favoriteRouteIds.has(v.route.id))) {
+      if (c.vehicles.some((v) => favoriteRouteIds.has(String(v.route.id)))) {
         return { boards: [c], expandedStopId: c.stop.id };
       }
     }

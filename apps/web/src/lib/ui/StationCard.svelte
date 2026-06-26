@@ -153,21 +153,12 @@
           {#if routes.length > 0}
             <Stack direction="row" spacing={0.5} align="center" wrap class="mt-1">
               {#each routes as route (route.id)}
-                {@const isFav = favoriteRouteIds?.has(route.id) ?? false}
-                {@const _dbg = (() => {
-                  // Temporary — strip once favorites→badge color is confirmed.
-                  // eslint-disable-next-line no-console
-                  console.debug('[StationCard] route', JSON.stringify(route.id), typeof route.id,
-                    'favs', favoriteRouteIds ? Array.from(favoriteRouteIds).map((x) => `${typeof x}:${JSON.stringify(x)}`) : '(none)',
-                    'isFav', isFav);
-                  return null;
-                })()}
                 <RouteBadge
                   {route}
                   size="medium"
                   colorMode="neutral"
                   selected={selectedRouteId === route.id}
-                  isFavorite={isFav}
+                  isFavorite={favoriteRouteIds?.has(String(route.id)) ?? false}
                   onclick={onRouteClick ? () => onRouteClick(route.id) : undefined}
                 />
               {/each}
