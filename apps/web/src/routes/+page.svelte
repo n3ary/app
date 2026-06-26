@@ -139,13 +139,14 @@
         const candidates = await repo.getStationBoardsNear(
           lat, lon, SEARCH_RADIUS_M, MAX_STATIONS, Date.now(), ARRIVALS_WINDOW_MIN,
         );
-        // Hide candidates with no routes serving them today — they'd
-        // pollute the selector's favorite-fallback search and waste a
-        // slot in the primary pair. Common for GTFS stops that exist
-        // in the data for legacy / terminus / one-off reasons.
-        const withService = candidates.filter((b) => b.vehicles.length > 0);
+        // The worker already filters out stops with zero scheduled
+        // service ever (legacy / terminus-pad entries). Stops whose
+        // last bus of the day has departed still flow through here
+        // with an empty `vehicles` list — that's a real piece of
+        // information ("the stop is here, no service right now"),
+        // so the selector + card both handle empty vehicle lists.
         const selection = selectBoardsForView({
-          candidates: withService,
+          candidates,
           config: DEFAULT_CONFIG,
           favoriteRouteIds: favoritesStore.routeIds,
         });

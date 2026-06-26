@@ -268,12 +268,23 @@ const api: GtfsRepo = {
     const dLat = radiusMeters / 111_320;
     const dLon = radiusMeters / (111_320 * Math.cos((lat * Math.PI) / 180));
     type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
+    // Bounding-box filter first (uses spatial-friendly index on
+    // stops_lat/lon), then an EXISTS check to drop GTFS stops that
+    // appear in stops.txt but aren't actually served by any trip
+    // (terminus pads, legacy entries, etc.). The EXISTS is cheap
+    // thanks to stop_times' stop_id index. The window-level
+    // "service is active right now" check stays in the per-stop
+    // arrivals query so the nearby list still surfaces stops whose
+    // buses have stopped for the night.
     const candidates = selectAll<Row>(
       db,
-      `SELECT stop_id, stop_name, stop_lat, stop_lon
-       FROM stops
-       WHERE stop_lat BETWEEN ? AND ?
-         AND stop_lon BETWEEN ? AND ?;`,
+      `SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon
+       FROM stops s
+       WHERE s.stop_lat BETWEEN ? AND ?
+         AND s.stop_lon BETWEEN ? AND ?
+         AND EXISTS (
+           SELECT 1 FROM stop_times st WHERE st.stop_id = s.stop_id LIMIT 1
+         );`,
       [lat - dLat, lat + dLat, lon - dLon, lon + dLon],
     );
     const refined: StopWithDistance[] = candidates
