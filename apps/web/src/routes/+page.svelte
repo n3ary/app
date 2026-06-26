@@ -227,17 +227,21 @@
       {/if}
       {#each boards as { stop, vehicles } (stop.id)}
         {@const reconciled = reconcileWithLive(vehicles, liveVehiclesStore.observations).vehicles}
-        {@const board = assembleStationBoard(reconciled, stop, userPrefs, nowMs)}
         {@const allRoutes = (() => {
           const map = new Map<number, typeof reconciled[number]['route']>();
           for (const v of reconciled) map.set(v.route.id, v.route);
           return Array.from(map.values());
         })()}
+        {@const routeFilter = routeFilters[stop.id] ?? null}
+        {@const scoped = routeFilter != null
+          ? reconciled.filter((v) => v.route.id === routeFilter)
+          : reconciled}
+        {@const board = assembleStationBoard(scoped, stop, userPrefs, nowMs)}
         <StationCard
           station={{ id: stop.id, name: stop.name, distance: stop.distance, lat: stop.lat, lon: stop.lon }}
           rows={board}
           {allRoutes}
-          selectedRouteId={routeFilters[stop.id] ?? null}
+          selectedRouteId={routeFilter}
           onRouteClick={(rid) => toggleRouteFilter(stop.id, rid)}
           expanded={expandedStopId === stop.id}
           ontoggle={() => (expandedStopId = expandedStopId === stop.id ? null : stop.id)}
