@@ -305,6 +305,16 @@
         stopsLayer = Lref.layerGroup().addTo(mapInstance);
         arrowsLayer = Lref.layerGroup().addTo(mapInstance);
         vehiclesLayer = Lref.layerGroup().addTo(mapInstance);
+        // Dedicated pane for the traveling-dots flow animation,
+        // sitting above overlayPane (400) so the dots paint over
+        // the route polyline + stop circles, but below markerPane
+        // (600) so vehicle badges stay on top. Without this the
+        // dots are drawn underneath the 5px route line and read as
+        // invisible. pointerEvents:none keeps them from stealing
+        // hover / click from the markers below.
+        const dotsPane = mapInstance.createPane('nearyDots');
+        dotsPane.style.zIndex = '450';
+        dotsPane.style.pointerEvents = 'none';
         // Future-resize listener (rotation, splitscreen, sidebar).
         if (typeof ResizeObserver !== 'undefined') {
           resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
@@ -414,14 +424,21 @@
     const Lref = L;
     const layer = arrowsLayer;
     const measured = measuredShape;
-    const color = view?.route.color ?? '#888';
+    const routeColor = view?.route.color ?? '#888';
+    // Dots ride their own SVG renderer pinned to the high-z
+    // 'nearyDots' pane so they paint above the polyline (see init).
+    // White fill + the route colour as a thin border keeps them
+    // legible on any line colour without going neon.
+    const renderer = Lref.svg({ pane: 'nearyDots' });
     const dots = Array.from({ length: DOT_COUNT }, () =>
       Lref.circleMarker([measured.points[0].lat, measured.points[0].lon], {
-        radius: 3,
-        color,
-        weight: 0,
-        fillColor: color,
+        renderer,
+        radius: 3.5,
+        color: routeColor,
+        weight: 1,
+        fillColor: '#fff',
         fillOpacity: 0,
+        opacity: 0,
         interactive: false,
       }).addTo(layer),
     );
@@ -437,7 +454,7 @@
         const opacity = Math.sin(p * Math.PI) * DOT_PEAK_OPACITY;
         const pt = pointAtDistance(measured, dist);
         dots[i].setLatLng([pt.lat, pt.lon]);
-        dots[i].setStyle({ fillOpacity: opacity });
+        dots[i].setStyle({ fillOpacity: opacity, opacity });
       }
       rafId = requestAnimationFrame(tick);
     };
