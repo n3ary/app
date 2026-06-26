@@ -112,7 +112,13 @@
     className,
   )}
 >
-  <RouteBadge route={vehicle.route} size="medium" />
+  <!-- Fixed-width badge so a row of vehicles in different routes
+       (3-char '32B', 1-char '9', 4-char '102L') reads as a single
+       column. The headsign + ETA columns to the right then align
+       across rows. min-w-14 ≈ 56 px fits four glyphs at the
+       medium badge text size; longer ids grow the badge but stay
+       centered. -->
+  <RouteBadge route={vehicle.route} size="medium" class="min-w-14" />
 
   <div class="flex-1 min-w-0">
     <div class="text-sm font-medium truncate flex items-center gap-1">
