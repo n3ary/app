@@ -425,19 +425,40 @@
     }
     stopsLayer?.clearLayers();
     if (stopsLayer) {
-      for (const s of view.stops) {
-        const m = L.circleMarker([s.lat, s.lon], {
-          radius: 5,
-          color: '#fff',
-          weight: 1.5,
-          fillColor: view.route.color,
-          fillOpacity: 1,
-        });
+      const lastIdx = view.stops.length - 1;
+      view.stops.forEach((s, i) => {
+        // Origin gets a play-triangle disc, terminus a square cap
+        // — same convention RouteBadge uses for isStart/isEnd, so a
+        // user who's seen the badge already reads these icons at a
+        // glance. Middle stops stay as the small circleMarker so
+        // the endpoint hierarchy is unmistakable.
+        const isOrigin = i === 0;
+        const isTerminus = i === lastIdx;
+        const m = (isOrigin || isTerminus)
+          ? L.marker([s.lat, s.lon], {
+              icon: L.divIcon({
+                className: isOrigin ? 'neary-origin' : 'neary-terminus',
+                html: isOrigin
+                  ? endpointHtml(view.route.color, 'origin')
+                  : endpointHtml(view.route.color, 'terminus'),
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+              }),
+              keyboard: false,
+              riseOnHover: true,
+            })
+          : L.circleMarker([s.lat, s.lon], {
+              radius: 5,
+              color: '#fff',
+              weight: 1.5,
+              fillColor: view.route.color,
+              fillOpacity: 1,
+            });
         m.bindPopup(stopPopupHtml(s.stopId, s.stopName, s.arrivalMin), {
           closeButton: false,
         });
         m.addTo(stopsLayer);
-      }
+      });
     }
   });
 
@@ -598,6 +619,22 @@
         Open station →
       </a>
     </div>`;
+  }
+  /** Origin / terminus marker glyph. Origin shows a white play
+   *  triangle (▶) — the same convention RouteBadge encodes as
+   *  isStart, instantly readable as 'departures begin here'.
+   *  Terminus shows a white square (■) — RouteBadge's isEnd cap. */
+  function endpointHtml(routeColor: string, kind: 'origin' | 'terminus'): string {
+    const fg = pickContrastingText(routeColor);
+    const glyph = kind === 'origin'
+      ? `<svg width="9" height="9" viewBox="0 0 24 24" fill="${fg}" style="margin-left:1px;"><polygon points="6 4 20 12 6 20"/></svg>`
+      : `<svg width="8" height="8" viewBox="0 0 24 24" fill="${fg}"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg>`;
+    return `<div style="
+      width:22px;height:22px;border-radius:50%;
+      background:${routeColor};
+      display:inline-flex;align-items:center;justify-content:center;
+      box-shadow:0 0 0 2px #fff, 0 1px 3px rgba(0,0,0,0.3);
+    ">${glyph}</div>`;
   }
   function escapeHtml(s: string): string {
     return s
