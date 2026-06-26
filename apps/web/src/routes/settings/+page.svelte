@@ -127,7 +127,7 @@
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
             <Typography variant="body2">Show recently departed vehicles</Typography>
-            <Typography variant="caption">Include vehicles that left within the last 5 minutes in station boards. Map view always shows them.</Typography>
+            <Typography variant="caption">Include vehicles that already passed this station and are still en route to their terminus. One row per route (the most recent). Map view always shows them all.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showDepartedVehicles}
