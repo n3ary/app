@@ -347,7 +347,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-5xl px-4 py-6">
+<div class="mx-auto max-w-5xl px-4 py-3 flex flex-col h-full">
   {#if userPrefs.feedId == null}
     <NoFeedState message="Pick a feed in Settings to view the route map." />
   {:else if direction == null}
@@ -370,7 +370,7 @@
       </Stack>
     </CardContent></Card>
   {:else}
-    <Stack spacing={2}>
+    <Stack spacing={2} class="flex-1 min-h-0">
       <!-- Header: same chrome the schedule view uses, with a swap-
            direction icon. -->
       <Card>
@@ -400,10 +400,12 @@
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent class="p-0">
-          <div bind:this={mapEl} class="neary-map"></div>
-        </CardContent>
+      <!-- Map card flexes to fill remaining vertical space. No
+           CardContent wrapper (we want zero padding around the map);
+           overflow-hidden clips the map's tile pyramid to the
+           card's rounded corners. -->
+      <Card class="flex-1 min-h-0 overflow-hidden">
+        <div bind:this={mapEl} class="neary-map"></div>
       </Card>
     </Stack>
   {/if}
@@ -412,10 +414,15 @@
 <style>
   .neary-map {
     width: 100%;
-    height: 70vh;
-    min-height: 360px;
-    border-radius: var(--radius-md, 12px);
-    overflow: hidden;
+    height: 100%;
+  }
+  /* Floor for tiny viewports (e.g. landscape phone): the map gets
+     a usable minimum even if flex math would otherwise hand it
+     near-zero height. */
+  @media (max-height: 480px) {
+    .neary-map {
+      min-height: 220px;
+    }
   }
   /* Leaflet's own popup container inherits a default white bg; ours
      reads better with rounded corners + a touch of shadow. */
