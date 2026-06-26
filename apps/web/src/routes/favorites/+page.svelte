@@ -15,7 +15,7 @@
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { Route, VehicleType } from '$lib/domain/types';
-  import { VEHICLE_TYPE_COLOR, vehicleTypeLabel } from '$lib/domain/types';
+  import { vehicleTypeLabel } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -91,7 +91,7 @@
   <Stack direction="row" spacing={1} align="center" class="px-1 py-1 rounded-md hover:bg-[color:var(--color-border)]/30">
     <RouteBadge {route} size="medium" isFavorite={isFav} />
     <Typography variant="body2" class="flex-1 truncate">
-      <span style={`color:${VEHICLE_TYPE_COLOR[type]}`} class="font-semibold">{typeLabel}</span>
+      <span style={`color:${route.color}`} class="font-semibold">{typeLabel}</span>
       <span class="text-[color:var(--color-fg-muted)]">{route.shortName}</span>
     </Typography>
     <IconButton
