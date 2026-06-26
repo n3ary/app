@@ -1,8 +1,9 @@
 # neary-gtfs — refactor plan (Transitous-aligned)
 
-Status: **draft** — to be opened as a PR / branch on `ciotlosm/neary-gtfs`.
+Status: **M2 shipped on the neary-gtfs side**. App-side cutover pending.
 Date: 2026-06-26.
-Lives in this repo (neary v2) because it directly informs Phase 4 / 5 of the
+Live: `https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries/feeds.json`
+Lives in this repo (neary v2) because it informs Phase 4 / 5 of the
 [v2 rebuild plan](plan.md) and the app cannot ship without the registry it
 describes.
 
@@ -24,24 +25,24 @@ Stop maintaining: a custom registry schema, agency-shaped JSON outputs,
 hash-based change-detection bookkeeping, Tranzy-syncing. Transitous already
 does all of this better.
 
-## 2. What goes away
+## 2. What went away (✅ done)
 
-| Today in neary-gtfs | Why it goes |
+| Was in neary-gtfs | Replaced by |
 |---|---|
-| `src/sync-tranzy.js` (daily Tranzy API mirror) | Tranzy's schedule data is lossy (no arrival/departure times); its live vehicles are now public via `cluj-rt-feed.gtfs.ro` |
-| `data/agency.json` (Tranzy-shaped registry) | Transitous's `feeds/<iso>.json` is the standard. We project from it. |
-| `data/<id>/{routes,stops,trips,stop_times,shapes}.json` | Redundant once the app consumes standard GTFS .zip + SQLite |
-| `agency-2-schedule.json` (custom compact format) | Redundant once we ship `.sqlite3.gz` |
-| Bespoke `hashes.json` cache-busting | GitHub raw URLs already serve `Last-Modified`/`ETag`; Transitous handles the same on upstream feeds |
-| Per-agency `agencies/<id>/config.json` for non-Cluj agencies | Transitous's `ro.json` already lists those agencies; we curate via the country list, not per-agency |
+| `src/sync-tranzy.js` (daily Tranzy API mirror) | Public live vehicles via `cluj-rt-feed.gtfs.ro` (RT URLs auto-discovered via MobilityData catalog) |
+| `data/agency.json` (Tranzy-shaped registry) | Transitous's `feeds/<iso>.json` projected into our shape |
+| `data/<id>/{routes,stops,trips,stop_times,shapes}.json` | Standard GTFS .zip + SQLite blob |
+| `agency-2-schedule.json` (custom compact format) | `.sqlite3.gz` |
+| Bespoke `hashes.json` cache-busting | GitHub raw `Last-Modified`/`ETag` + per-feed `hash` in `feeds.json` |
+| Per-agency `agencies/<id>/config.json` for non-Cluj agencies | `countries.json` `include[]` whitelist of Transitous source names |
 
-## 3. What survives
+## 3. What survived (✅ relocated)
 
-| Today in neary-gtfs | New role |
+| Was at | Now at |
 |---|---|
-| `agencies/2/config.json` — CTP URL patterns + service-day mappings | Move to `feeds/ctp-cluj/config.json` |
-| `src/build.js` — ctpcj.ro CSV scraper | Move to `feeds/ctp-cluj/build.js`. **Only custom build script we keep.** |
-| Daily GitHub Action | Rewritten — see §6 |
+| `agencies/2/config.json` — CTP URL patterns + service-day mappings | `feeds/cluj-napoca/config.json` (slimmed to the build-knob block) |
+| `src/build.js` — ctpcj.ro CSV scraper | `feeds/cluj-napoca/build.js`. **Still the only custom build script.** |
+| Daily GitHub Action | `.github/workflows/daily.yml` (rewritten — see §6) |
 
 ## 4. Tranzy.ai — disposition (revised)
 
@@ -103,158 +104,183 @@ What this buys the power user:
   (Cluj = 2). For Romanian agencies outside Tranzy's coverage, the
   Advanced setting simply has no effect.
 
-## 5. Repo structure (`refactor/feeds-from-transitous` branch)
+## 5. Repo structure
 
 ```
 neary-gtfs/
-├─ countries.json                         # curated list of country codes from
-│                                         # Transitous we expose to the neary app
-│                                         # Initial: ["ro"]
-├─ transitous-feeds/                      # git submodule -> public-transport/transitous
-│                                         # gives us feeds/<iso>.json files as input
+├─ countries.json                         # { countries: [iso], include: [transitous source names] }
+│                                         # Single source of truth for what we publish.
+├─ schemas/feeds.schema.json             # JSON Schema (draft-2020) for outputs/feeds.json
 ├─ feeds/
-│  └─ ctp-cluj/                           # ONLY custom-built feed
-│     ├─ build.js                         # ported from current src/build.js
-│     └─ config.json                      # ctpcj.ro URL patterns & service days
+│  └─ cluj-napoca/                       # the only locally-enhanced feed
+│     ├─ config.json                     # enhances:'Cluj-Napoca' + tranzy + build knobs
+│     ├─ build.js                        # CSV enhance on top of the Transitous seed
+│     └─ lib/seed.js                     # fetch+parse seed zip into in-memory shapes
 ├─ src/
 │  └─ pipeline/
-│     ├─ build-all.js                     # orchestrator (runs daily)
-│     ├─ resolve-feeds.js                 # reads countries.json → walks transitous
-│     │                                   # feeds/<iso>.json → flattens to a list
-│     │                                   # of { name, gtfs_source, rt_sources, license }
-│     ├─ fetch-gtfs.js                    # for each feed, fetch the .zip
-│     │                                   # (api.transitous.org/gtfs/<name>.gtfs.zip
-│     │                                   # for upstream feeds, OR our local
-│     │                                   # build output for ctp-cluj)
-│     ├─ make-sqlite.js                   # GTFS .zip → .sqlite3.gz
-│     │                                   # (port of apps/web's scripts/build-sqlite)
-│     ├─ derive-bbox.js                   # min/max lat,lon from stops.txt
-│     │                                   # (replaces hand-curated per-feed bboxes)
-│     └─ make-app-registry.js             # builds outputs/feeds.json from results
-├─ outputs/                               # built artifacts (published to binaries)
-│  ├─ feeds.json                          # THE single index the v2 app fetches
+│     ├─ build-all.js                    # orchestrator (runs daily)
+│     ├─ resolve-feeds.js                # include[] + auto-discovered feeds/* dirs
+│     ├─ fetch-gtfs.js                   # download Transitous zip OR run local build
+│     ├─ derive-bbox.js                  # unzip -p stops/agency/feed_info
+│     ├─ make-sqlite.js                  # GTFS .zip → .sqlite3.gz
+│     ├─ make-app-registry.js            # write outputs/feeds.json (Ajv-validated)
+│     ├─ validate.js                     # light Node spec-shape check for built feeds
+│     └─ lib/
+│        ├─ csv.js                       # tiny shared GTFS CSV parser
+│        ├─ http.js                      # shared UA + fetchJson/fetchToFile
+│        └─ mdb-rt.js                    # resolve RT URLs via MobilityData catalog
+├─ outputs/                               # built artifacts (.gitignored; published via CI)
+│  ├─ feeds.json
 │  └─ feeds/
-│     ├─ ctp-cluj.gtfs.zip                # standalone (publishable to Transitous)
-│     ├─ ctp-cluj.sqlite3.gz
-│     ├─ stb-bucuresti.sqlite3.gz         # derived from Transitous's STB mdb-2098
-│     ├─ sctp-iasi.sqlite3.gz             # derived from Transitous's Iași mdb-2116
-│     └─ ...                              # one per entry in resolved list
+│     ├─ cluj-napoca.gtfs.zip
+│     ├─ cluj-napoca.sqlite3.gz
+│     ├─ bucuresti-ilfov.gtfs.zip            # mirrored from Transitous as-is
+│     └─ bucuresti-ilfov.sqlite3.gz
 └─ .github/workflows/
-   └─ daily.yml                           # cron 00:30 UTC → build-all.js → push binaries
+   └─ daily.yml                           # cron 00:30 UTC → build-all.js → push to `binaries`
 ```
+
+**Branching**: `main` carries the pipeline code; `binaries` carries the
+published artifacts (force-pushed per build); `releases` (legacy) is
+left alive on the remote so v1 PWAs keep working until the v2 cutover.
+No git submodule for Transitous — we fetch `ro.json` directly per run.
 
 ## 6. Daily pipeline
 
 ```
-00:30 UTC (chosen to be after Transitous's own ~00:00 UTC import finishes)
+00:30 UTC (after Transitous's own ~00:00 UTC import finishes)
   └─ resolve-feeds.js
-       ├─ reads countries.json → ["ro"]
-       └─ for each iso, reads transitous-feeds/feeds/<iso>.json
-            └─ flattens to list:
-                 [{
-                   id: "Cluj-Napoca",
-                   gtfs_source: { type: "mobility-database", mdb-id: "mdb-2121" },
-                   rt_sources: [ "vehicle_positions": "...", "trip_updates": "...", "service_alerts": "..." ],
-                   license: "CC-BY-SA-4.0"
-                 }, ...]
-       
-  └─ build-cluj.js                       # our unique pipeline
-       ├─ scrape ctpcj.ro CSV files (per route, per service day)
-       ├─ assemble standard GTFS .zip
-       │     - agency.txt (single row, CTP Cluj)
-       │     - routes/trips/stops/stop_times/calendar/calendar_dates/shapes
-       │     - feed_info.txt with feed_publisher_name="neary-gtfs",
-       │       feed_version=<date>, valid_from/until
-       ├─ run canonical GTFS validator (MobilityData) → log warnings, fail on errors
-       └─ output: outputs/feeds/ctp-cluj.gtfs.zip
+       ├─ read countries.json
+       │     { countries: ['ro'], include: ['Cluj-Napoca', 'Bucuresti-Ilfov'] }
+       ├─ GET transitous/feeds/ro.json
+       ├─ scan feeds/<id>/config.json for 'enhances' field
+       └─ for each include[] entry:
+            │ if a local feed declares enhances:'<name>' → source.type='build'
+            │ else                                       → source.type='transitous'
+            └─ also resolve realtime URLs via lib/mdb-rt.js:
+                 find Transitous siblings with spec='gtfs-rt' + mdb-id,
+                 hit raw MobilityData catalog (entity_type vp/tu/sa)
 
-  └─ for each resolved feed entry:
-       ├─ if ctp-cluj: source = outputs/feeds/ctp-cluj.gtfs.zip (local)
-       └─ else:         source = api.transitous.org/gtfs/<name>.gtfs.zip (cached upstream)
-            └─ make-sqlite.js: GTFS .zip → <name>.sqlite3.gz
-            └─ derive-bbox.js: read stops.txt → { minLat, minLon, maxLat, maxLon }
+  └─ for each feed:
+       ├─ fetch-gtfs.js
+       │   if source.type=='build':
+       │     download api.transitous.org/gtfs/<iso>_<name>.gtfs.zip as seed
+       │     spawn `node feeds/<id>/build.js` with NEARY_SEED_ZIP + NEARY_OUTPUT_ZIP env
+       │   else:
+       │     download the same Transitous URL straight to outputs/feeds/<id>.gtfs.zip
+       ├─ validate.js (only if source.type=='build')
+       │   light Node check: required files+columns, cross-references,
+       │   stop_sequence monotonicity. Throws on first ERROR.
+       ├─ derive-bbox.js  read stops.txt + agency.txt + feed_info.txt
+       └─ make-sqlite.js  GTFS .zip → .sqlite3.gz
 
-  └─ make-app-registry.js
-       └─ outputs/feeds.json (see §7)
+  └─ make-app-registry.js → outputs/feeds.json (Ajv-validated)
 
-  └─ git commit + force-push to binaries branch (only if any output changed)
+  └─ git push outputs/ → `binaries` branch (force-push or appended commit)
 ```
 
-Output is published to the **`binaries`** branch — separate from
-`releases` so the v1 neary app keeps working unchanged.
+Cluj enhancement specifics (`feeds/cluj-napoca/build.js`):
+- Receives the Transitous-resolved Cluj-Napoca zip as seed (path via `NEARY_SEED_ZIP`)
+- Keeps `agency.txt`, `routes.txt`, `stops.txt`, `shapes.txt` from seed
+- **Regenerates** `calendar.txt`, `trips.txt`, `stop_times.txt` from daily
+  CTP CSV scrapes (`ctpcj.ro/orare/csv/orar_<route>_<svc>.csv`)
+- Adds `feed_info.txt` with `feed_publisher_name="neary-gtfs"`
+- Re-zips → `$NEARY_OUTPUT_ZIP`
+
+App consumes from (via jsDelivr):
+```
+https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries/feeds.json
+```
 
 ## 7. `outputs/feeds.json` schema (the app-facing index)
 
+Full JSON Schema lives at `neary-gtfs/schemas/feeds.schema.json`
+(draft-2020) and is enforced at build time by Ajv. Sample feed:
+
 ```jsonc
 {
-  "version": "2026-06-26T00:30:00Z",
-  "generated_at": "2026-06-26T00:30:00Z",
+  "version": "2026-06-26T06:44:33.068Z",
+  "generated_at": "2026-06-26T06:44:33.068Z",
   "feeds": [
     {
-      "id": "ctp-cluj",                            // stable; what the app picks
-      "name": "Cluj-Napoca",                       // human-facing
-      "country": "RO",
-      "region": "Cluj",
-      "timezone": "Europe/Bucharest",
-      "languages": ["ro"],
-      "bbox": { "minLat": 46.71, "minLon": 23.50,  // derived from stops.txt
-                "maxLat": 46.84, "maxLon": 23.74 },
-      "center": { "lat": 46.770, "lon": 23.595 },  // bbox midpoint
-      "agencies": [                                // pre-parsed from agency.txt
+      "id": "cluj-napoca",                          // stable; what the app picks
+      "name": "Cluj-Napoca",                        // from Transitous
+      "country": "RO",                              // from countries[] iso
+      "timezone": "Europe/Bucharest",               // from agency.txt
+      "bbox": { "minLat": 46.57892, "minLon": 23.28878,
+                "maxLat": 46.89827, "maxLon": 23.84087 },
+      "center": { "lat": 46.7386, "lon": 23.56482 },
+      "agencies": [                                 // parsed from agency.txt
         { "agency_id": "2",
-          "agency_name": "Compania de Transport Public Cluj-Napoca",
-          "agency_url": "https://www.ctpcluj.ro/" }
+          "agency_name": "CTP Cluj",
+          "agency_url": "https://ctpcj.ro/" }
       ],
-      "source": {                                  // where the GTFS came from
-        "type": "build",                           // "build" | "transitous" | "mobility-database"
+      "source": {
+        "type": "build",                            // "build" | "transitous"
         "publisher": "neary-gtfs",
-        "upstream_url": null
+        "upstream_url": "https://api.transitous.org/gtfs/ro_Cluj-Napoca.gtfs.zip"
       },
       "files": {
-        "gtfs_zip":  "feeds/ctp-cluj.gtfs.zip",    // relative to binaries root
-        "sqlite_gz": "feeds/ctp-cluj.sqlite3.gz"
+        "gtfs_zip":  "feeds/cluj-napoca.gtfs.zip",  // relative to binaries root
+        "sqlite_gz": "feeds/cluj-napoca.sqlite3.gz"
       },
-      "size_bytes": { "gtfs_zip": 1395000, "sqlite_gz": 4406857 },
-      "hash": "sha256-abc…",                       // for cheap freshness checks
-      "generated_at": "2026-06-26T00:30:00Z",
-      "valid_from": "2025-11-01",                  // from feed_info.txt
-      "valid_until": "2026-06-30",
-      "realtime": {                                // copied straight from Transitous
+      "size_bytes": { "gtfs_zip": 1811806, "sqlite_gz": 5716840 },
+      "hash": "sha256-…",                           // of the .gtfs.zip
+      "generated_at": "2026-06-26T06:44:33.068Z",
+      "valid_from": "2026-06-01",                   // from feed_info.txt
+      "valid_until": "2026-11-30",
+      "realtime": {                                 // auto-resolved via MobilityData catalog
         "vehicle_positions": "https://cluj-rt-feed.gtfs.ro/vehiclePositions",
         "trip_updates":      "https://cluj-rt-feed.gtfs.ro/tripUpdates",
         "service_alerts":    "https://cluj-rt-feed.gtfs.ro/serviceAlerts"
       },
+      "tranzy": { "agency_id": "2" },               // optional; only feeds Tranzy covers
       "license": {
-        "spdx_identifier": "CC-BY-SA-4.0",
+        "spdx_identifier":  "CC-BY-SA-4.0",         // from Transitous
         "attribution_text": "© Compania de Transport Public Cluj-Napoca",
-        "attribution_url": "https://www.ctpcluj.ro/"
+        "attribution_url":  "https://www.ctpcluj.ro/"
       }
     },
     {
-      "id": "stb-bucuresti",
-      "name": "Bucharest",
-      ...
-      "source": {
-        "type": "transitous",
-        "publisher": "Transitous (mdb-2098)",
-        "upstream_url": "https://api.transitous.org/gtfs/Bucuresti-Ilfov.gtfs.zip"
-      },
-      ...
+      "id": "bucuresti-ilfov",
+      "name": "Bucuresti-Ilfov",
+      "source": { "type": "transitous", "publisher": "Transitous (mobility-database)", "upstream_url": null },
+      "realtime": {                                  // discovered via MobilityData mdb-ids in Transitous's ro.json
+        "vehicle_positions": "https://gtfs.tpbi.ro/api/gtfs-rt/vehiclePositions",
+        "trip_updates":      "https://gtfs.tpbi.ro/api/gtfs-rt/tripUpdates",
+        "service_alerts":    "https://gtfs.tpbi.ro/api/gtfs-rt/serviceAlerts"
+      }
+      // no `tranzy` block — Bucharest isn't covered by Tranzy.ai
     }
   ]
 }
 ```
 
+Optional fields (omitted from JSON when null/empty): `region`,
+`languages`, `tranzy`. Field provenance:
+
+| Field | Source |
+|---|---|
+| `id` | feed dir name (override via config `id`) |
+| `name`, `country` | Transitous `ro.json` source / iso code |
+| `timezone` | `agency.txt` of the built zip |
+| `realtime` | MobilityData catalog via Transitous gtfs-rt sibling mdb-ids |
+| `license.spdx_identifier` | Transitous `ro.json` license block |
+| `license.attribution_text/url` | enhancer config (Transitous only has SPDX) |
+| `tranzy.agency_id` | enhancer config (neary-specific) |
+| `bbox`, `center`, `agencies`, `valid_from/until` | derived from the built zip |
+| `files`, `size_bytes`, `hash` | computed |
+
 ## 8. Publishing the Cluj feed for upstream Transitous consumption
 
-Once `outputs/feeds/ctp-cluj.gtfs.zip` is being produced reliably, **open a
+Once `outputs/feeds/cluj-napoca.gtfs.zip` is being produced reliably, **open a
 PR against `public-transport/transitous`** adding a new source to `ro.json`:
 
 ```jsonc
 {
   "name": "Cluj-Napoca-CTP",
   "type": "http",
-  "url": "https://raw.githubusercontent.com/ciotlosm/neary-gtfs/binaries/feeds/ctp-cluj.gtfs.zip",
+  "url": "https://raw.githubusercontent.com/ciotlosm/neary-gtfs/binaries/feeds/cluj-napoca.gtfs.zip",
   "license": {
     "spdx-identifier": "CC-BY-SA-4.0",
     "attribution-text": "© Compania de Transport Public Cluj-Napoca",
@@ -307,7 +333,7 @@ nothing in `apps/legacy/`.
 
 | Today | Change |
 |---|---|
-| `agencyId: number \| null` | `feedId: string \| null` (e.g. `"ctp-cluj"`) |
+| `agencyId: number \| null` | `feedId: string \| null` (e.g. `"cluj-napoca"`) |
 | `apiKey: string \| null` | **Kept** but reframed in UI — the field stores the optional Tranzy API key for §4's "Advanced (with API key)" mode. Mentioned only in Advanced Settings; nothing in the default UX references it. |
 | `showDropOffOnly`, `showGhostVehicles`, `theme` | Unchanged |
 | (new) `showTranzyDebugFleet: boolean` | Default `false`. When `apiKey` is set, this toggles the fleet-completeness debug overlay (the ~251 yard buses Tranzy reports but RT filters). |
@@ -384,12 +410,12 @@ coexist in the same OPFS-SAHPool. A worker-owned metadata blob
 {
   "version": 1,
   "feeds": {
-    "ctp-cluj":      { "hash": "sha256-…", "generated_at": "...",
-                       "size_bytes": 4406857, "last_used_at": "..." },
-    "stb-bucuresti": { "hash": "sha256-…", "generated_at": "...",
-                       "size_bytes": 9821000, "last_used_at": "..." }
+    "cluj-napoca":     { "hash": "sha256-…", "generated_at": "...",
+                         "size_bytes": 5716840, "last_used_at": "..." },
+    "bucuresti-ilfov": { "hash": "sha256-…", "generated_at": "...",
+                         "size_bytes": 27194163, "last_used_at": "..." }
   },
-  "active": "ctp-cluj",
+  "active": "cluj-napoca",
   "last_registry_check": "2026-06-26T08:14:00Z",
   "registry_etag": "W/\"abc…\""
 }
@@ -520,22 +546,12 @@ The picker UI consumes `listCachedFeeds()` to decorate rows with
 
 ## 10. Evolution roadmap
 
-This refactor is large enough that it can't ship in a single weekend
-without risking the v1 app. The roadmap below splits it into six
-milestones, each independently shippable, each leaving the system in
-a coherent state.
+**Branching strategy** (final state):
+- `main` of `neary-gtfs` — the pipeline code
+- `binaries` — published artifacts (force-pushed per build)
+- `releases` — legacy v1 data, untouched, kept alive until v2 cutover
 
-**Branching strategy**:
-- `main` of `neary-gtfs` — keeps producing `releases` artifacts until
-  M2 cutover. Don't touch v1 consumers.
-- `refactor/feeds-from-transitous` — landing zone for M1; merged to
-  `main` once M2 publishes cleanly.
-- `releases` (v1) — **frozen** after M2 cutover, kept alive a few
-  weeks so v1 PWAs in the wild don't break overnight, then deleted.
-- `binaries` (v2) — force-push or appended commits per daily build
-  (start with appended, switch later if too large).
-
-### M0 — Today (baseline)
+### M0 — Today (baseline) — ✅ historical reference
 
 - Single agency. Cluj only. v1 app reads `releases/data/agency.json`
   and per-agency JSON files. v2 app reads
@@ -543,67 +559,55 @@ a coherent state.
   `apps/web/scripts/build-sqlite`.
 - `src/sync-tranzy.js` still pulls Tranzy daily.
 
-**Done.** Reference point.
+### M1 — Repo scaffold — ✅ DONE
 
-### M1 — Repo scaffold (no behaviour change for users)
+Delivered in two commits on `main` (skipped the intermediate
+`refactor/feeds-from-transitous` branch — changes merged cleanly).
 
-Scope (in `refactor/feeds-from-transitous` branch of neary-gtfs):
-- New layout per §5.
-- Add `public-transport/transitous` as a git submodule under
-  `transitous-feeds/`.
-- Port `src/build.js` (ctpcj.ro scraper) → `feeds/ctp-cluj/build.js`
-  unchanged in behaviour.
-- Add `src/pipeline/{resolve-feeds,fetch-gtfs,make-sqlite,
-  derive-bbox,make-app-registry,build-all}.js`. Skeletons.
-- `countries.json = ["ro"]`.
-- New daily workflow `.github/workflows/daily.yml` runs against the
-  `refactor/` branch only; output goes to a `binaries-staging`
-  branch (NOT `binaries` yet).
+- New layout per §5. `countries.json = { countries: ['ro'], include: [...] }`.
+- Pipeline scripts in `src/pipeline/{build-all, resolve-feeds,
+  fetch-gtfs, derive-bbox, make-sqlite, make-app-registry, validate}.js`
+  plus shared `lib/{csv, http, mdb-rt}.js`.
+- Schema at `schemas/feeds.schema.json` (draft-2020, Ajv-enforced at build).
+- `.github/workflows/daily.yml` (cron 00:30 UTC + `workflow_dispatch`).
+- Transitous integration via direct fetch (no submodule needed in practice).
+- Tranzy removed entirely: `src/sync-tranzy.js`, `src/build.js`,
+  `agencies/2/`, `.github/workflows/build-agency-2.yml` all deleted.
 
-Success criteria:
-- `binaries-staging` is force-pushed nightly with a valid
-  `feeds.json` listing exactly one feed (ctp-cluj).
-- `feeds.json` validates against a written JSON Schema (committed to
-  the repo at `schemas/feeds.schema.json`) in CI.
-- ctp-cluj GTFS .zip passes MobilityData's canonical validator with
-  zero `ERROR`s.
-- `releases` branch and v1 still work, untouched.
+Deviations from original M1:
+- Skipped the canonical Java GTFS validator in favor of a ~110-line
+  Node-side check (`validate.js`). Drops Java dep + ~30s CI time;
+  catches the bug classes our build can produce (missing file/column,
+  cross-reference orphans, empty essential tables, non-monotonic
+  stop_sequence). The Java validator caught subtle issues that
+  wouldn't survive `make-sqlite.js`'s typed INSERTs anyway.
 
-Risks: submodule pinning. Pin Transitous to a known-good commit;
-bump explicitly, never tracking `HEAD`.
+### M2 — First multi-feed publish — ✅ DONE (neary-gtfs side)
 
-### M2 — First multi-feed publish + v2 app cutover
+Delivered:
+- `cluj-napoca` (locally enhanced via CTP CSV scrape atop Transitous seed)
+- `bucuresti-ilfov` (plain mirror of Transitous's resolved mdb-2098)
+- `binaries` branch live with both `feeds.json` + 4 zip/sqlite files
+- jsDelivr CDN fronted: `https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries/feeds.json`
+- Realtime URLs auto-resolved via MobilityData catalog (free win for
+  Bucharest — discovered `gtfs.tpbi.ro/api/gtfs-rt/{vehiclePositions,
+  tripUpdates,serviceAlerts}` without any config)
+- Feed ids now match Transitous slugs (was `ctp-cluj`, now `cluj-napoca`)
+- Per-feed `config.json` slimmed to only fields Transitous can't provide
 
-Scope (neary-gtfs):
-- Add Bucuresti-Ilfov as the second feed (sourced from Transitous's
-  `ro.json` → mdb-2098 mirror). Pure smoke test — proves the
-  "non-Cluj" code path.
-- Promote `binaries-staging` → `binaries` (rename the branch, keep
-  history).
-- Merge `refactor/feeds-from-transitous` → `main`.
+**Pending app-side (§9.1–9.4 in this doc)**:
+- `agencies.ts` → `feeds.ts`
+- `userPrefs.agencyId: number` → `feedId: string`
+- Hardcoded `AGENCIES_WITH_SQLITE = new Set([2])` gone
+- Settings picker uses `feeds.json`
+- `seedUrlFor` reads `feed.files.sqlite_gz` against jsDelivr
+- Delete `apps/web/static/dev-data/` + `apps/web/scripts/build-sqlite`
+- Bare-minimum §9.8 lifecycle: cold-switch download, no eviction yet
 
-Scope (neary app, this repo, single commit on a child branch):
-- §9.1–9.4 changes: `agencies.ts` → `feeds.ts`, `agencyId` → `feedId`,
-  hardcoded `AGENCIES_WITH_SQLITE = new Set([2])` gone, Settings
-  picker uses `feeds.json`.
-- `seedUrlFor` reads `feed.files.sqlite_gz` against the `binaries`
-  raw URL — no more `/dev-data/` special case.
-- Bare-minimum §9.8 lifecycle: cold-switch download, no eviction,
-  no pinning yet (just enough to switch between Cluj and Bucharest
-  for QA).
-
-Success criteria:
+Success criteria for the full M2 cutover:
 - The v2 app in dev can switch between Cluj and Bucharest, with the
   Stations list re-populating from each city's SQLite.
-- v1 app continues working from `releases` (nothing on its critical
-  path changed).
-- `apps/web/static/dev-data/` is deleted from the repo;
-  `apps/web/scripts/build-sqlite` is deleted (its job has moved to
-  neary-gtfs's `make-sqlite.js`).
-
-Risks: GitHub raw URLs throttle aggressively if many PWA installs
-hit them concurrently on launch. Mitigation: jsDelivr in front of
-the raw URL (`https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries/outputs/feeds.json`).
+- v1 app continues working from `releases` (untouched).
 
 ### M3 — RO coverage complete
 
@@ -699,9 +703,9 @@ we never need to gate country growth on app-side work.
 1. User installs the PWA, lands on `/`.
 2. App fetches `https://raw.githubusercontent.com/ciotlosm/neary-gtfs/binaries/outputs/feeds.json`.
 3. App requests GPS (the location dot turns yellow then green).
-4. App's `pickFeed()` finds `ctp-cluj`'s bbox contains the user → sets
-   `userPrefs.feedId = "ctp-cluj"` automatically.
-5. Worker downloads `feeds/ctp-cluj.sqlite3.gz` (~4 MB) into OPFS.
+4. App's `pickFeed()` finds `cluj-napoca`'s bbox contains the user → sets
+   `userPrefs.feedId = "cluj-napoca"` automatically.
+5. Worker downloads `feeds/cluj-napoca.sqlite3.gz` (~5 MB) into OPFS.
    StatusBar shows progress.
 6. Stations view renders proximity-based station list using the SQLite.
 7. Live worker spins up against `cluj-rt-feed.gtfs.ro` via the edge
