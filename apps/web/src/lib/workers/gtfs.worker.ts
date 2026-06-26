@@ -17,10 +17,12 @@ import * as Comlink from 'comlink';
 import sqlite3InitModule, { type Database, type Sqlite3Static } from '@sqlite.org/sqlite-wasm';
 
 import type { Feed } from '$lib/data/feeds';
-import type { Route, Station } from '$lib/domain/types';
+import type { Route, Station, Vehicle } from '$lib/domain/types';
 import type {
   GtfsRepo, StopWithDistance, UpcomingDeparture,
 } from '$lib/data/gtfs/types';
+import { scanSchedule, type ScheduleRow } from '$lib/domain/pipeline/scheduleScanner';
+import { localDateKey, localMinSinceMidnight } from '$lib/domain/pipeline/timeUtils';
 
 // ---------------------------------------------------------------------------
 // Source URL resolution per feed.
@@ -294,6 +296,82 @@ const api: GtfsRepo = {
         departureTime: r.departure_time,
       }));
   },
+
+  async getStationArrivals(stopId, nowMs, windowMinutes): Promise<Vehicle[]> {
+    const db = await ensureDb();
+    const now = new Date(nowMs);
+    const localDate = localDateKey(now);
+    const nowMinSinceMidnight = localMinSinceMidnight(now);
+
+    const services = activeServicesOn(db, localDate);
+    if (services.length === 0) return [];
+
+    const placeholders = services.map(() => '?').join(',');
+    const rows = selectAll<ScheduleRow>(
+      db,
+      `SELECT st.trip_id, st.arrival_time, st.departure_time, st.pickup_type,
+              r.route_id, r.route_short_name, r.route_color, r.route_text_color, r.route_type,
+              t.trip_headsign,
+              s.stop_lat, s.stop_lon
+       FROM stop_times st
+       JOIN trips t  ON t.trip_id  = st.trip_id
+       JOIN routes r ON r.route_id = t.route_id
+       JOIN stops s  ON s.stop_id  = st.stop_id
+       WHERE st.stop_id = ?
+         AND t.service_id IN (${placeholders});`,
+      [stopId, ...services],
+    );
+
+    return scanSchedule({
+      rows,
+      nowMinSinceMidnight,
+      nowMs,
+      windowMinutes,
+      // Phase 4 is schedule-only — no live sources have been polled yet.
+      checkedSources: [],
+    });
+  },
 };
+
+// ---------------------------------------------------------------------------
+// Service-calendar helper — resolves which service_ids are active for a
+// local YYYYMMDD considering both `calendar` (weekly pattern + validity
+// range) and `calendar_dates` (exceptions: 1 = added, 2 = removed).
+// ---------------------------------------------------------------------------
+
+function activeServicesOn(db: Database, localDate: string): string[] {
+  const dow = new Date(
+    Number(localDate.slice(0, 4)),
+    Number(localDate.slice(4, 6)) - 1,
+    Number(localDate.slice(6, 8)),
+  ).getDay();
+  const dayCol = dayKeyCols[(dow + 6) % 7];
+
+  type IdRow = { service_id: string };
+  const base = selectAll<IdRow>(
+    db,
+    `SELECT service_id FROM calendar
+     WHERE ${dayCol} = 1
+       AND start_date <= ?
+       AND end_date >= ?;`,
+    [localDate, localDate],
+  ).map((r) => r.service_id);
+
+  const removed = new Set(
+    selectAll<IdRow>(
+      db,
+      `SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 2;`,
+      [localDate],
+    ).map((r) => r.service_id),
+  );
+
+  const added = selectAll<IdRow>(
+    db,
+    `SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 1;`,
+    [localDate],
+  ).map((r) => r.service_id);
+
+  return Array.from(new Set([...base.filter((id) => !removed.has(id)), ...added]));
+}
 
 Comlink.expose(api);

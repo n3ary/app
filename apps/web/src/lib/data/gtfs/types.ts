@@ -7,7 +7,7 @@
  */
 
 import type { Feed } from '$lib/data/feeds';
-import type { Route, Station } from '$lib/domain/types';
+import type { Route, Station, Vehicle } from '$lib/domain/types';
 
 export interface StopWithDistance extends Station {
   /** Always populated by getStopsNear (meters). */
@@ -61,4 +61,22 @@ export interface GtfsRepo {
     localMinutesSinceMidnight: number,
     windowMinutes: number,
   ): Promise<UpcomingDeparture[]>;
+
+  /**
+   * Domain-shaped arrivals at a stop, ready for bucketing + rendering.
+   * Schedule-only in Phase 4: every entry is `kind: 'scheduled'` or
+   * `kind: 'predicted'` (no live data wired yet). Phase 5 plugs the live
+   * pipeline stages downstream of the scheduleScanner.
+   *
+   *   nowMs           Unix ms — the moment this query represents
+   *   windowMinutes   How many minutes into the future to include
+   *
+   * Past arrivals within the 5 min recency window are also returned so the
+   * `departed` bucket can render when the user opts in.
+   */
+  getStationArrivals(
+    stopId: number,
+    nowMs: number,
+    windowMinutes: number,
+  ): Promise<Vehicle[]>;
 }

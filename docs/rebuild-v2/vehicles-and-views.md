@@ -474,6 +474,75 @@ V1 in [arrivalUtils.calculateArrival L23-L68](../../apps/legacy/src/utils/arriva
 
 ---
 
+## 5.5 Pipeline assembly
+
+The reconciler from §6 below is **not** a monolith — it's the tail of a
+**pipeline of stages** assembled at startup based on which features are
+actually wired up. This is what lets the same UI render correctly when the
+user has offline-only schedule data, when GTFS-RT is reachable, and when the
+user also pasted a Tranzy key.
+
+### The contract
+
+```ts
+// apps/web/src/lib/domain/pipeline/types.ts
+interface PipelineContext {
+  nowMs: number;
+  nowMinSinceMidnight: number;
+  localDate: string;       // GTFS calendar key YYYYMMDD
+}
+
+interface Stage<Ctx extends PipelineContext = PipelineContext> {
+  name: string;
+  run(state: Vehicle[], context: Ctx): Vehicle[] | Promise<Vehicle[]>;
+}
+
+function runPipeline(stages: Stage[], ctx: PipelineContext): Promise<Vehicle[]>;
+```
+
+A stage receives the `Vehicle[]` produced so far and a per-run context. It
+returns a new `Vehicle[]` — usually the input plus modifications (upgraded
+`kind`, attached `liveSources`, refreshed `position`), occasionally with
+new vehicles appended.
+
+### The composition table
+
+| Features available           | Stage list (in order)                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| schedule only                | `scheduleScanner`                                                                      |
+| + GTFS-RT                    | `scheduleScanner`, `rtIngester`, `rtScheduleReconciler`                                |
+| + Tranzy                     | `scheduleScanner`, `rtIngester`, `tranzyIngester`, `rtScheduleReconciler`, `multiSourceCorroborator` |
+| any subset                   | composer drops the unavailable stages and keeps the rest in order                      |
+
+The composer (`composePipeline(features): Stage[]`) is the one place that
+encodes feature gating. The stages themselves never check feature flags —
+if a stage is in the list it runs; if it isn't, it doesn't exist. This is
+what keeps the system simple: the UI consumes whatever the pipeline output
+is, and the pipeline's *shape* is the feature flag.
+
+### What lives where
+
+| Stage                       | File                                                          | Phase |
+| --------------------------- | ------------------------------------------------------------- | ----- |
+| `scheduleScanner`           | `lib/domain/pipeline/scheduleScanner.ts`                      | 4     |
+| `rtIngester`                | `lib/domain/pipeline/rtIngester.ts`                           | 5     |
+| `tranzyIngester`            | `lib/domain/pipeline/tranzyIngester.ts`                       | 5     |
+| `rtScheduleReconciler`      | `lib/domain/pipeline/rtScheduleReconciler.ts`                 | 5     |
+| `multiSourceCorroborator`   | `lib/domain/pipeline/multiSourceCorroborator.ts`              | 5     |
+
+### Why this matters for the UI
+
+The UI only ever binds to the **output** of `runPipeline`. It reads
+`vehicle.kind`, `vehicle.type`, `vehicle.position`, `vehicle.eta`,
+`vehicle.headsign` — nothing else. All the reconciliation reasoning,
+multi-source confidence math, ghost detection, prediction smoothing —
+*everything* — happens inside stages and never leaks. Adding a third live
+source (some other city's API, a community feed) means: write one
+`Ingester` stage, one merger if needed, drop both into the composition
+table. Zero UI change.
+
+---
+
 ## 6. Reconciler (revalidated from v1)
 
 The reconciler is the only place that produces `Vehicle.kind`. It takes:

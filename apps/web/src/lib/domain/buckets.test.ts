@@ -18,17 +18,16 @@ function inputs(o: Partial<Parameters<typeof bucketOf>[1]> & { nowMin: number })
 
 // Minimal Vehicle factories for the comparator test.
 const route = { id: 1, shortName: '24', color: '#ff0000' };
-function v(id: string, kind: Vehicle['kind'] = 'predicted'): Vehicle {
+function v(id: string, _kind: Vehicle['kind'] = 'predicted'): Vehicle {
   return {
     kind: 'predicted',
     id,
     route,
+    type: 'bus',
     confidence: 'low',
     schedule: { tripId: `t-${id}`, scheduledDeparture: 540 },
     position: { lat: 0, lon: 0, source: 'predicted-from-schedule', asOf: 0 },
     checkedSources: [],
-    // overwrite kind below if caller asked for another
-    ...(kind === 'predicted' ? {} : ({} as never)),
   } as Vehicle;
 }
 
