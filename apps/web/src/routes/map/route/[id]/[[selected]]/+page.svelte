@@ -40,7 +40,7 @@
     type TripShapePlan,
   } from '$lib/domain/predictPosition';
   import {
-    bearingAtDistance, measurePolyline, pointAtDistance,
+    measurePolyline, pointAtDistance, projectOnPolyline,
     type MeasuredPolyline,
   } from '$lib/domain/shapeProjection';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
@@ -190,6 +190,31 @@
   const headerSubtitle = $derived(headsign);
 
   // ── Navigation helpers ─────────────────────────────────────────────
+  // Does the opposite direction even exist on this route? Some Cluj
+  // lines are one-way loops (no dir 1 trips at all) so the swap
+  // button should grey out instead of taking the user to an empty
+  // map. Probed via the same lightweight endpoints query the schedule
+  // view uses — returns null when no trips exist for that direction.
+  let otherDirectionExists = $state<boolean | null>(null);
+  $effect(() => {
+    const fid = feedsStore.boundFeedId;
+    if (!fid || direction == null || routeId.length === 0) return;
+    const otherDir = (direction === 0 ? 1 : 0) as 0 | 1;
+    const rid = routeId;
+    otherDirectionExists = null;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const ep = await repo.getRouteDirectionEndpoints(rid, otherDir);
+        otherDirectionExists = ep != null;
+      } catch {
+        // On error, leave the button enabled — worst case the user
+        // taps and gets the 'needs a direction' empty state.
+        otherDirectionExists = true;
+      }
+    })();
+  });
+
   function swapDirection() {
     if (direction == null) return;
     const otherDir = direction === 0 ? 1 : 0;
@@ -368,33 +393,76 @@
     }
   });
 
-  // Direction-of-travel arrows along the route shape. Five evenly-
-  // spaced markers (skipping the endpoints so they don't crowd the
-  // terminus stops) rotated to the local segment bearing. Same
-  // render cadence as the shape itself — built once per view.
-  const ARROW_COUNT = 5;
+  // Traveling dots along the route shape: a small flock of route-
+  // coloured circles departs the origin in sequence, slides along
+  // the polyline as far as the second stop, then fades out while
+  // the next dot is already on its way. Gives the line a clear
+  // direction-of-travel cue at a glance — replaces the earlier
+  // static chevrons which were too subtle to read on a colored
+  // polyline. KISS: requestAnimationFrame with N dots out of phase;
+  // cleanup cancels the RAF + clears the layer.
+  const DOT_COUNT = 3;
+  const DOT_CYCLE_MS = 2800;
   $effect(() => {
     if (!L || !mapInstance || !arrowsLayer) return;
     arrowsLayer.clearLayers();
     if (!measuredShape || measuredShape.totalDistM === 0) return;
-    const total = measuredShape.totalDistM;
-    const color = view?.route.color ?? 'currentColor';
-    for (let i = 1; i <= ARROW_COUNT; i++) {
-      const distM = (total * i) / (ARROW_COUNT + 1);
-      const pos = pointAtDistance(measuredShape, distM);
-      const bearing = bearingAtDistance(measuredShape, distM);
-      const icon = L.divIcon({
-        className: 'neary-arrow',
-        html: arrowHtml(color, bearing),
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
-      L.marker([pos.lat, pos.lon], {
-        icon,
+    if (!view || view.stops.length < 2) return;
+    const Lref = L;
+    const layer = arrowsLayer;
+    const measured = measuredShape;
+    const second = view.stops[1];
+    // Distance along the polyline at which the dot reaches the
+    // 2nd stop — the projection collapses any small lat/lon mismatch
+    // between stop coordinates and the shape vertex.
+    const targetDist = Math.min(
+      projectOnPolyline({ lat: second.lat, lon: second.lon }, measured.points).distAlongM,
+      measured.totalDistM,
+    );
+    if (targetDist <= 0) return;
+    const color = view.route.color;
+    const dots = Array.from({ length: DOT_COUNT }, () =>
+      Lref.circleMarker([measured.points[0].lat, measured.points[0].lon], {
+        radius: 4,
+        color: '#fff',
+        weight: 1,
+        fillColor: color,
+        fillOpacity: 0,
         interactive: false,
-        keyboard: false,
-      }).addTo(arrowsLayer);
-    }
+      }).addTo(layer),
+    );
+    const start = performance.now();
+    let rafId = 0;
+    const tick = (t: number) => {
+      const elapsed = ((t - start) / DOT_CYCLE_MS);
+      for (let i = 0; i < DOT_COUNT; i++) {
+        // Phase per dot in [0,1); staggered evenly so the flock
+        // reads as a steady march rather than a single blip.
+        const p = (elapsed + i / DOT_COUNT) % 1;
+        let dist: number;
+        let opacity: number;
+        if (p <= 0.7) {
+          // Travel phase: linear from origin to the 2nd stop.
+          // Fade in over the first 15 % so the dot doesn't pop.
+          dist = (p / 0.7) * targetDist;
+          opacity = Math.min(p / 0.15, 1) * 0.85;
+        } else {
+          // Hold at the 2nd stop for the last 30 % of the cycle
+          // while fading out — the 'arrived, dissolving' beat.
+          dist = targetDist;
+          opacity = (1 - (p - 0.7) / 0.3) * 0.85;
+        }
+        const pt = pointAtDistance(measured, dist);
+        dots[i].setLatLng([pt.lat, pt.lon]);
+        dots[i].setStyle({ fillOpacity: opacity, opacity });
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      layer.clearLayers();
+    };
   });
 
   // Re-paint vehicles every nowMin tick.
@@ -490,23 +558,6 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-  /** Direction-of-travel marker: route-coloured chevron in a small
-   *  white-bordered disc, rotated to the route bearing. Stroke-only
-   *  (no fill) keeps it from looking like another vehicle. */
-  function arrowHtml(color: string, bearingDeg: number): string {
-    return `<div style="
-      width:16px;height:16px;display:inline-flex;
-      align-items:center;justify-content:center;
-      transform:rotate(${bearingDeg}deg);
-      filter:drop-shadow(0 0 1px rgba(255,255,255,0.9));
-    ">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-        stroke="${color}" stroke-width="3"
-        stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 14 12 8 18 14" />
-      </svg>
-    </div>`;
-  }
 </script>
 
 <div class="mx-auto max-w-5xl px-4 py-3">
@@ -565,7 +616,11 @@
               <IconButton aria-label="Fit route to view" disabled={!mapReady} onclick={fitToRoute}>
                 <Maximize2 size={18} />
               </IconButton>
-              <IconButton aria-label="Swap direction" onclick={swapDirection}>
+              <IconButton
+                aria-label={otherDirectionExists === false ? 'Reverse direction not available' : 'Swap direction'}
+                disabled={otherDirectionExists === false}
+                onclick={swapDirection}
+              >
                 <ArrowRightLeft size={18} />
               </IconButton>
             </Stack>
