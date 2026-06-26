@@ -22,6 +22,7 @@
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
+  import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
   // Demo fallback location when GPS is unavailable / not yet granted:
@@ -65,6 +66,22 @@
   let boards = $state<{ stop: StopWithDistance; vehicles: Vehicle[] }[] | null>(null);
   let boardsError = $state<string | null>(null);
   let expandedStopId = $state<number | null>(null);
+
+  // Surface GPS state on the global StatusBar instead of a page-level
+  // card — the StatusBar already exists for cross-cutting loading info
+  // (per plan §4) and the schedule-bind effect in +layout.svelte uses
+  // the same channel. KISS / DRY.
+  $effect(() => {
+    if (gpsState === 'pending') {
+      statusBus.push({
+        id: 'gps-pending',
+        kind: 'loading',
+        message: 'Determining your location…',
+      });
+    } else {
+      statusBus.dismiss('gps-pending');
+    }
+  });
 
   // Tick once a minute so ETAs/buckets refresh without re-querying SQLite.
   let nowMs = $state(Date.now());
@@ -121,17 +138,6 @@
           <Button startIcon={settingsIcon} onclick={() => goto('/settings')}>
             Open Settings
           </Button>
-        </Stack>
-      </CardContent>
-    </Card>
-  {:else if gpsState === 'pending'}
-    <Card>
-      <CardContent>
-        <Stack direction="row" spacing={1} align="center">
-          <Spinner size={16} />
-          <Typography variant="caption">
-            Determining your location… (allow GPS in your browser to see actual nearby stations)
-          </Typography>
         </Stack>
       </CardContent>
     </Card>
