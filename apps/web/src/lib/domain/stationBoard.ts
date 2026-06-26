@@ -68,24 +68,20 @@ export const STATION_BOARD_MAX_ROWS = 5;
  *   2. If we still have slack, fill it with extra `incoming` rows (the
  *      bucket users most want to see more of — "how many buses are
  *      coming?").
- *  Output preserves the input's bucket-then-eta sort order. Pure. */
+ *  Output is re-sorted with compareForBoard so the on-screen order
+ *  matches the spec regardless of where extras got appended. Pure. */
 export function capStationBoard(rows: BoardRow[]): BoardRow[] {
   const seen = new Set<ArrivalBucket>();
-  const picked: BoardRow[] = [];
-  const incomingOverflow: BoardRow[] = [];
+  const firsts: BoardRow[] = [];
+  const extraIncoming: BoardRow[] = [];
   for (const r of rows) {
     if (!seen.has(r.bucket)) {
       seen.add(r.bucket);
-      picked.push(r);
+      firsts.push(r);
     } else if (r.bucket === 'incoming') {
-      incomingOverflow.push(r);
+      extraIncoming.push(r);
     }
   }
-  while (picked.length < STATION_BOARD_MAX_ROWS && incomingOverflow.length > 0) {
-    picked.push(incomingOverflow.shift()!);
-  }
-  // Picked respects input order (bucket-then-eta), but the expansion
-  // appended incoming rows possibly after a `departed` first-pick — sort
-  // once more so the on-screen order matches compareForBoard exactly.
-  return picked.sort(compareForBoard).slice(0, STATION_BOARD_MAX_ROWS);
+  const slots = Math.max(0, STATION_BOARD_MAX_ROWS - firsts.length);
+  return [...firsts, ...extraIncoming.slice(0, slots)].sort(compareForBoard);
 }
