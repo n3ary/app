@@ -15,8 +15,8 @@ export type Theme = 'auto' | 'light' | 'dark';
 
 class UserPrefs {
   theme = $state<Theme>('auto');
-  /** Selected transit agency id, or null when the user hasn't chosen yet. */
-  agencyId = $state<number | null>(null);
+  /** Selected transit feed id, or null when the user hasn't chosen yet. */
+  feedId = $state<string | null>(null);
   /** Show "Drop off only" indicators on station / vehicle cards. */
   showDropOffOnly = $state(true);
   /** Show ghost vehicles (scheduled run, GPS missing) in lists. */
@@ -31,13 +31,13 @@ class UserPrefs {
       if (!raw) return;
       const o = JSON.parse(raw) as Partial<{
         theme: Theme;
-        agencyId: number | null;
+        feedId: string | null;
         showDropOffOnly: boolean;
         showGhostVehicles: boolean;
         apiKey: string | null;
       }>;
       if (o.theme === 'auto' || o.theme === 'light' || o.theme === 'dark') this.theme = o.theme;
-      if (typeof o.agencyId === 'number' || o.agencyId === null) this.agencyId = o.agencyId;
+      if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
       if (typeof o.showDropOffOnly === 'boolean') this.showDropOffOnly = o.showDropOffOnly;
       if (typeof o.showGhostVehicles === 'boolean') this.showGhostVehicles = o.showGhostVehicles;
       if (typeof o.apiKey === 'string' || o.apiKey === null) this.apiKey = o.apiKey;
@@ -50,7 +50,7 @@ class UserPrefs {
   snapshot() {
     return {
       theme: this.theme,
-      agencyId: this.agencyId,
+      feedId: this.feedId,
       showDropOffOnly: this.showDropOffOnly,
       showGhostVehicles: this.showGhostVehicles,
       apiKey: this.apiKey,

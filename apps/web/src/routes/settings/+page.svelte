@@ -1,9 +1,9 @@
 <!--
   Settings — user preferences. Theme picker, behavior toggles, and the
-  agency selector (Phase 3 ships a placeholder selector — wired to a real
-  agency list from neary-gtfs in the next batch). Advanced settings
-  (storage, API key, force reload, version, debug toggles) live at
-  /settings/advanced — placeholder linked at the bottom for now.
+  feed selector (sources feeds.json from the neary-gtfs binaries branch via
+  jsDelivr). Advanced settings (storage, API key, force reload, version,
+  debug toggles) live at /settings/advanced — placeholder linked at the
+  bottom for now.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -12,19 +12,17 @@
     Box, Button, Card, CardContent, Chip, List, ListItem, ListItemText,
     Spinner, Stack, Switch, TextField, ToggleGroup, Typography,
   } from '$lib/ui';
-  import { fetchAgencies, type Agency } from '$lib/data/agencies';
+  import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
 
-  let agencies = $state<Agency[] | null>(null);
-  let agenciesError = $state<string | null>(null);
-
-  onMount(async () => {
-    try {
-      agencies = await fetchAgencies();
-    } catch (e) {
-      agenciesError = e instanceof Error ? e.message : String(e);
-    }
+  onMount(() => {
+    void feedsStore.load();
   });
+
+  function fmtBytes(n: number | undefined | null): string {
+    if (!n) return '';
+    return n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  }
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6 space-y-6">
@@ -49,47 +47,47 @@
     </CardContent>
   </Card>
 
-  <!-- ===== Agency ===== -->
+  <!-- ===== Feed ===== -->
   <Card>
     <CardContent>
       <Stack spacing={1.5}>
-        <Typography variant="h6">Transit agency</Typography>
+        <Typography variant="h6">Transit feed</Typography>
         <Typography variant="caption">
-          Pick one. The schedule database (~4 MB gzipped) downloads once and is
-          cached for offline use. Agencies marked "no data yet" don't have a
-          SQLite blob published yet — they will once the
+          Pick one. The schedule database downloads once and is cached for
+          offline use. Feeds are published by
           <a href="https://github.com/ciotlosm/neary-gtfs" target="_blank" rel="noopener" class="underline">neary-gtfs</a>
-          pipeline grows.
+          and served via jsDelivr.
         </Typography>
 
-        {#if agenciesError}
+        {#if feedsStore.error}
           <Box class="text-[color:var(--color-danger)] text-sm">
-            Failed to load agency list: {agenciesError}
+            Failed to load feed list: {feedsStore.error}
           </Box>
-        {:else if !agencies}
+        {:else if feedsStore.loading || !feedsStore.feeds}
           <Stack direction="row" spacing={1} align="center">
             <Spinner size={16} />
-            <Typography variant="caption">Loading agency list…</Typography>
+            <Typography variant="caption">Loading feed list…</Typography>
           </Stack>
         {:else}
           <List>
-            {#each agencies as a (a.id)}
-              {@const selected = userPrefs.agencyId === a.id}
+            {#each feedsStore.feeds as f (f.id)}
+              {@const hasSqlite = f.files?.sqlite_gz != null}
+              {@const selected = userPrefs.feedId === f.id}
               <ListItem
-                button={a.hasSqlite}
-                onclick={a.hasSqlite ? () => (userPrefs.agencyId = a.id) : undefined}
+                button={hasSqlite}
+                onclick={hasSqlite ? () => (userPrefs.feedId = f.id) : undefined}
                 class={selected ? 'bg-[color:var(--color-primary)]/10' : ''}
               >
                 <ListItemText
-                  primary={a.name}
-                  secondary={a.url ?? `id ${a.id} · ${a.timezone}`}
+                  primary={f.name}
+                  secondary={`${f.country}${f.region ? ' · ' + f.region : ''} · ${f.timezone}${f.size_bytes?.sqlite_gz ? ' · ' + fmtBytes(f.size_bytes.sqlite_gz) : ''}`}
                 />
                 {#if selected}
                   <Chip size="small" color="primary">
                     {#snippet icon()}<CheckCheck size={12} />{/snippet}
                     Selected
                   </Chip>
-                {:else if !a.hasSqlite}
+                {:else if !hasSqlite}
                   <Chip size="small" variant="outlined">no data yet</Chip>
                 {/if}
               </ListItem>
@@ -97,9 +95,9 @@
           </List>
         {/if}
 
-        {#if userPrefs.agencyId != null}
+        {#if userPrefs.feedId != null}
           <Stack direction="row" justify="end">
-            <Button size="small" variant="outlined" color="danger" onclick={() => (userPrefs.agencyId = null)}>
+            <Button size="small" variant="outlined" color="danger" onclick={() => (userPrefs.feedId = null)}>
               Clear selection
             </Button>
           </Stack>

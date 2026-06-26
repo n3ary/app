@@ -15,9 +15,11 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { Feed } from '$lib/data/feeds';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { Manifest, StopWithDistance, UpcomingDeparture } from '$lib/data/gtfs/types';
+  import type { StopWithDistance, UpcomingDeparture } from '$lib/data/gtfs/types';
   import type { Route } from '$lib/domain/types';
+  import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import {
     Box, Card, CardContent, Chip, List, ListItem, ListItemText,
@@ -29,7 +31,11 @@
   const userLat = 46.7712;
   const userLon = 23.6236;
 
-  let manifest = $state<Manifest | null>(null);
+  // /data-test is feed-agnostic in design; force-bind cluj-napoca since
+  // that's the one with known stops near (userLat, userLon).
+  const DEMO_FEED_ID = 'cluj-napoca';
+
+  let feed = $state<Feed | null>(null);
   let routes = $state<Route[] | null>(null);
   let nearby = $state<StopWithDistance[] | null>(null);
   let departures = $state<UpcomingDeparture[] | null>(null);
@@ -39,15 +45,15 @@
     const repo = getGtfsRepo();
     statusBus.push({ id: 'gtfs-boot', kind: 'loading', message: 'Loading GTFS database…' });
     try {
-      // /data-test is agency-agnostic; force-bind agency 2 since that's the
-      // only one with a locally-generated SQLite right now.
-      await repo.setAgency(2);
-      manifest = await repo.getManifest();
+      await feedsStore.load();
+      const f = feedsStore.byId(DEMO_FEED_ID);
+      if (!f) throw new Error(`Feed "${DEMO_FEED_ID}" not in registry`);
+      feed = f;
+      await repo.setFeed($state.snapshot(f) as typeof f);
       routes = await repo.getRoutes();
       nearby = await repo.getStopsNear(userLat, userLon, 500);
 
       if (nearby.length > 0) {
-        // localDate "YYYYMMDD", local time in minutes since midnight
         const now = new Date();
         const localDate =
           `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -73,16 +79,16 @@
 </script>
 
 <svelte:head>
-  <title>Data test — neary v2</title>
+  <title>Data test — neary</title>
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-4 py-6 space-y-8">
   <header>
     <Typography variant="h2">GTFS pipeline test</Typography>
     <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-      First-launch: downloads agency-2.sqlite3.gz (~4 MB), decompresses,
-      imports into OPFS via SAH pool, runs real GTFS queries in a Web Worker.
-      Subsequent visits skip the download.
+      First-launch: downloads <code>{DEMO_FEED_ID}.sqlite3.gz</code> from
+      jsDelivr, decompresses, imports into OPFS via SAH pool, runs real
+      GTFS queries in a Web Worker. Subsequent visits skip the download.
     </Typography>
   </header>
 
@@ -96,23 +102,25 @@
     </Card>
   {/if}
 
-  <!-- ===== Manifest ===== -->
+  <!-- ===== Feed info ===== -->
   <section class="space-y-2">
-    <Typography variant="h4">Manifest</Typography>
-    {#if !manifest}
+    <Typography variant="h4">Feed</Typography>
+    {#if !feed}
       <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">Loading…</Typography>
     {:else}
       <Card>
         <CardContent>
           <Stack spacing={0.5}>
-            <Typography variant="body2">Agency #{manifest.agencyId}</Typography>
-            <Typography variant="caption">Generated {new Date(manifest.generatedAt).toLocaleString()}</Typography>
-            <Typography variant="caption">Source: {manifest.source}</Typography>
-            <Typography variant="caption">Raw: {fmtBytes(manifest.rawBytes)} · Gzip: {fmtBytes(manifest.gzipBytes)}</Typography>
+            <Typography variant="body2">{feed.name} ({feed.id})</Typography>
+            <Typography variant="caption">Generated {new Date(feed.generated_at).toLocaleString()}</Typography>
+            <Typography variant="caption">Source: {feed.source.publisher} ({feed.source.type})</Typography>
+            {#if feed.size_bytes.sqlite_gz}
+              <Typography variant="caption">Sqlite gz: {fmtBytes(feed.size_bytes.sqlite_gz)}</Typography>
+            {/if}
             <Box class="mt-2">
               <Stack direction="row" spacing={1} wrap>
-                {#each Object.entries(manifest.rowCounts) as [name, n]}
-                  <Chip size="small">{name}: {n.toLocaleString()}</Chip>
+                {#each feed.agencies as a}
+                  <Chip size="small">{a.agency_name}</Chip>
                 {/each}
               </Stack>
             </Box>

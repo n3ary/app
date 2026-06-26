@@ -23,16 +23,16 @@
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
-  {#if userPrefs.agencyId == null}
+  {#if userPrefs.feedId == null}
     <Card class="text-center">
       <CardContent>
         <Stack spacing={2} align="center">
           <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[color:var(--color-primary)]/10 text-[color:var(--color-primary)]">
             <Bus size={24} />
           </div>
-          <Typography variant="h4">Select your transit agency</Typography>
+          <Typography variant="h4">Select your transit feed</Typography>
           <Typography variant="body2" class="max-w-prose text-[color:var(--color-fg-muted)]">
-            Neary needs a transit agency to load schedules and routes. Pick
+            Neary needs a transit feed to load schedules and routes. Pick
             one in Settings to get started. The data downloads once and is
             cached for offline use — no account needed.
           </Typography>
@@ -49,7 +49,7 @@
         <Stack spacing={1.5}>
           <Typography variant="h4">Stations</Typography>
           <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-            Agency {userPrefs.agencyId} selected. Real proximity-based station
+            Agency {userPrefs.feedId} selected. Real proximity-based station
             list lands in Phase 4 (domain layer + GPS hook). For now, see
             <a href="/data-test" class="underline">/data-test</a> for the raw
             GTFS pipeline exercise.

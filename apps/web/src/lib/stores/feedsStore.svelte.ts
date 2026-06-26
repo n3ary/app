@@ -1,0 +1,39 @@
+/*
+ * Singleton store backing the feed registry across components.
+ *
+ * One fetch per app session; everyone reads through `feedsStore.feeds`.
+ * Without this, every component that needs the registry would re-fetch.
+ *
+ * No persistence — the registry is small (~few KB) and effectively static
+ * for the lifetime of an app session. jsDelivr's 12h CDN cache + browser
+ * cache handle repeat-load latency.
+ */
+
+import { fetchFeeds, type Feed } from '$lib/data/feeds';
+
+class FeedsStore {
+  feeds = $state<Feed[] | null>(null);
+  loading = $state(false);
+  error = $state<string | null>(null);
+
+  /** Idempotent — safe to call from multiple effects. */
+  async load(): Promise<void> {
+    if (this.feeds || this.loading) return;
+    this.loading = true;
+    this.error = null;
+    try {
+      this.feeds = await fetchFeeds();
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  byId(id: string | null | undefined): Feed | null {
+    if (!id || !this.feeds) return null;
+    return this.feeds.find((f) => f.id === id) ?? null;
+  }
+}
+
+export const feedsStore = new FeedsStore();
