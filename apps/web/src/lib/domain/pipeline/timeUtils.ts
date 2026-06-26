@@ -85,9 +85,11 @@ export interface ScheduleWindow {
  * - `today` / `next-trip` look at the feed's "today" from now-onwards.
  *   Night routes extend the window to a full 24h so post-midnight
  *   trips (GTFS times like 25:30) surface in the list.
- * - `tomorrow` looks at the next calendar day from 00:00 to noon —
- *   the morning is the only thing a commuter ever wants to plan the
- *   night before.
+ * - `tomorrow` looks at the full next calendar day from 00:00. Day
+ *   routes get a 24h window (00:00–24:00); night routes get 28h so
+ *   the post-midnight tail of tomorrow's service day (24:30, 25:00,
+ *   …) still surfaces. The old morning-only window was wrong for
+ *   night routes whose only meaningful runs start at 23:00+.
  *
  * Pure: takes a clock value + flags, returns numbers. No reactive
  * dependency.
@@ -104,7 +106,7 @@ export function scheduleWindowFor(args: {
     return {
       localDate: dateKeyInTz(tomorrowMs, timeZone),
       fromMin: 0,
-      windowMin: 12 * 60,
+      windowMin: isNight ? 28 * 60 : 24 * 60,
     };
   }
   return {

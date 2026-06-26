@@ -548,7 +548,7 @@
                 {#if trips.length === 0}
                   <Stack spacing={1} class="py-1">
                     <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-                      No more departures {view === 'tomorrow' ? 'tomorrow morning' : 'today'}.
+                      No more departures {view === 'tomorrow' ? 'tomorrow' : 'today'}.
                     </Typography>
                     {#if view === 'today'}
                       <!-- Mirrors the Next-trip empty state: one-tap
