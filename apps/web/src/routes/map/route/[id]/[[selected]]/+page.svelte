@@ -700,7 +700,7 @@
           <IconButton
             size="small"
             aria-label="Zoom in"
-            class="bg-[color:var(--color-surface-elevated)] text-[color:var(--color-fg)] shadow-md hover:bg-[color:var(--color-border)]/60"
+            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
             onclick={zoomIn}
           >
             <Plus size={16} />
@@ -708,7 +708,7 @@
           <IconButton
             size="small"
             aria-label="Zoom out"
-            class="bg-[color:var(--color-surface-elevated)] text-[color:var(--color-fg)] shadow-md hover:bg-[color:var(--color-border)]/60"
+            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
             onclick={zoomOut}
           >
             <Minus size={16} />
@@ -716,7 +716,7 @@
           <IconButton
             size="small"
             aria-label="Fit route to view"
-            class="bg-[color:var(--color-surface-elevated)] text-[color:var(--color-fg)] shadow-md hover:bg-[color:var(--color-border)]/60"
+            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
             onclick={fitToRoute}
           >
             <Maximize2 size={16} />
