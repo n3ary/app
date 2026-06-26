@@ -179,6 +179,7 @@ export function reconcileWithLive(
         lon: obs.lon,
         source: 'gps',
         asOf: obs.asOfMs > 0 ? obs.asOfMs : Date.now(),
+        speedMs: obs.speedMs,
       },
       liveSources: ['gtfs-rt'],
     };

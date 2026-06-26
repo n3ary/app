@@ -76,6 +76,7 @@
   );
 
   let boards = $state<{ stop: StopWithDistance; vehicles: Vehicle[] }[] | null>(null);
+  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
   let boardsError = $state<string | null>(null);
   let expandedStopId = $state<number | null>(null);
   // Per-stop route filter — click a route badge on a StationCard to scope
@@ -153,6 +154,18 @@
         boardsError = null;
         // Route filters are view-only: reset on every refresh / re-fetch.
         routeFilters = {};
+        // Fetch route shapes for every visible scheduled trip. The
+        // composer uses them to derive GPS-based ETAs for reconciled
+        // rows at intermediate stops. Worker caches by shape_id so
+        // re-fetching across renders is O(1).
+        const tripIds = selection.boards.flatMap(
+          (b) => b.vehicles.map((v) => v.schedule?.tripId).filter((x): x is string => !!x),
+        );
+        if (tripIds.length > 0) {
+          shapes = await repo.getShapesForTrips(tripIds);
+        } else {
+          shapes = {};
+        }
         expandedStopId = selection.expandedStopId;
       } catch (e) {
         boardsError = e instanceof Error ? e.message : String(e);
@@ -228,6 +241,7 @@
           vehicles: b.vehicles,
           stop: b.stop,
           liveObservations: liveVehiclesStore.observations,
+          shapes,
           prefs: userPrefs,
           nowMs,
           timezone: feedTimezone,
@@ -256,6 +270,7 @@
           vehicles,
           stop,
           liveObservations: liveVehiclesStore.observations,
+          shapes,
           prefs: userPrefs,
           nowMs,
           timezone: feedTimezone,

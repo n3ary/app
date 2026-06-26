@@ -31,6 +31,7 @@
   const stopIdValid = $derived(Number.isFinite(stopId) && stopId > 0);
 
   let board = $state<{ stop: StopWithDistance; vehicles: Vehicle[] } | null>(null);
+  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
   let error = $state<string | null>(null);
   let notFound = $state(false);
   let routeFilter = $state<number | null>(null);
@@ -59,6 +60,12 @@
           board = result;
           error = null;
           routeFilter = null; // reset on every refresh
+          // Fetch shapes for this stop's trips so the composer can
+          // run the GPS-derived ETA predictor.
+          const tripIds = result.vehicles
+            .map((v) => v.schedule?.tripId)
+            .filter((x): x is string => !!x);
+          shapes = tripIds.length > 0 ? await repo.getShapesForTrips(tripIds) : {};
         }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
@@ -117,6 +124,7 @@
       vehicles: board.vehicles,
       stop: board.stop,
       liveObservations: liveVehiclesStore.observations,
+      shapes,
       prefs: userPrefs,
       nowMs,
       timezone: feedTimezone,

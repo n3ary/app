@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyGpsEta,
   assembleStationBoard,
   capStationBoard,
   STATION_BOARD_MAX_ROWS,
@@ -94,6 +95,70 @@ describe('assembleStationBoard', () => {
     );
     expect(board).toHaveLength(1);
     expect(board[0].bucket).toBe('incoming');
+  });
+});
+
+describe('applyGpsEta', () => {
+  // ~1 km east-west polyline; vehicle 1 km away from stop at vertex 1.
+  const POLY: Array<{ lat: number; lon: number }> = [
+    { lat: 46.770, lon: 23.580 },
+    { lat: 46.770, lon: 23.5931 }, // ~1 km east
+    { lat: 46.770, lon: 23.6062 }, // ~2 km east
+  ];
+  const STOP = { lat: 46.770, lon: 23.6062 };
+  const reconciled = (opts: { tripId: string; isAtTripStart?: boolean }): Vehicle => ({
+    kind: 'reconciled',
+    id: `trip:${opts.tripId}`,
+    route: r24,
+    type: 'bus',
+    confidence: 'medium',
+    schedule: {
+      tripId: opts.tripId,
+      scheduledDeparture: 540,
+      directionId: 0,
+      tripStartMin: 530,
+      isAtTripStart: opts.isAtTripStart ?? false,
+    },
+    eta: { distanceMeters: 0, minutes: 99, confidence: 'low' }, // sentinel
+    position: { lat: 46.770, lon: 23.580, source: 'gps', asOf: 0, speedMs: 5 },
+    liveSources: ['gtfs-rt'],
+  } as Vehicle);
+
+  it('replaces ETA on reconciled non-origin rows when a shape is available', () => {
+    const out = applyGpsEta(
+      [reconciled({ tripId: 'T1' })],
+      { T1: POLY },
+      STOP,
+    );
+    expect(out[0].kind).toBe('reconciled');
+    // 2 km @ 5 m/s = 400 s = ~7 min, rounded
+    expect(out[0].eta?.minutes).toBeGreaterThan(5);
+    expect(out[0].eta?.minutes).toBeLessThan(10);
+    expect(out[0].eta?.confidence).toBe('high');
+  });
+
+  it('skips trip-origin rows (schedule wins at origin)', () => {
+    const v = reconciled({ tripId: 'T1', isAtTripStart: true });
+    const out = applyGpsEta([v], { T1: POLY }, STOP);
+    expect(out[0]).toBe(v); // unchanged
+  });
+
+  it('skips when no shape is supplied for the trip', () => {
+    const v = reconciled({ tripId: 'T1' });
+    const out = applyGpsEta([v], {}, STOP);
+    expect(out[0]).toBe(v);
+  });
+
+  it('skips non-reconciled rows', () => {
+    const sched = scheduled('s', r24, 5);
+    const out = applyGpsEta([sched], { 's': POLY }, STOP);
+    expect(out[0]).toBe(sched);
+  });
+
+  it('is a no-op when the stop has no coords', () => {
+    const v = reconciled({ tripId: 'T1' });
+    const out = applyGpsEta([v], { T1: POLY }, {});
+    expect(out[0]).toBe(v);
   });
 });
 

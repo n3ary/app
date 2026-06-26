@@ -59,6 +59,10 @@ export interface VehiclePosition {
   source: 'gps' | 'predicted-from-schedule' | 'predicted-from-gps';
   /** Unix ms — GPS fix time for `source=gps`, prediction time otherwise. */
   asOf: number;
+  /** Reported instantaneous speed in m/s, when the live source carries
+   *  it. Used by the GPS-derived ETA predictor; absent / null means
+   *  fall back to a config-driven average. */
+  speedMs?: number | null;
 }
 
 /** ETA at the *target* stop for a given view. Negative minutes = already

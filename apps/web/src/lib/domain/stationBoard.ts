@@ -22,8 +22,10 @@ import {
 } from './buckets';
 import { haversineMeters } from './distance';
 import { minSinceMidnightInTz } from './pipeline/timeUtils';
+import { predictEta } from './predictEta';
 import { reconcileWithLive } from './reconcile';
 import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
+import type { Polyline } from './shapeProjection';
 import type { Route, Vehicle } from './types';
 
 export interface BoardRow {
@@ -120,13 +122,20 @@ export function capStationBoard(rows: BoardRow[]): BoardRow[] {
  *   1. Route filter (visual scope chosen by the user) — applied first
  *      so the rest of the pipeline operates on the right subset.
  *   2. Live reconciliation (route+direction+startTime match).
- *   3. Bucket + filter + sort + cap (assembleStationBoard).
+ *   3. GPS-derived ETA (predictEta) on reconciled rows at intermediate
+ *      stops. Origin rows keep the scheduled departure as their ETA
+ *      because the bus isn't moving yet.
+ *   4. Bucket + filter + sort + cap (assembleStationBoard).
  */
 
 export interface AssembleLiveBoardInputs {
   vehicles: Vehicle[];
   stop: { lat?: number; lon?: number };
   liveObservations: LiveVehicleObservation[];
+  /** Route shapes keyed by trip_id, from the worker (cached).
+   *  Trips without a shape entry just keep their scheduled ETA.
+   *  Pass `{}` to disable GPS-derived ETA altogether. */
+  shapes: Record<string, Polyline>;
   prefs: BoardPrefs;
   nowMs: number;
   /** Feed's IANA timezone, e.g. 'Europe/Bucharest'. Used uniformly by
@@ -148,7 +157,42 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
     nowMs: input.nowMs,
     timezone: input.timezone,
   });
-  return assembleStationBoard(reconciled, input.stop, input.prefs, input.nowMs, input.timezone);
+  const predicted = applyGpsEta(reconciled, input.shapes, input.stop);
+  return assembleStationBoard(predicted, input.stop, input.prefs, input.nowMs, input.timezone);
+}
+
+/** Replace the scheduled-based ETA on reconciled rows with a
+ *  GPS-derived one, where possible. Skipped at trip origin (no
+ *  movement to extrapolate), when the stop has no coords, when no
+ *  shape is available for the trip, or when the row isn't reconciled
+ *  (we have no GPS to use). Pure. */
+export function applyGpsEta(
+  vehicles: Vehicle[],
+  shapes: Record<string, Polyline>,
+  stop: { lat?: number; lon?: number },
+): Vehicle[] {
+  if (typeof stop.lat !== 'number' || typeof stop.lon !== 'number') return vehicles;
+  const stopPos = { lat: stop.lat, lon: stop.lon };
+  return vehicles.map<Vehicle>((v) => {
+    if (v.kind !== 'reconciled') return v;
+    if (v.schedule.isAtTripStart === true) return v;
+    const polyline = shapes[v.schedule.tripId];
+    if (!polyline || polyline.length < 2) return v;
+    const p = predictEta({
+      vehiclePos: { lat: v.position.lat, lon: v.position.lon },
+      stopPos,
+      polyline,
+      vehicleSpeedMs: v.position.speedMs ?? null,
+    });
+    return {
+      ...v,
+      eta: {
+        minutes: Math.round(p.minutes),
+        distanceMeters: p.distanceMeters,
+        confidence: p.confidence,
+      },
+    };
+  });
 }
 
 /** Deduped, sorted route list for a station based on the schedule.
