@@ -536,9 +536,23 @@
                    which window the repo query covers. -->
               <Stack spacing={0.5}>
                 {#if trips.length === 0}
-                  <Typography variant="body2" class="text-[color:var(--color-fg-muted)] py-2">
-                    No more departures {view === 'tomorrow' ? 'tomorrow morning' : 'today'}.
-                  </Typography>
+                  <Stack spacing={1} class="py-1">
+                    <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
+                      No more departures {view === 'tomorrow' ? 'tomorrow morning' : 'today'}.
+                    </Typography>
+                    {#if view === 'today'}
+                      <!-- Mirrors the Next-trip empty state: one-tap
+                           shortcut to tomorrow so the empty state
+                           isn't a dead end. -->
+                      <button
+                        type="button"
+                        onclick={() => pickView('tomorrow')}
+                        class="text-sm underline text-[color:var(--color-primary)] hover:text-[color:var(--color-fg)] self-start"
+                      >
+                        Show tomorrow's schedule →
+                      </button>
+                    {/if}
+                  </Stack>
                 {:else}
                   {#each trips as t (t.tripId)}
                     {@const isOpen = expandedTripId === t.tripId}
