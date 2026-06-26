@@ -24,7 +24,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, Moon } from 'lucide-svelte';
+  import { ArrowRightLeft, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
   import {
     Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
     Stack, Typography,
@@ -185,6 +185,17 @@
     goto(`/map/route/${routeId}_${otherDir}`, { replaceState: false });
   }
 
+  // Header zoom controls. Thin wrappers over Leaflet's imperative
+  // API — disabled until the map is mounted so the buttons don't
+  // throw before init.
+  const mapReady = $derived(mapInstance != null);
+  function zoomIn() { mapInstance?.zoomIn(); }
+  function zoomOut() { mapInstance?.zoomOut(); }
+  function fitToRoute() {
+    if (!mapInstance || !shapeLayer) return;
+    mapInstance.fitBounds(shapeLayer.getBounds(), { padding: [24, 24] });
+  }
+
   // ── Leaflet ────────────────────────────────────────────────────────
   // Leaflet is browser-only; init in onMount. The instance + per-layer
   // refs are non-reactive state held outside Svelte runes so we can
@@ -206,7 +217,10 @@
     await import('leaflet/dist/leaflet.css');
     if (!mapEl) return;
     mapInstance = L.map(mapEl, {
-      zoomControl: true,
+      // Native +/- control is moved into the page header alongside
+      // the direction-swap button so all map chrome lives in one
+      // place. Attribution stays on (license requirement).
+      zoomControl: false,
       attributionControl: true,
       // Reasonable default — we'll fitBounds once shape loads.
       center: [46.77, 23.6],
@@ -393,9 +407,20 @@
                 </Typography>
               {/if}
             </Stack>
-            <IconButton aria-label="Swap direction" onclick={swapDirection}>
-              <ArrowRightLeft size={18} />
-            </IconButton>
+            <Stack direction="row" spacing={0.5} align="center" class="shrink-0">
+              <IconButton aria-label="Zoom out" disabled={!mapReady} onclick={zoomOut}>
+                <Minus size={18} />
+              </IconButton>
+              <IconButton aria-label="Zoom in" disabled={!mapReady} onclick={zoomIn}>
+                <Plus size={18} />
+              </IconButton>
+              <IconButton aria-label="Fit route to view" disabled={!mapReady} onclick={fitToRoute}>
+                <Maximize2 size={18} />
+              </IconButton>
+              <IconButton aria-label="Swap direction" onclick={swapDirection}>
+                <ArrowRightLeft size={18} />
+              </IconButton>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
