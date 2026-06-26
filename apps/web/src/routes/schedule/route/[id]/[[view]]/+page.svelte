@@ -318,13 +318,21 @@
   // midnight value. Urgency rule lives in the domain (`scheduleUrgency`);
   // the 'Departing' label is the same convention StationCard uses for
   // the departing-bucket vehicle row.
+  //
+  // Trip start times are minutes-since-midnight of the view's *target*
+  // calendar day, which is tomorrow for the Tomorrow tab. nowMin is
+  // always today's frame, so we shift the trip value by 24h when the
+  // view is Tomorrow before computing the delta \u2014 otherwise a
+  // tomorrow-23:00 trip displays as '16 min ago' against a
+  // today-23:16 clock instead of the ~24h-away truth.
+  const viewDayOffsetMin = $derived(view === 'tomorrow' ? 24 * 60 : 0);
   function relText(min: number): string {
-    const delta = min - nowMin;
+    const delta = min + viewDayOffsetMin - nowMin;
     if (delta < 1 && delta > -1) return 'Departing';
     return formatRelativeMin(delta);
   }
   function relClass(min: number): string {
-    return urgencyClass(scheduleUrgency(min - nowMin));
+    return urgencyClass(scheduleUrgency(min + viewDayOffsetMin - nowMin));
   }
 
   // Build a /schedule/route/... URL from the structured params and
