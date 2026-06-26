@@ -366,22 +366,314 @@ live sources, decodes
   worker's last-success timestamp).
 - API key dot mention is removed from the Settings copy.
 
-## 10. Sequencing
+### 9.8 Multi-feed data lifecycle (app side)
 
-| Step | Where | Done in |
-|---|---|---|
-| 1. Refactor `neary-gtfs` to this layout, drop Tranzy | `ciotlosm/neary-gtfs` branch `refactor/feeds-from-transitous` | Out-of-band |
-| 2. First `binaries` publish with just `ctp-cluj` + `Bucuresti-Ilfov` (proof of multi-feed) | `ciotlosm/neary-gtfs` | Out-of-band |
-| 3. Open Transitous PR adding `Cluj-Napoca-CTP` to `ro.json` | `public-transport/transitous` | Out-of-band, after #2 stable |
-| 4. v2 app: swap `agencies.ts` → `feeds.ts`, `agencyId` → `feedId`, drop `apiKey` | This repo, `rebuild/v2-svelte-sqlite` (or a child branch) | Phase 3.5 — small commit |
-| 5. v2 app: GPS-based feed auto-pick | Same | Same commit |
-| 6. v2 app: real Stations view (Phase 4) | Same | After #4 |
-| 7. v2 app: live worker + edge proxy (Phase 5) | Same | After #6 |
+`feeds.json` is a **catalog** of many SQLite blobs, not one. The v2 app
+therefore needs an explicit story for: which feed(s) are on-device,
+when to swap, how to evict, and what happens offline. Owned by the
+GTFS worker; the UI thread only sees high-level events (`seeding`,
+`ready`, `evicted`, `offline-and-missing`).
 
-Until step 1+2 are live, the v2 app keeps using the dev-only
-`apps/web/static/dev-data/agency-2.sqlite3.gz` we generate from
-`scripts/build-sqlite`. The migration to `feeds.json` is one well-scoped
-commit when the new `binaries` branch is publishing.
+#### 9.8.1 Storage model
+
+Each feed lives as one OPFS file: `/<feedId>.sqlite3`. Multiple feeds
+coexist in the same OPFS-SAHPool. A worker-owned metadata blob
+`/feeds-meta.json` records per-feed bookkeeping:
+
+```jsonc
+{
+  "version": 1,
+  "feeds": {
+    "ctp-cluj":      { "hash": "sha256-…", "generated_at": "...",
+                       "size_bytes": 4406857, "last_used_at": "..." },
+    "stb-bucuresti": { "hash": "sha256-…", "generated_at": "...",
+                       "size_bytes": 9821000, "last_used_at": "..." }
+  },
+  "active": "ctp-cluj",
+  "last_registry_check": "2026-06-26T08:14:00Z",
+  "registry_etag": "W/\"abc…\""
+}
+```
+
+#### 9.8.2 Switch flow
+
+When `userPrefs.feedId` changes (from picker or auto-pick):
+
+1. UI fires `setFeed(newId)` over Comlink. StatusBar shows
+   `loading: "Switching to <Name>"`.
+2. Worker closes the current `Database` handle (file stays in OPFS).
+3. If `/<newId>.sqlite3` is **already in OPFS** *and* its `hash`
+   matches `feeds.json[newId].hash` → open it; emit `ready`. Typical
+   warm switch <100 ms.
+4. Else (cold or stale): worker streams `feed.files.sqlite_gz` from
+   `binaries`, decompresses, writes the OPFS file in place (overwrite
+   if stale), updates `feeds-meta.json`, opens it. StatusBar shows
+   percent done. Typical 4–20 MB → 1–5 s on a phone.
+5. Old feed's OPFS file is **not deleted**. Kept for warm re-switch.
+   Eviction handled in §9.8.4.
+
+#### 9.8.3 Freshness check
+
+Two-tier, cheap-by-default:
+
+- **Tier A (every app launch + manual refresh)**: `GET feeds.json`
+  with `If-None-Match: <registry_etag>`. 304 → no work. 200 → diff:
+  for each on-device feed, compare its stored `hash` with the new one.
+  Mismatch → mark that feed `stale: true` in `feeds-meta.json`.
+- **Tier B (on stale-active-feed)**: surface the "Schedule" status
+  dot as **yellow**. Clicking it opens a one-line update prompt
+  ("Schedule update available · ~4 MB"). User confirms → §9.8.2 cold
+  path runs in the background; current session keeps using the old
+  blob until the new one is ready, then swaps. Never auto-evict
+  mid-session.
+
+This is the only network call against `feeds.json` after first launch.
+The blobs themselves are immutable per `hash`, so re-seeding only
+happens when the user opts in.
+
+#### 9.8.4 Eviction policy
+
+Goal: stay under **~100 MB total OPFS usage** for SQLite files, leave
+headroom for the browser's own quota tasks.
+
+Rules (run at end of every successful switch):
+
+1. Never evict the **active** feed.
+2. Never evict a feed marked `pinned: true` (offline-mode user
+   intent — see §9.8.6).
+3. If total OPFS GTFS bytes > 100 MB, evict by **least-recent
+   `last_used_at`** until under budget.
+4. When evicting a feed, also drop any favorites whose `feedId`
+   equals that feed's id (§9.8.5). Soft-warn the user via StatusBar
+   info ("Removed offline data for <Name>"); the user can re-pick
+   that city to re-download.
+
+100 MB / ~5 MB-per-feed gives ~20 cities cached without ever
+evicting. The budget is intentionally generous because OPFS is
+opt-in for the user (Safari shows an install prompt for PWAs > 50 MB
+on iOS; the app stays under that by default since only one feed is
+"hot" at a time).
+
+#### 9.8.5 Favorites are feed-scoped
+
+A stop_id like `1234` is meaningless without an agency context — the
+same numeric ID in Cluj and Bucharest refers to different stops. The
+favorites store therefore keys on `{ feedId, stopId }`, not bare
+`stopId`:
+
+```ts
+// apps/web/src/lib/stores/favorites.svelte.ts
+type FavoriteRef = { feedId: string; stopId: string };
+type FavoritesByFeed = Record<string /* feedId */, string[] /* stopIds */>;
+```
+
+Switching feeds doesn't lose favorites; the UI just filters to the
+active feed's slice. Evicting a feed (§9.8.4) *does* drop that
+feed's favorites — they'd be unresolvable without the SQLite anyway.
+
+#### 9.8.6 Pin for offline
+
+Power-user gesture in the feed picker: long-press / context menu →
+**"Keep available offline"**. Sets `feeds-meta.json[feedId].pinned =
+true`. Pinned feeds:
+
+- Are exempt from LRU eviction (§9.8.4).
+- Pre-fetch their `.sqlite3.gz` on next freshness update without
+  requiring an interactive prompt (still surfaces progress in
+  StatusBar, just doesn't gate on user confirmation).
+
+Use case: traveler downloads Bucharest before a trip, knows it'll
+work without network on arrival.
+
+#### 9.8.7 Offline behaviour
+
+Decision matrix when `navigator.onLine === false`:
+
+| State | UX |
+|---|---|
+| Active feed on-device, GPS inside its bbox | Full app works; live dot turns gray (RT unavailable); ghosts everywhere |
+| Active feed on-device, GPS outside bbox | App works for the on-device feed; "You're outside <Name> — pick another city" banner; picker shows only feeds with `last_used_at != null` (i.e. previously cached) |
+| Active feed not on-device | "Offline — <Name> isn't downloaded yet. Connect to download (~4 MB) or pick a downloaded city." StatusBar error severity |
+| No feed ever picked, no GPS, no cached registry | "Offline — connect once to download a city" |
+
+The PWA SW (already in place) handles app-shell caching; this section
+covers only the GTFS-blob cache, which is OPFS not Cache Storage.
+
+#### 9.8.8 Worker API additions
+
+Extend `GtfsRepo` with:
+
+```ts
+interface GtfsRepo {
+  // …existing methods…
+  setFeed(feedId: string): Promise<void>;       // existing in §9.1
+  listCachedFeeds(): Promise<CachedFeedMeta[]>; // for picker UI
+  pinFeed(feedId: string, pinned: boolean): Promise<void>;
+  evictFeed(feedId: string): Promise<void>;     // user-initiated
+  checkRegistryFreshness(): Promise<RegistryDiff>;
+}
+```
+
+The picker UI consumes `listCachedFeeds()` to decorate rows with
+"📦 cached" / "📌 pinned" / "⬇ ~4 MB" labels and read offline-state.
+
+
+## 10. Evolution roadmap
+
+This refactor is large enough that it can't ship in a single weekend
+without risking the v1 app. The roadmap below splits it into six
+milestones, each independently shippable, each leaving the system in
+a coherent state.
+
+**Branching strategy**:
+- `main` of `neary-gtfs` — keeps producing `releases` artifacts until
+  M2 cutover. Don't touch v1 consumers.
+- `refactor/feeds-from-transitous` — landing zone for M1; merged to
+  `main` once M2 publishes cleanly.
+- `releases` (v1) — **frozen** after M2 cutover, kept alive a few
+  weeks so v1 PWAs in the wild don't break overnight, then deleted.
+- `binaries` (v2) — force-push or appended commits per daily build
+  (start with appended, switch later if too large).
+
+### M0 — Today (baseline)
+
+- Single agency. Cluj only. v1 app reads `releases/data/agency.json`
+  and per-agency JSON files. v2 app reads
+  `apps/web/static/dev-data/agency-2.sqlite3.gz` produced by
+  `apps/web/scripts/build-sqlite`.
+- `src/sync-tranzy.js` still pulls Tranzy daily.
+
+**Done.** Reference point.
+
+### M1 — Repo scaffold (no behaviour change for users)
+
+Scope (in `refactor/feeds-from-transitous` branch of neary-gtfs):
+- New layout per §5.
+- Add `public-transport/transitous` as a git submodule under
+  `transitous-feeds/`.
+- Port `src/build.js` (ctpcj.ro scraper) → `feeds/ctp-cluj/build.js`
+  unchanged in behaviour.
+- Add `src/pipeline/{resolve-feeds,fetch-gtfs,make-sqlite,
+  derive-bbox,make-app-registry,build-all}.js`. Skeletons.
+- `countries.json = ["ro"]`.
+- New daily workflow `.github/workflows/daily.yml` runs against the
+  `refactor/` branch only; output goes to a `binaries-staging`
+  branch (NOT `binaries` yet).
+
+Success criteria:
+- `binaries-staging` is force-pushed nightly with a valid
+  `feeds.json` listing exactly one feed (ctp-cluj).
+- `feeds.json` validates against a written JSON Schema (committed to
+  the repo at `schemas/feeds.schema.json`) in CI.
+- ctp-cluj GTFS .zip passes MobilityData's canonical validator with
+  zero `ERROR`s.
+- `releases` branch and v1 still work, untouched.
+
+Risks: submodule pinning. Pin Transitous to a known-good commit;
+bump explicitly, never tracking `HEAD`.
+
+### M2 — First multi-feed publish + v2 app cutover
+
+Scope (neary-gtfs):
+- Add Bucuresti-Ilfov as the second feed (sourced from Transitous's
+  `ro.json` → mdb-2098 mirror). Pure smoke test — proves the
+  "non-Cluj" code path.
+- Promote `binaries-staging` → `binaries` (rename the branch, keep
+  history).
+- Merge `refactor/feeds-from-transitous` → `main`.
+
+Scope (neary app, this repo, single commit on a child branch):
+- §9.1–9.4 changes: `agencies.ts` → `feeds.ts`, `agencyId` → `feedId`,
+  hardcoded `AGENCIES_WITH_SQLITE = new Set([2])` gone, Settings
+  picker uses `feeds.json`.
+- `seedUrlFor` reads `feed.files.sqlite_gz` against the `binaries`
+  raw URL — no more `/dev-data/` special case.
+- Bare-minimum §9.8 lifecycle: cold-switch download, no eviction,
+  no pinning yet (just enough to switch between Cluj and Bucharest
+  for QA).
+
+Success criteria:
+- The v2 app in dev can switch between Cluj and Bucharest, with the
+  Stations list re-populating from each city's SQLite.
+- v1 app continues working from `releases` (nothing on its critical
+  path changed).
+- `apps/web/static/dev-data/` is deleted from the repo;
+  `apps/web/scripts/build-sqlite` is deleted (its job has moved to
+  neary-gtfs's `make-sqlite.js`).
+
+Risks: GitHub raw URLs throttle aggressively if many PWA installs
+hit them concurrently on launch. Mitigation: jsDelivr in front of
+the raw URL (`https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries/outputs/feeds.json`).
+
+### M3 — RO coverage complete
+
+Scope (neary-gtfs):
+- Resolve every entry in `transitous-feeds/feeds/ro.json` (currently
+  ~10 agencies including SCTP Iași, RATC Constanța, RATT Timișoara,
+  TUS Sibiu, CFR rail, etc.). Build SQLite for each.
+- `feeds.json` lists ~10 feeds with full bboxes.
+
+Scope (neary app):
+- Full §9.8 lifecycle: LRU eviction (§9.8.4), freshness Tier A
+  check (§9.8.3), feed-scoped favorites (§9.8.5).
+- `locationStore.pickFeed()` (§9.5) auto-picks by GPS bbox
+  containment. Manual override always available.
+- Picker UI shows ⬇ size + 📦 cached state per row (§9.8.8).
+
+Success criteria:
+- New user opens the app anywhere in Romania → correct city
+  auto-picked or "no feed for your area" surfaced cleanly.
+- A user who visits 5 cities ends up with all 5 in OPFS or LRU
+  evicts the oldest. Total under 100 MB.
+
+Risks: bbox overlaps (rail + city). Tie-break rule from §11: pick
+smallest bbox. Document in picker copy.
+
+### M4 — Upstream Transitous PR
+
+Scope (out of neary-gtfs entirely):
+- Open PR against `public-transport/transitous` adding
+  `Cluj-Napoca-CTP` to `ro.json` per §8.
+- Coordinate with Transitous maintainers on whether mdb-2121 stays
+  as a fallback or gets `skip`-ed.
+
+Success criteria:
+- PR accepted and merged.
+- Next Transitous build on `main` includes our feed; the
+  ~100 downstream consumers (KDE Itinerary, GNOME Maps, Bimba, etc.)
+  start serving up-to-date Cluj data without us doing anything.
+
+Risks: validator strictness on the Transitous side surfaces issues
+our local validator missed. Buffer a week here for back-and-forth.
+
+### M5 — Geographic growth
+
+Scope (neary-gtfs only — no app changes):
+- Open `countries.json` from `["ro"]` to additional ISO codes as
+  Romanian users actually travel and request them. First likely
+  additions: `["hu", "de", "at", "it"]`.
+- Add ops doc at `docs/adding-a-country.md` (one PR edit to
+  `countries.json` + verify Transitous's `<iso>.json` is usable +
+  manual feed-by-feed validator pass).
+
+Success criteria:
+- Adding a new country is a 10-line PR.
+- App users opening the app abroad get a sensible feed or the
+  documented "no feed for your area" UI.
+
+Risks: storage growth. The §9.8.4 100 MB cap is the safety valve;
+we never need to gate country growth on app-side work.
+
+### Explicitly deferred (out of scope for M0–M5)
+
+| Deferred | Why |
+|---|---|
+| Per-agency static map tiles | Adds a separate hosting story; not blocking schedule UX |
+| Stop-shape simplification (Douglas-Peucker etc.) | Premature; the SQLite blob handles full geometry fine |
+| Versioned `feeds.json` (`/v1/feeds.json` style) | One file, force-pushed; semver only if we break the schema |
+| Multi-region SQLite sharding (e.g. per-route blobs) | OPFS easily handles 20 MB per feed; sharding is a problem we don't have |
+| Replacing the daily cron with webhook-driven builds | Cron is fine; ctpcj.ro doesn't expose change notifications anyway |
+
 
 ## 11. Open items
 
