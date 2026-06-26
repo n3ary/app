@@ -136,8 +136,6 @@ async function bootstrap(feed: Feed): Promise<Database> {
     }
     console.log(`[gtfs.worker] Importing ${bytes.byteLength} bytes into ${opfsFile}…`);
     poolUtil.importDb(opfsFile, bytes);
-  } else {
-    console.log(`[gtfs.worker] Feed ${feed.id} already seeded; opening directly.`);
   }
 
   const db = new poolUtil.OpfsSAHPoolDb(opfsFile);

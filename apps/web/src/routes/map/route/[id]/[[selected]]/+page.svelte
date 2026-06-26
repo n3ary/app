@@ -290,8 +290,6 @@
       const mod = (await import('leaflet')) as unknown as { default?: LeafletNS };
       L = (mod.default ?? (mod as unknown as LeafletNS));
       await import('leaflet/dist/leaflet.css');
-      // eslint-disable-next-line no-console
-      console.debug('[map] leaflet module ready', typeof L?.map);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('[map] leaflet import failed', e);
@@ -311,9 +309,7 @@
     const el = mapEl;
     const Lref = L;
 
-    const doInit = (w: number, h: number) => {
-      // eslint-disable-next-line no-console
-      console.debug('[map] init container', w, 'x', h);
+    const doInit = () => {
       try {
         mapInstance = Lref.map(el, {
           zoomControl: false,
@@ -344,8 +340,6 @@
           resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
           resizeObserver.observe(el);
         }
-        // eslint-disable-next-line no-console
-        console.debug('[map] init done; children', el.children.length);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('[map] init failed', e);
@@ -355,7 +349,7 @@
 
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      doInit(rect.width, rect.height);
+      doInit();
       return;
     }
 
@@ -368,7 +362,7 @@
       const r = entries[0]?.contentRect;
       if (!r || r.width <= 0 || r.height <= 0) return;
       gate.disconnect();
-      doInit(r.width, r.height);
+      doInit();
     });
     gate.observe(el);
   });
