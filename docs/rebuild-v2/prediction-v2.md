@@ -310,9 +310,47 @@ Lives outside the app. Can be a small Node script in `neary-gtfs/scripts/`.
 
 ### Phase P1 — `neary-gtfs` interpolation upgrade
 
-Stage A from §5. Self-contained, all in `neary-gtfs`. The web app keeps reading `stop_times.txt` from SQLite without code changes; it just gets better data. Shippable in isolation.
+The whole of Stage A from §5. Spelled out explicitly because this is the most consequential change in the rollout and the existing Cluj formula is wrong on every axis. Self-contained, all in `neary-gtfs`. The web app keeps reading `stop_times.txt` from SQLite without code changes; it just gets better data. Shippable in isolation.
 
-Acceptance: visible time differences on the Schedule view for sparse-stop routes (e.g. 25N's intermediate timing should look more realistic at peak).
+Only the **Cluj** path changes — feeds that ship full operator `stop_times.txt` via Transitous keep using the operator's times as authoritative (no interpolation). The new formula replaces [`interpolateStopTimes`](../../../neary-gtfs/feeds/cluj-napoca/build.js#L166-L188).
+
+**P1 deliverables, in order:**
+
+1. **Shape-aware segment distance.** For each consecutive `(stop[i], stop[i+1])` on a trip, distance is `distAlongShape(stop[i+1]) − distAlongShape(stop[i])` using the projection math already in `apps/web/src/lib/domain/shapeProjection.ts` (port to JS in `neary-gtfs/src/pipeline/lib/`). Falls back to haversine only when the trip has no `shape_id`. This alone fixes any route that crosses the Someș with a one-way bridge detour today's haversine misses.
+2. **Time-of-day speed profile, per-feed.** Three numbers in `feeds/<id>/config.json` (Q.1 decided). Cluj defaults pending the P0 measurement; reasonable seed values: `kmh_peak: 12`, `kmh_offpeak: 22`, `kmh_night: 30`. The bucket for a given segment is decided by the segment's *start* time (which we compute as we walk the trip forward), not the trip's start time — so a long route that starts off-peak and rolls into peak hits both speeds correctly.
+3. **Per-stop dwell, with proper arrival/departure split.** Today's Cluj build sets `arrival_time === departure_time` for every stop. With dwell, intermediate stops get:
+   ```
+   intermediate.arrival_time   = previous.departure_time + segment_travel
+   intermediate.departure_time = intermediate.arrival_time + dwell
+   ```
+   Origin: `arrival_time = departure_time = operator-published value` (no upstream dwell to model; the published time IS the departure). Terminus: `arrival_time = previous.departure_time + segment_travel`, `departure_time = arrival_time` (no continuation). Dwell default: **20 s** for intermediate stops (Q.2 still open; flat 20 s ships first, per-class is a follow-up).
+4. **`shape_dist_traveled` populated** on every `stop_times` row using the projection from step 1. Single biggest perf win for the web app — eliminates the per-route `buildTripShapePlan` projection cost at runtime (Phase P2 consumes this; P1 just produces it).
+5. **Drop the min/max-per-stop clamp.** If the speed profile says a route takes 18 min, let it. The clamps in today's `interpolateStopTimes` mostly mask bad input rather than guard against it.
+
+**Worked example** (Cluj 25N, peak hour, 4 hypothetical stops):
+
+Operator publishes only `start_departure = 17:00:00`.
+
+| i | Stop | Cum dist (shape, m) | Seg dist (m) | Seg travel @ 12 km/h | arrival_time | departure_time |
+|---|---|---|---|---|---|---|
+| 0 | Origin | 0 | — | — | 17:00:00 | 17:00:00 |
+| 1 | A | 600 | 600 | 3 min | 17:03:00 | 17:03:20 |
+| 2 | B | 1 800 | 1 200 | 6 min | 17:09:20 | 17:09:40 |
+| 3 | Terminus | 3 000 | 1 200 | 6 min | 17:15:40 | 17:15:40 |
+
+Same trip today (haversine + 18 km/h + 0 dwell): all rows would compress, terminus would land around 17:10. The new times are realistic; today's are not.
+
+**What stays out of P1** so it stays shippable:
+- The runtime web-app changes that *consume* `shape_dist_traveled` — that's P2.
+- The runtime speed cascade / GPS-aware predictor — that's P3+.
+- Per-route or per-segment speed overrides — Q.1 deferred to "per-feed first, per-route later if needed".
+
+**Acceptance:**
+- For Cluj, visible time differences on the Schedule view for sparse-stop routes (25N's intermediate timing should look more realistic at peak).
+- `arrival_time !== departure_time` for every intermediate stop on every Cluj trip.
+- `shape_dist_traveled` is non-NULL for every `stop_times` row produced by the Cluj build.
+- The cumulative trip duration on a known route matches operator-published terminus times within a few minutes (or, if there is no published terminus, matches a manually-stopwatched reference trip).
+- All other feeds: zero behavioural change (operator times remain authoritative).
 
 ### Phase P2 — `shape_dist_traveled` round-trip
 
@@ -487,3 +525,4 @@ Things this design deliberately does *not* attempt, with reasons:
 - 2026-06-27 — draft created. Sources: v1 deep-dive (Explore subagent), `neary-gtfs` interpolation validation (Explore subagent), current-v2 pipeline trace (earlier audit), industry context (OTP / OneBusAway / GTFS-RT TripUpdates). Awaiting decisions on Q.1–Q.7.
 - 2026-06-27 — Q.1 decided **per-feed** (not per-route). Q.3 decided **keep v1's city-centre tier** as a 4th step in the cascade. Q.4 decided **drop `nowTicker` to 5 s globally** (no per-page split). Q.6 decided **freeze at last known position with yellow border** on VERY_STALE GPS. §6.5 added: explainer of the three loops (live poll / nowTicker / refreshBus), recommended config, and the refresh-button contract. Q.2 / Q.5 / Q.7 still open.
 - 2026-06-27 — P5 scope clarified: the map moves *every* visible vehicle on each `nowTicker` tick, not just live-GPS ones. Schedule-only vehicles interpolate continuously between their scheduled stops; live-GPS vehicles dead-reckon from their last sample. Source determines confidence + reckoning rules, not whether the marker animates. §5.C.3 + Phase P5 description rewritten.
+- 2026-06-27 — P1 scope spelled out in full instead of "Stage A from §5". Five explicit deliverables: shape-aware segment distance, per-feed time-of-day speed profile, per-stop dwell with proper arrival/departure split, `shape_dist_traveled` populated, drop the min/max clamp. Worked example added showing today's haversine+18 km/h+0 dwell vs the new formula on a 4-stop trip. Acceptance criteria added. Only the Cluj path changes; feeds with operator-provided `stop_times.txt` keep using those as authoritative.
