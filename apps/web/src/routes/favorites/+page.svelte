@@ -59,6 +59,21 @@
     );
   });
 
+  // Per-type accent painted by THIS feed's RouteBadges — pick the
+  // first route of each type and reuse its `route.color`. Used by
+  // the filter chips so a 'Trolleybus' chip shows the same blue the
+  // trolleybus badges below it show, instead of a separate per-mode
+  // palette that would never agree with the badges.
+  const typeAccent = $derived.by<Map<VehicleType, string>>(() => {
+    const map = new Map<VehicleType, string>();
+    if (!allRoutes) return map;
+    for (const r of allRoutes) {
+      const t = r.type ?? 'unknown';
+      if (!map.has(t)) map.set(t, r.color);
+    }
+    return map;
+  });
+
   // Apply the type filter once, then split into the two cards. Within
   // each section, sort numeric-first then alpha.
   function sortRoutes(list: Route[]): Route[] {
@@ -143,7 +158,7 @@
               </Stack>
               <Stack direction="row" spacing={1} align="center" wrap>
                 {#each presentTypes as t (t)}
-                  <TypeBadge type={t} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
+                  <TypeBadge type={t} color={typeAccent.get(t)} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
                 {/each}
                 {#if typeFilter.size > 0}
                   <button

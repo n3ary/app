@@ -2,8 +2,12 @@
   TypeBadge — small badge representing a vehicle type
   (bus / tram / trolleybus / …). Shape matches RouteBadge so it
   reads as a peer to route badges in the same UI surface (rounded
-  square, similar padding + font). Color comes from the type's
-  accent (VEHICLE_TYPE_COLOR), text from vehicleTypeLabel.
+  square, similar padding + font). Color is feed-aware: the caller
+  passes the accent the feed actually paints routes of this type
+  with (typically `route.color` from a representative route) so the
+  filter chip and the RouteBadges below it match. Falls back to the
+  generic VEHICLE_TYPE_COLOR palette when the caller has nothing
+  more specific.
 
   Used by the /favorites view as a multi-select mode filter. Active
   = solid filled (badge "on"), inactive = outlined (badge "off").
@@ -17,13 +21,18 @@
 
   type Props = {
     type: VehicleType;
+    /** Override the accent. Pass `route.color` from a sample route
+     *  of this type so the chip matches what RouteBadge paints. */
+    color?: string;
     active?: boolean;
     onclick?: () => void;
     size?: Size;
     class?: string;
   };
 
-  let { type, active = false, onclick, size = 'medium', class: className }: Props = $props();
+  let {
+    type, color, active = false, onclick, size = 'medium', class: className,
+  }: Props = $props();
 
   // Match the RouteBadge size scale so a row mixing both reads as
   // visually consistent.
@@ -33,7 +42,7 @@
     large: 'h-8 px-2.5 text-base',
   };
 
-  const color = $derived(VEHICLE_TYPE_COLOR[type]);
+  const accent = $derived(color ?? VEHICLE_TYPE_COLOR[type]);
   const label = $derived(vehicleTypeLabel(type));
 </script>
 
@@ -44,8 +53,8 @@
   title={label}
   onclick={onclick}
   style={active
-    ? `background:${color};color:#fff;border-color:${color};`
-    : `background:transparent;color:${color};border-color:${color};`}
+    ? `background:${accent};color:#fff;border-color:${accent};`
+    : `background:transparent;color:${accent};border-color:${accent};`}
   class={cn(
     'inline-flex items-center justify-center font-semibold rounded-md select-none whitespace-nowrap border-2 cursor-pointer',
     'transition-colors',
