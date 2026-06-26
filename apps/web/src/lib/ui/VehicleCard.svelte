@@ -31,16 +31,19 @@
 
   let { vehicle, urgency, onclick, class: className }: Props = $props();
 
-  // Per-kind visuals. Spec §2 visual-variant table. Schedule-only kinds
-  // (`scheduled` and `predicted`) get the same dashed treatment for now —
-  // they only diverge once the live reconciler can promote a `predicted`
-  // run to `reconciled` (Phase 5). No opacity dimming on either.
+  // Per-kind visuals. Spec §2 visual-variant table. The kind only drives
+  // the badge icon and color now — every row gets the same solid border.
+  // Schedule-only kinds (`scheduled` / `predicted`) used to render with
+  // a dashed border + opacity dim, but that's misleading when there is
+  // no live source to contrast against (Phase 4). Once a live source is
+  // configured (Phase 5+) the dim is applied separately via the `dim`
+  // prop — see spec §2 for the new rule.
   const KIND = $derived({
-    corroborated: { border: 'border-solid',  icon: CheckCircle2, label: 'Corroborated', iconBg: 'bg-[color:var(--color-success)]' },
-    reconciled:   { border: 'border-solid',  icon: Calendar,     label: 'Reconciled',   iconBg: 'bg-[color:var(--color-success)]' },
-    live:         { border: 'border-solid',  icon: Radio,        label: 'Live',         iconBg: 'bg-[color:var(--color-success)]' },
-    predicted:    { border: 'border-dashed', icon: Clock,        label: 'Predicted',    iconBg: 'bg-[color:var(--color-warning)]' },
-    scheduled:    { border: 'border-dashed', icon: Calendar,     label: 'Scheduled',    iconBg: 'bg-[color:var(--color-fg-muted)]' },
+    corroborated: { icon: CheckCircle2, label: 'Corroborated', iconBg: 'bg-[color:var(--color-success)]' },
+    reconciled:   { icon: Calendar,     label: 'Reconciled',   iconBg: 'bg-[color:var(--color-success)]' },
+    live:         { icon: Radio,        label: 'Live',         iconBg: 'bg-[color:var(--color-success)]' },
+    predicted:    { icon: Clock,        label: 'Predicted',    iconBg: 'bg-[color:var(--color-warning)]' },
+    scheduled:    { icon: Calendar,     label: 'Scheduled',    iconBg: 'bg-[color:var(--color-fg-muted)]' },
   }[vehicle.kind]);
 
   const KindIcon = $derived(KIND.icon);
@@ -80,9 +83,8 @@
   onclick={onclick}
   onkeydown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') onclick?.(); } : undefined}
   class={cn(
-    'flex items-center gap-3 px-3 py-2 border-2 rounded-md transition-colors',
+    'flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
     'border-[color:var(--color-border)]',
-    KIND.border,
     interactive && 'cursor-pointer hover:bg-[color:var(--color-border)]/30',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
     className,

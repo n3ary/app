@@ -185,18 +185,51 @@ export interface Vehicle {
 
 ### Visual variant table
 
-| Kind            | `position.source`            | Visual                                |
-| --------------- | ---------------------------- | ------------------------------------- |
-| `corroborated`  | `gps` (latest of N sources)  | solid + check-circle pip + bold border |
-| `reconciled`    | `gps`                        | solid + calendar pip                  |
-| `live`          | `gps`                        | solid                                 |
-| `predicted`     | `predicted-from-schedule`    | dashed                                |
-| `scheduled`     | n/a (no marker on map, list item with calendar icon) | dashed, calendar icon (same as `predicted` until live reconciler lands) |
+The kind picks the **badge icon** in the corner of the row; everything else
+about the card (border, opacity, time color, anomaly indicator) is driven
+by orthogonal rules below.
 
-Schedule-only kinds (`predicted` / `scheduled`) are always shown — they
-are the only data we have when no live source is wired, and the user
-should not be able to hide them. (Earlier draft had a
-`showScheduleOnlyVehicles` toggle; dropped per request.)
+| Kind            | `position.source`            | Corner badge          |
+| --------------- | ---------------------------- | --------------------- |
+| `corroborated`  | `gps` (latest of N sources)  | green check-circle    |
+| `reconciled`    | `gps`                        | green calendar        |
+| `live`          | `gps`                        | green radio           |
+| `predicted`     | `predicted-from-schedule`    | yellow clock          |
+| `scheduled`     | n/a                          | grey calendar         |
+
+Schedule-only kinds (`predicted` / `scheduled`) are always shown.
+
+### Card border, opacity, and anomaly indicator
+
+These are **separate** signals from the kind badge:
+
+- **Border** — always a solid 2 px outline. v2 deliberately does *not* use
+  dashed/dotted borders to encode "less trustworthy"; that idea was tried
+  and dropped — when there's no live source to contrast against (Phase 4),
+  dashing every row is meaningless visual noise.
+
+- **Opacity dimming on headsign+secondary line** (Phase 5+). Applied iff
+  **all** of these hold for the row:
+  1. `vehicle.kind ∈ {scheduled, predicted}`, AND
+  2. at least one live source is configured for the active feed (so a
+     non-dimmed row would have been there to contrast against), AND
+  3. this stop is **not** the trip's first stop (`stop_sequence !== 0`).
+     The schedule at the start station is generally the most accurate
+     piece of data we have for that trip; dimming it would be wrong.
+
+  Phase 4 has no live source configured, so condition (2) fails for every
+  row and nothing is dimmed.
+
+- **Anomaly indicator** (Phase 5+). For `live`/`reconciled`/`corroborated`
+  rows that the reconciler flagged as suspicious (late by more than the
+  configured tolerance, stale GPS, off-shape, terminus-anchor mismatch),
+  show a yellow ⚠️ chip (warning) or red ⚠ chip (error) before the
+  corner badge. Tapping the chip opens a tooltip describing the heuristic
+  that fired: "GPS hasn't updated for 4 min", "Reported position 200 m off
+  the route shape", "Schedule says this trip ended 12 min ago", etc.
+  Anomalies live on `vehicle.anomalies?: VehicleAnomaly[]` (new field
+  introduced in Phase 5). They do NOT use dimming — these rows are live
+  and important; the user needs to see them, just with a flag.
 
 ### Why this is one type and not five
 
