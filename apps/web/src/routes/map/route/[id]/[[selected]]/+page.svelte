@@ -202,7 +202,14 @@
   // mutate them imperatively (Leaflet's API is fully imperative).
   let mapEl: HTMLDivElement | undefined = $state();
   type LeafletNS = typeof import('leaflet');
-  let L: LeafletNS | null = null;
+  // L MUST be $state — onMount assigns it asynchronously after the
+  // dynamic import resolves; without reactivity the init $effect
+  // below would never know L changed from null to the module and
+  // would stay stuck on its early-return.
+  let L = $state<LeafletNS | null>(null);
+  // mapInstance + the layer refs are mutated imperatively by Leaflet
+  // and read only inside effects that already track mapEl / view, so
+  // they don't need to be reactive themselves.
   let mapInstance: import('leaflet').Map | null = null;
   let shapeLayer: import('leaflet').Polyline | null = null;
   let stopsLayer: import('leaflet').LayerGroup | null = null;
