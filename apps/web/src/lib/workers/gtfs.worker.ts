@@ -77,9 +77,16 @@ async function getPool() {
     // retry attempt re-run init instead of replaying the cached
     // rejection. We also do one in-flight retry against transient
     // races (HMR worker swap, another tab still releasing).
+    //
+    // `verbosity: 0` silences the pool's own per-file 'storeErr'
+    // logging. Those entries are one-per-blocked-slot during init
+    // and the pool surfaces the failure as a thrown rejection
+    // anyway — we already handle that here with retry + a
+    // user-readable error, so the console noise is pure FUD.
     const opts = {
       name: OPFS_POOL_NAME,
       forceReinitIfPreviouslyFailed: true,
+      verbosity: 0,
     } as const;
     try {
       return await sqlite3.installOpfsSAHPoolVfs(opts);
