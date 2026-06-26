@@ -3,10 +3,10 @@
  *
  * Architecture (plan §3):
  *   - Runs in a dedicated worker so SQL queries never block the UI thread.
- *   - First launch downloads agency-<id>.sqlite3.gz from CDN (locally:
- *     /dev-data/agency-2.sqlite3.gz served from apps/web/static/),
- *     decompresses, and imports into the OPFS SAH pool. Subsequent launches
- *     open the OPFS-resident file directly.
+ *   - First launch downloads <id>.sqlite3.gz from the neary-gtfs binaries
+ *     branch (fronted by jsDelivr), decompresses, and imports into the
+ *     OPFS SAH pool. Subsequent launches open the OPFS-resident file
+ *     directly.
  *   - The OPFS-SAHPool VFS works without COOP/COEP headers (it uses sync
  *     file APIs that are worker-only and don't need SharedArrayBuffer).
  *
@@ -16,48 +16,44 @@
 import * as Comlink from 'comlink';
 import sqlite3InitModule, { type Database, type Sqlite3Static } from '@sqlite.org/sqlite-wasm';
 
+import type { Feed } from '$lib/data/feeds';
 import type { Route, Station } from '$lib/domain/types';
 import type {
-  GtfsRepo, Manifest, StopWithDistance, UpcomingDeparture,
+  GtfsRepo, StopWithDistance, UpcomingDeparture,
 } from '$lib/data/gtfs/types';
 
 // ---------------------------------------------------------------------------
-// Source URL resolution per agency.
+// Source URL resolution per feed.
 //
-// Phase 2 ships agency 2 (CTP Cluj) locally — scripts/build-sqlite outputs
-// to apps/web/static/dev-data/, served at /dev-data/. Other agencies don't
-// have a SQLite blob yet; the future location once the neary-gtfs pipeline
-// publishes them is encoded here so the URL doesn't move when they land.
+// neary-gtfs publishes to the `binaries` branch; jsDelivr fronts it (CORS-
+// open, 12h CDN cache, immune to GitHub raw rate limits). Each feeds.json
+// entry has `files.sqlite_gz` as a path relative to the binaries branch
+// root — we just prepend the jsDelivr origin.
 // ---------------------------------------------------------------------------
 
+const BINARIES_BASE = 'https://cdn.jsdelivr.net/gh/ciotlosm/neary-gtfs@binaries';
 const OPFS_POOL_NAME = 'neary-gtfs';
 
-function seedUrlFor(agencyId: number): string {
-  // Local-first for agency 2 so dev doesn't depend on the (yet-to-exist) CDN
-  // .sqlite3 publication. Production deploy will swap this branch out once
-  // the pipeline lands the blob on the releases branch.
-  if (agencyId === 2) return `/dev-data/agency-${agencyId}.sqlite3.gz`;
-  return `https://raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/data/${agencyId}/${agencyId}.sqlite3.gz`;
+function seedUrlFor(feed: Feed): string {
+  if (!feed.files.sqlite_gz) {
+    throw new Error(`Feed "${feed.id}" has no sqlite_gz in feeds.json`);
+  }
+  return `${BINARIES_BASE}/${feed.files.sqlite_gz}`;
 }
 
-function manifestUrlFor(agencyId: number): string {
-  if (agencyId === 2) return `/dev-data/agency-${agencyId}.manifest.json`;
-  return `https://raw.githubusercontent.com/ciotlosm/neary-gtfs/releases/data/${agencyId}/${agencyId}.manifest.json`;
-}
-
-function opfsFileFor(agencyId: number): string {
-  return `/agency-${agencyId}.sqlite3`;
+function opfsFileFor(feedId: string): string {
+  return `/${feedId}.sqlite3`;
 }
 
 // ---------------------------------------------------------------------------
-// Lazy + agency-aware bootstrap. The pool is created once (it persists across
-// agency switches — multiple agency files can coexist in OPFS). The DB
-// instance is per-agency: switching agencies closes the previous DB and
-// opens (or seeds) the new one.
+// Lazy + feed-aware bootstrap. The pool is created once (it persists across
+// feed switches — multiple feed files can coexist in OPFS). The DB instance
+// is per-feed: switching feeds closes the previous DB and opens (or seeds)
+// the new one.
 // ---------------------------------------------------------------------------
 
 let poolPromise: Promise<Awaited<ReturnType<Sqlite3Static['installOpfsSAHPoolVfs']>>> | null = null;
-let currentAgencyId: number | null = null;
+let currentFeedId: string | null = null;
 let currentDb: Database | null = null;
 let bootstrapping: Promise<Database> | null = null;
 
@@ -74,25 +70,20 @@ async function getPool() {
   return poolPromise;
 }
 
-async function bootstrap(agencyId: number): Promise<Database> {
+async function bootstrap(feed: Feed): Promise<Database> {
   const poolUtil = await getPool();
-  const opfsFile = opfsFileFor(agencyId);
+  const opfsFile = opfsFileFor(feed.id);
 
   if (!poolUtil.getFileNames().includes(opfsFile)) {
-    const url = seedUrlFor(agencyId);
-    console.log(`[gtfs.worker] Seeding OPFS for agency ${agencyId} from`, url);
+    const url = seedUrlFor(feed);
+    console.log(`[gtfs.worker] Seeding OPFS for feed ${feed.id} from`, url);
     const res = await fetch(url);
     if (!res.ok || !res.body) {
-      throw new Error(
-        `Seed download for agency ${agencyId} failed (HTTP ${res.status}). ` +
-        (agencyId === 2
-          ? 'Did you run scripts/build-sqlite?'
-          : 'This agency does not have a SQLite blob published yet.'),
-      );
+      throw new Error(`Seed download for feed "${feed.id}" failed (HTTP ${res.status})`);
     }
-    // Magic-byte detection: some static servers (Vite's sirv) auto-decompress
-    // `.gz` responses; raw.githubusercontent.com does not. Decompress only
-    // when the body still starts with the gzip header.
+    // Magic-byte detection: some static servers (Vite's sirv during dev)
+    // auto-decompress `.gz` responses; jsDelivr / GitHub raw do not.
+    // Decompress only when the body still starts with the gzip header.
     let bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
       const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream('gzip'));
@@ -101,7 +92,7 @@ async function bootstrap(agencyId: number): Promise<Database> {
     console.log(`[gtfs.worker] Importing ${bytes.byteLength} bytes into ${opfsFile}…`);
     poolUtil.importDb(opfsFile, bytes);
   } else {
-    console.log(`[gtfs.worker] Agency ${agencyId} already seeded; opening directly.`);
+    console.log(`[gtfs.worker] Feed ${feed.id} already seeded; opening directly.`);
   }
 
   const db = new poolUtil.OpfsSAHPoolDb(opfsFile);
@@ -125,7 +116,7 @@ function closeCurrent() {
 async function ensureDb(): Promise<Database> {
   if (currentDb) return currentDb;
   if (bootstrapping) return bootstrapping;
-  throw new Error('GTFS worker not bound to an agency yet — call setAgency(id) first.');
+  throw new Error('GTFS worker not bound to a feed yet — call setFeed(feed) first.');
 }
 
 // ---------------------------------------------------------------------------
@@ -171,22 +162,22 @@ function timeToMinutes(t: string): number {
 const dayKeyCols = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 
 const api: GtfsRepo = {
-  async setAgency(agencyId: number): Promise<void> {
-    if (currentAgencyId === agencyId && currentDb) return;
-    if (currentAgencyId === agencyId && bootstrapping) {
+  async setFeed(feed: Feed): Promise<void> {
+    if (currentFeedId === feed.id && currentDb) return;
+    if (currentFeedId === feed.id && bootstrapping) {
       await bootstrapping;
       return;
     }
     closeCurrent();
-    currentAgencyId = agencyId;
-    bootstrapping = bootstrap(agencyId);
+    currentFeedId = feed.id;
+    bootstrapping = bootstrap(feed);
     try {
       currentDb = await bootstrapping;
     } catch (e) {
       // Failure leaves us without a current db so subsequent calls fail
-      // loudly. Reset the agency tracker so a later setAgency(sameId) can
+      // loudly. Reset the feed tracker so a later setFeed(sameFeed) can
       // retry.
-      currentAgencyId = null;
+      currentFeedId = null;
       throw e;
     } finally {
       bootstrapping = null;
@@ -196,15 +187,6 @@ const api: GtfsRepo = {
   async ready() {
     await ensureDb();
     return true;
-  },
-
-  async getManifest() {
-    if (currentAgencyId == null) {
-      throw new Error('No agency set — call setAgency(id) first.');
-    }
-    const res = await fetch(manifestUrlFor(currentAgencyId));
-    if (!res.ok) throw new Error(`Manifest fetch failed (${res.status})`);
-    return (await res.json()) as Manifest;
   },
 
   async getRoutes(): Promise<Route[]> {

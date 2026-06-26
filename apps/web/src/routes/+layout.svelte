@@ -11,6 +11,7 @@
   import { Heart, Home, MapPin, Settings } from 'lucide-svelte';
   import { AppLayout, type HeaderHealth } from '$lib/ui';
   import { connectionStore } from '$lib/stores/connectionStore.svelte';
+  import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -35,24 +36,29 @@
     document.documentElement.dataset.theme = userPrefs.theme;
   });
 
-  // Auto-bind the GTFS worker to the user's selected agency. The repo is
-  // lazily constructed; this effect only spawns the worker once an agency
-  // exists, then re-runs only when the id changes. Progress + errors are
-  // surfaced through the global StatusBar so the user sees them regardless
-  // of which route they're on when the change happens.
-  let lastBoundAgency = $state<number | null>(null);
+  // Auto-bind the GTFS worker to the user's selected feed. The repo is
+  // lazily constructed; this effect only spawns the worker once a feed
+  // exists in both userPrefs AND the loaded registry, then re-runs only
+  // when the id changes. Progress + errors are surfaced through the global
+  // StatusBar so the user sees them regardless of which route they're on.
+  let lastBoundFeedId = $state<string | null>(null);
   $effect(() => {
-    const id = userPrefs.agencyId;
-    if (id == null || id === lastBoundAgency) return;
-    lastBoundAgency = id;
+    void feedsStore.load();
+  });
+  $effect(() => {
+    const id = userPrefs.feedId;
+    if (id == null || id === lastBoundFeedId) return;
+    const feed = feedsStore.byId(id);
+    if (!feed) return; // registry not loaded yet; effect will re-fire when it is
+    lastBoundFeedId = id;
     const repo = getGtfsRepo();
     statusBus.push({
       id: 'gtfs-bind',
       kind: 'loading',
-      message: `Loading schedule for agency ${id}…`,
+      message: `Loading schedule for ${feed.name}…`,
     });
     repo
-      .setAgency(id)
+      .setFeed(feed)
       .then(() => {
         statusBus.push({
           id: 'gtfs-bind',
@@ -68,7 +74,7 @@
           ttlMs: 0,
         });
         // Roll back the binding tracker so the user can retry by re-selecting.
-        lastBoundAgency = null;
+        lastBoundFeedId = null;
       });
   });
 
@@ -111,8 +117,8 @@
       tooltip: connectionStore.online ? 'Online' : 'Offline',
     },
     schedule: {
-      state: userPrefs.agencyId == null ? 'idle' : 'ok',
-      tooltip: userPrefs.agencyId == null ? 'No agency selected' : 'Schedule loaded',
+      state: userPrefs.feedId == null ? 'idle' : 'ok',
+      tooltip: userPrefs.feedId == null ? 'No feed selected' : 'Schedule loaded',
     },
     live: {
       state: 'idle',

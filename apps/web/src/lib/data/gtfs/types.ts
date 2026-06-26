@@ -6,17 +6,8 @@
  * types so it stays trivially shareable between worker and main thread.
  */
 
+import type { Feed } from '$lib/data/feeds';
 import type { Route, Station } from '$lib/domain/types';
-
-export interface Manifest {
-  agencyId: number;
-  source: string;
-  /** ISO timestamp. */
-  generatedAt: string;
-  rowCounts: Record<string, number>;
-  rawBytes: number;
-  gzipBytes: number;
-}
 
 export interface StopWithDistance extends Station {
   /** Always populated by getStopsNear (meters). */
@@ -35,22 +26,19 @@ export interface UpcomingDeparture {
 
 export interface GtfsRepo {
   /**
-   * Select the agency the repo operates on. First call seeds the OPFS file
-   * (downloads + decompresses + imports). Subsequent calls with the same id
-   * are a no-op; calls with a different id close the current DB and
-   * re-bootstrap against the new one.
+   * Bind the repo to a feed. First call for a given feed.id seeds the OPFS
+   * file (downloads its sqlite_gz from jsDelivr + decompresses + opens).
+   * Subsequent calls with the same id are a no-op; calls with a different
+   * id close the current DB and re-bootstrap against the new one.
    *
-   * Throws (rejects) with a descriptive message when the seed download
-   * fails — the caller (typically the +layout effect) surfaces it via
+   * Throws (rejects) with a descriptive message when the seed download or
+   * open fails — the caller (typically the +layout effect) surfaces it via
    * StatusBar.
    */
-  setAgency(agencyId: number): Promise<void>;
+  setFeed(feed: Feed): Promise<void>;
 
   /** True once the DB is open and queryable. Cheap; safe to await on every call. */
   ready(): Promise<true>;
-
-  /** Manifest metadata (agency id, source, generated-at, row counts, sizes). */
-  getManifest(): Promise<Manifest>;
 
   /** All routes, sorted by short_name (numeric where possible). */
   getRoutes(): Promise<Route[]>;

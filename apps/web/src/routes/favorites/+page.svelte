@@ -18,8 +18,8 @@
         </div>
         <Typography variant="h4">Favorites</Typography>
         <Typography variant="body2" class="max-w-prose text-[color:var(--color-fg-muted)]">
-          {userPrefs.agencyId == null
-            ? 'Pick an agency in Settings first; then star routes from a station card to see them here.'
+          {userPrefs.feedId == null
+            ? 'Pick a feed in Settings first; then star routes from a station card to see them here.'
             : 'No favorites yet. Tap the heart on any route badge to add it.'}
         </Typography>
       </Stack>

@@ -1,2 +1,0 @@
-# Cached GTFS source zips — large, regenerable; not worth versioning.
-.cache/
