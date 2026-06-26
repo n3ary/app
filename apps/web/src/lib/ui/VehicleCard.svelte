@@ -81,6 +81,15 @@
     <div class="text-xs text-[color:var(--color-fg-muted)] truncate">{secondaryLine}</div>
   </div>
 
+  {#if vehicle.dropOffOnly}
+    <span
+      title="This trip only drops passengers off at this stop — you can't board here."
+      class="text-[10px] uppercase font-semibold tracking-wide px-1.5 py-0.5 rounded border border-[color:var(--color-danger)] text-[color:var(--color-danger)] shrink-0"
+    >
+      Drop off
+    </span>
+  {/if}
+
   <span
     title={KIND.label}
     aria-label={KIND.label}

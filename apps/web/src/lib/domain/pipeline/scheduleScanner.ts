@@ -98,7 +98,7 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       scheduledDeparture: departureMin,
       headsign: r.trip_headsign ?? undefined,
     };
-    const dropOffOnly = (r.pickup_type ?? 0) === 1 ? true : undefined;
+    const dropOffOnly = Number(r.pickup_type) === 1 ? true : undefined;
     const id = `trip:${r.trip_id}`;
     const etaMinutes = arrivalMin - nowMinSinceMidnight;
     const eta = {
