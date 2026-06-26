@@ -10,8 +10,16 @@
 import * as Comlink from 'comlink';
 import type { GtfsRepo } from './types';
 
-let cached: Comlink.Remote<GtfsRepo> | null = null;
-let workerInstance: Worker | null = null;
+// In production both refs are simple module-scope singletons. In dev we
+// restore them from `import.meta.hot.data` whenever this module is
+// hot-replaced, so the worker (and its OPFS-SAH handles, and the bound
+// SQLite DB) survives the reload. Without this, every save in the
+// editor that touches this module's dependency graph would orphan the
+// worker and trigger a full feed re-seed (~21 MB download + import).
+let cached: Comlink.Remote<GtfsRepo> | null =
+  (import.meta.hot?.data.cached as Comlink.Remote<GtfsRepo> | undefined) ?? null;
+let workerInstance: Worker | null =
+  (import.meta.hot?.data.workerInstance as Worker | undefined) ?? null;
 
 export function getGtfsRepo(): Comlink.Remote<GtfsRepo> {
   if (cached) return cached;
@@ -25,18 +33,15 @@ export function getGtfsRepo(): Comlink.Remote<GtfsRepo> {
   return cached;
 }
 
-// HMR cleanup. Without this, every dev hot-replace orphans the
-// previous worker — which still holds OPFS-SAH access handles on
-// the pool's slot files — and the freshly-spawned worker collides
-// with those handles on init, surfacing as the noisy
-// 'InvalidStateError, retrying' warning. Terminating the old
-// worker before the module re-evaluates lets OPFS release the
-// handles cleanly so the new worker's init is a no-op race.
-// Production untouched — `import.meta.hot` is undefined there.
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
-    workerInstance?.terminate();
-    workerInstance = null;
-    cached = null;
+  // Self-accept so Vite doesn't escalate updates here to a full page
+  // reload (which would force the feed-bind cold path).
+  import.meta.hot.accept();
+  // Hand the live worker + wrapper to the next module instance so the
+  // restored values above pick them back up. Production untouched —
+  // `import.meta.hot` is undefined there.
+  import.meta.hot.dispose((data) => {
+    data.workerInstance = workerInstance;
+    data.cached = cached;
   });
 }
