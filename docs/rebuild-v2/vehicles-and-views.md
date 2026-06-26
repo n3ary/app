@@ -163,9 +163,12 @@ export interface Vehicle {
    *  `['gtfs-rt']` (no Tranzy key) = `probable predicted`. */
   checkedSources?: LiveSource[];
 
-  /** True if this stop is marked drop-off-only for this trip (pickup_type=1
-   *  in GTFS). UI hides this vehicle from a station view by default unless
-   *  `userPrefs.showDropOffOnly` is on. Not relevant on map view. */
+  /** True if this stop is marked drop-off-only for this trip. The pipeline
+   *  sets this when either (a) GTFS `stop_times.pickup_type = 1`, OR (b)
+   *  the stop is the trip's terminus (`stop_sequence === MAX(stop_sequence)`
+   *  for that trip). Many operators leave `pickup_type` null at terminuses,
+   *  so the structural fallback catches them. UI hides by default unless
+   *  `userPrefs.showDropOffOnly`. Only meaningful in station-view context. */
   dropOffOnly?: boolean;
 }
 ```
@@ -323,7 +326,7 @@ ignores both and always shows every vehicle.
 
 | `userPrefs` flag             | Default | Effect on station view                                                |
 | ---------------------------- | ------- | --------------------------------------------------------------------- |
-| `showDropOffOnly`            | `true`  | When `false`, drop vehicles with `vehicle.dropOffOnly === true` (GTFS `stop_times.pickup_type = 1`). When `true`, show them with a "drop off only" chip. |
+| `showDropOffOnly`            | `true`  | When `false`, drop vehicles with `vehicle.dropOffOnly === true`. Set by `scheduleScanner` when either GTFS `stop_times.pickup_type = 1` OR the stop is the trip's terminus (operators routinely leave `pickup_type` null at the last stop, so the structural fallback catches those). When `true`, the row is shown with a small "Drop off" chip. |
 | `showDepartedVehicles`       | `false` | When `false`, drop the `departed` bucket entirely. When `true`, show recently-departed vehicles (within the 5-min recency window). |
 
 Schedule-only kinds (`predicted` / `scheduled`) are always shown.

@@ -6,6 +6,8 @@ const row = (overrides: Partial<ScheduleRow> = {}): ScheduleRow => ({
   arrival_time: '09:05:00',
   departure_time: '09:06:00',
   pickup_type: 0,
+  stop_sequence: 3,
+  last_seq: 8,
   route_id: '24',
   route_short_name: '24',
   route_color: 'ff0000',
@@ -81,6 +83,39 @@ describe('scanSchedule', () => {
       windowMinutes: 60,
     });
     expect(out[0].dropOffOnly).toBe(true);
+  });
+
+  it('flags terminus arrival as drop-off-only even when pickup_type is null', () => {
+    // Real-world case from Cluj: trip ends at this stop. pickup_type left
+    // null by the operator, but stop_sequence === last_seq signals it's a
+    // terminus arrival, so the scanner treats it as drop-off-only.
+    const out = scanSchedule({
+      rows: [row({
+        arrival_time: '09:05:00',
+        pickup_type: null,
+        stop_sequence: 8,
+        last_seq: 8,
+      })],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out[0].dropOffOnly).toBe(true);
+  });
+
+  it('does NOT flag a mid-trip stop with null pickup_type', () => {
+    const out = scanSchedule({
+      rows: [row({
+        arrival_time: '09:05:00',
+        pickup_type: null,
+        stop_sequence: 3,
+        last_seq: 8,
+      })],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out[0].dropOffOnly).toBeUndefined();
   });
 
   it('attaches checkedSources to predicted vehicles only', () => {

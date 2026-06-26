@@ -33,6 +33,13 @@ export interface ScheduleRow {
   arrival_time: string;        // GTFS HH:MM:SS (24h+ allowed)
   departure_time: string;
   pickup_type: number | null;  // 1 = drop-off only
+  /** Position of this stop within the trip's stop_times. */
+  stop_sequence: number;
+  /** Max stop_sequence for the same trip — i.e. the terminus index.
+   *  When `stop_sequence === last_seq` this row is the trip's terminus
+   *  arrival, which we treat as drop-off-only regardless of what
+   *  `pickup_type` says (operators routinely leave it null). */
+  last_seq: number;
   route_id: string | number;
   route_short_name: string;
   route_color: string | null;
@@ -99,7 +106,10 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       scheduledDeparture: departureMin,
       headsign: r.trip_headsign ?? undefined,
     };
-    const dropOffOnly = Number(r.pickup_type) === 1 ? true : undefined;
+    const dropOffOnly =
+      Number(r.pickup_type) === 1 || r.stop_sequence === r.last_seq
+        ? true
+        : undefined;
     const id = `trip:${r.trip_id}`;
     const etaMinutes = arrivalMin - nowMinSinceMidnight;
     const eta = {
