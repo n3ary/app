@@ -27,18 +27,17 @@ export function formatRelative(ms: number | null | undefined): string {
   return `${day} day${day === 1 ? '' : 's'} ago`;
 }
 
-/** Unix-ms → locale absolute timestamp in 24-hour format.
- *  Returns an empty string for null. `hourCycle: 'h23'` forces 0–23
- *  regardless of the user's locale defaulting to 12-hour. */
+/** Unix-ms → "DD/MM/YYYY, HH:MM" in 24-hour format.
+ *  Returns an empty string for null. Uses `en-GB` to pin DD/MM/YYYY
+ *  ordering; `hourCycle: 'h23'` forces 0–23 regardless of locale. */
 export function formatAbsolute(ms: number | null | undefined): string {
   if (ms == null) return '';
-  return new Date(ms).toLocaleString(undefined, {
-    year: 'numeric',
-    month: '2-digit',
+  return new Date(ms).toLocaleString('en-GB', {
     day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hourCycle: 'h23',
   });
 }
