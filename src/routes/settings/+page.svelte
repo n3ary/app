@@ -1,12 +1,13 @@
 <!--
-  Settings — user preferences. Theme picker, behavior toggles, and the
-  feed selector (sources feeds.json from the neary-gtfs binaries branch via
-  jsDelivr). Advanced settings (storage, API key, force reload, version,
-  debug toggles) live at /settings/advanced — placeholder linked at the
-  bottom for now.
+  Settings — user preferences. Theme picker, behavior toggles, the feed
+  selector (sources feeds.json from the neary-gtfs binaries branch via
+  jsDelivr), and a tiny Advanced section with the app version + when this
+  client first saw it. A dedicated /settings/advanced view will land
+  alongside storage / debug toggles in a later phase.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { version } from '$app/environment';
   import { CheckCheck, Locate, Moon, Sun } from 'lucide-svelte';
   import {
     Box, Button, Card, CardContent, Chip, List, ListItem, ListItemText,
@@ -15,13 +16,52 @@
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
 
+  /** localStorage key for tracking when this client first saw the current
+   *  app version. Stored as `{ version, at }` so a version bump resets the
+   *  timestamp on next load. */
+  const VERSION_SEEN_KEY = 'neary:version-first-seen';
+
+  let versionFirstSeenAt = $state<number | null>(null);
+
   onMount(() => {
     void feedsStore.load();
+
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(VERSION_SEEN_KEY);
+      const parsed = raw ? (JSON.parse(raw) as { version: string; at: number }) : null;
+      if (parsed && parsed.version === version && typeof parsed.at === 'number') {
+        versionFirstSeenAt = parsed.at;
+      } else {
+        const at = Date.now();
+        localStorage.setItem(VERSION_SEEN_KEY, JSON.stringify({ version, at }));
+        versionFirstSeenAt = at;
+      }
+    } catch {
+      // localStorage unavailable or corrupted; fall back to "unknown"
+    }
   });
 
   function fmtBytes(n: number | undefined | null): string {
     if (!n) return '';
     return n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function fmtRelative(ms: number | null): string {
+    if (ms == null) return '—';
+    const dt = Math.max(0, Date.now() - ms);
+    const min = Math.floor(dt / 60_000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} h ago`;
+    const day = Math.floor(hr / 24);
+    return `${day} day${day === 1 ? '' : 's'} ago`;
+  }
+
+  function fmtAbsolute(ms: number | null): string {
+    if (ms == null) return '';
+    return new Date(ms).toLocaleString();
   }
 </script>
 
@@ -171,10 +211,12 @@
           />
         </Stack>
 
-        <Typography variant="caption">
-          Storage breakdown, data freshness, force schedule reload, app version,
-          and more debug toggles land in a separate view in Phase 7.
-        </Typography>
+        <Stack spacing={0.5}>
+          <Typography variant="body2">App version</Typography>
+          <Typography variant="caption">
+            v{version} · updated {fmtRelative(versionFirstSeenAt)}{#if versionFirstSeenAt} ({fmtAbsolute(versionFirstSeenAt)}){/if}
+          </Typography>
+        </Stack>
       </Stack>
     </CardContent>
   </Card>

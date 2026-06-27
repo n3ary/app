@@ -38,11 +38,16 @@ assembly with a 24-hour window scoped to one route.
 
 | From | Tap target | Lands on |
 |---|---|---|
-| Stations card route badge | route id | `/schedule/route/[id]?stop=[stopId]` |
-| Stations card map icon | vehicle id | `/map/route/[id]?selected=[vehicleId]` |
-| Favorites saved route | card body | `/schedule/route/[id]` |
-| Favorites saved route | map icon | `/map/route/[id]` |
-| Map vehicle marker | marker | `/map/route/[id]?selected=[vehicleId]` |
+| Stations card route badge | route id | `/schedule/route/[id]_[direction]` (path-based; the picked direction is encoded as `_0` or `_1`) |
+| Stations card map icon | trip id | `/map/route/[id]_[direction]/[tripId]` (selected trip is a path segment) |
+| Favorites saved route | schedule icon | `/schedule/route/[id]_0` |
+| Favorites saved route | map icon | `/map/route/[id]_0` |
+| Map vehicle marker | marker | navigates to `/map/route/[id]_[direction]/[tripId]` with the new trip in the path |
+
+The favorites card body is intentionally not tappable — the badge is
+identity-only (mirrors VehicleCard). Navigation goes through the dedicated
+map / schedule icon buttons, so a quick tap on the colored badge doesn't
+lead anywhere unexpected.
 
 ## 2. Vehicle taxonomy
 
@@ -130,15 +135,22 @@ render above the route polyline.
 
 ### Selected vehicle highlight
 
-`/map/route/[id]?selected=[vehicleId]` reads the query param and renders
-the ring overlay on the matching marker. Tapping another marker updates
-the query param without navigation, so the back button still returns to
-the screen that opened the map.
+The selected trip is encoded as a **path segment**, not a query param:
+`/map/route/[id]/[[selected]]`. Tapping another marker navigates to the new
+path, so the back button returns to the screen that opened the map.
 
 ## 5. Reconciliation gotchas
 
 These are the cases where a simple "match by trip_id then by timing"
 breaks down and the bug is easy to re-introduce.
+
+> [!IMPORTANT]
+> Only §5.5 is implemented today (Phase 4 baseline; the rest are Phase 5+
+> work tracked in [../plan/prediction-v2.md](../plan/prediction-v2.md) and
+> [../plan/tranzy-integration.md](../plan/tranzy-integration.md)). The
+> rules below are the **design** the reconciler must satisfy when live
+> reconciliation lands — if a future PR ships live matching without these,
+> you get the bugs listed.
 
 ### 5.1 The late-vehicle phantom
 
