@@ -200,8 +200,12 @@
     tripStartMin: number;
     /** True for 'before' (next only) and 'at-origin' — no movement prediction. */
     scheduled: boolean;
-    /** Set when the vehicle has a live GPS match. null = schedule-estimated. */
-    gpsConfidence: 'good' | 'poor' | null;
+    /** Set when the vehicle has a live GPS match.
+     *   - 'good':       fresh fix (< 3 min) — high trust.
+     *   - 'stale':      3–5 min old — reduced trust (yellow border).
+     *   - 'very-stale': 5–15 min old — low trust (red border).
+     *   - null:         schedule-estimated. */
+    gpsConfidence: 'good' | 'stale' | 'very-stale' | null;
   };
   const markers = $derived.by<VehicleMarker[]>(() => {
     if (!view) return [];
@@ -209,9 +213,10 @@
     let nextScheduledShown = false;
     const nowMs = nowTicker.ms;
 
-    // Hard cap on GPS-fix age before we stop showing the marker at all
-    // — applies to both reconciled and orphan rows so the two paths
-    // behave identically.
+    // Hard cap on GPS-fix age before we stop showing the orphan marker
+    // at all — orphans don't go through `predictPositionFromGps` (no
+    // shape projection without a trip plan), so we enforce the same
+    // 15-min ceiling here.
     const STALE_HARD_MAX_MS = 15 * 60_000;
 
     // Index reconciled vehicles by their (static) tripId so each
@@ -234,25 +239,26 @@
       // otherwise.
       const reconciled = reconciledByTripId.get(t.tripId);
       let p: ReturnType<typeof predictPositionOnShape> | null = null;
-      let gpsConfidence: 'good' | 'poor' | null = null;
+      let gpsConfidence: 'good' | 'stale' | 'very-stale' | null = null;
       if (plan && reconciled?.kind === 'reconciled' && reconciled.position) {
         const pos = reconciled.position;
         const gps = predictPositionFromGps(
           plan,
           { lat: pos.lat, lon: pos.lon, speedMs: pos.speedMs ?? null, asOfMs: pos.asOf },
           nowMs,
+          { timezone: tz },
         );
         if (gps) {
           p = gps;
-          gpsConfidence = gps.freshness === 'fresh' ? 'good' : 'poor';
-        } else if (nowMs - pos.asOf < STALE_HARD_MAX_MS) {
-          // predictPositionFromGps expired the fix (> 5 min). Render at
-          // the raw last sample anyway — we still know roughly where
-          // the bus is, and that beats letting the schedule mark it
-          // 'after' which silently drops the marker.
-          p = { lat: pos.lat, lon: pos.lon, status: 'active' as const };
-          gpsConfidence = 'poor';
+          gpsConfidence =
+            gps.freshness === 'fresh' ? 'good'
+            : gps.freshness === 'stale' ? 'stale'
+            : 'very-stale';
         }
+        // No `else` fallback: predictPositionFromGps already extrapolates
+        // out to 15 min via the cascade. Anything older returns null and
+        // we fall through to schedule prediction so the marker doesn't
+        // freeze on a 30-min-old GPS sample.
       }
       if (!p) {
         p = plan
@@ -303,7 +309,13 @@
         // sort order stays defined.
         tripStartMin: v.schedule?.tripStartMin ?? nowMin,
         scheduled: false,
-        gpsConfidence: age < 2 * 60_000 ? 'good' : 'poor',
+        // Orphan freshness mirrors the reconciled bands so the marker
+        // styling matches. We don't have a trip plan to extrapolate
+        // along, but we still age the badge.
+        gpsConfidence:
+          age < 3 * 60_000 ? 'good'
+          : age < 5 * 60_000 ? 'stale'
+          : 'very-stale',
       });
     }
     return out;
@@ -748,7 +760,10 @@
       const relLabel = minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil, m.tripStartMin);
       infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:#16a34a;font-size:11px;">${clockSvg}<span style="margin-left:2px;">${relLabel}</span></span>`;
     } else if (m.gpsConfidence) {
-      const c = m.gpsConfidence === 'good' ? '#16a34a' : '#ca8a04';
+      const c =
+        m.gpsConfidence === 'good' ? '#16a34a'
+        : m.gpsConfidence === 'stale' ? '#ca8a04'
+        : '#dc2626';
       infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:${c};font-size:11px;opacity:0.85;">${gpsSvg}<span>gps</span></span>`;
     } else {
       infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:#888;font-size:11px;opacity:0.85;">${calSvg}<span>est.</span></span>`;
@@ -762,13 +777,14 @@
     selected: boolean,
     opacity: number,
     scheduled: boolean,
-    gpsConfidence: 'good' | 'poor' | null,
+    gpsConfidence: 'good' | 'stale' | 'very-stale' | null,
   ): string {
     const ring = selected
       ? 'box-shadow:0 0 0 3px #fff, 0 0 0 5px #111;'
-      : gpsConfidence === 'good'  ? 'box-shadow:0 0 0 2.5px #22c55e;'
-      : gpsConfidence === 'poor'  ? 'box-shadow:0 0 0 2.5px #eab308;'
-      :                             'box-shadow:0 0 0 2px #fff;';
+      : gpsConfidence === 'good'       ? 'box-shadow:0 0 0 2.5px #22c55e;'
+      : gpsConfidence === 'stale'      ? 'box-shadow:0 0 0 2.5px #eab308;'
+      : gpsConfidence === 'very-stale' ? 'box-shadow:0 0 0 2.5px #ef4444;'
+      :                                  'box-shadow:0 0 0 2px #fff;';
     // Scheduled vehicles (at-origin / next 'before'): outlined badge so
     // the user can distinguish "waiting to depart" from "en route".
     const colors = scheduled

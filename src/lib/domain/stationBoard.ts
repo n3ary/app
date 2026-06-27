@@ -22,8 +22,13 @@ import {
 } from './buckets';
 import { haversineMeters } from './distance';
 import { minSinceMidnightInTz } from './pipeline/timeUtils';
-import { predictEta } from './predictEta';
+import { predictArrivalAlongShape } from './predictArrivalAlongShape';
 import { projectOnPolyline, type Polyline } from './shapeProjection';
+import {
+  DEFAULT_FEED_SPEED_CONFIG,
+  type FeedSpeedConfig,
+} from './speedCascade';
+import { clockToBucket, DEFAULT_TOD_PROFILE, type TodProfile } from './timeOfDay';
 import type { Route, Vehicle, VehicleEta } from './types';
 
 export interface BoardRow {
@@ -153,9 +158,9 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
  *      become `kind: 'reconciled'` (GPS-bearing); orphan live obs
  *      whose (route, dir) the station serves are appended as
  *      `kind: 'live'` rows with a sibling-derived ETA seed.
- *   3. GPS-derived ETA (predictEta) on reconciled rows at intermediate
- *      stops. Origin rows keep the scheduled departure as their ETA
- *      because the bus isn't moving yet.
+ *   3. GPS-derived ETA (multi-tier speed cascade) on reconciled rows
+ *      at intermediate stops. Origin rows keep the scheduled departure
+ *      as their ETA because the bus isn't moving yet.
  *   4. Bucket + filter + sort + cap (assembleStationBoard).
  */
 
@@ -203,7 +208,10 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
   // so any scheduled sibling's polyline projects an orphan onto the
   // correct route geometry.
   const shapesByRouteDir = buildShapesByRouteDir(scoped, input.shapes);
-  const predicted = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir);
+  const predicted = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
+    nowMs: input.nowMs,
+    timezone: input.timezone,
+  });
   return assembleStationBoard(predicted, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
@@ -358,9 +366,25 @@ function buildShapesByRouteDir(
   return out;
 }
 
+/** Context for `applyGpsEta` — wall clock + feed-tuned tuning. */
+export interface ApplyGpsEtaContext {
+  /** Unix ms wall clock. */
+  nowMs: number;
+  /** Feed's IANA timezone. Combined with `nowMs` to compute the
+   *  feed-local TOD bucket used by the speed cascade. */
+  timezone: string;
+  /** Per-feed speed config. Defaults to the Cluj-tuned defaults; when
+   *  the feed registry eventually publishes `timing` blocks per feed,
+   *  callers will pass that through here. */
+  feedConfig?: FeedSpeedConfig;
+  /** Time-of-day profile (peak/night windows). Defaults to the
+   *  Cluj-tuned profile. */
+  todProfile?: TodProfile;
+}
+
 /** Replace the schedule-based ETA on rows with a live position
  *  (`kind: 'reconciled'` and `kind: 'live'` orphans) with a GPS-
- *  derived one, where possible.
+ *  derived one via the multi-tier speed cascade, where possible.
  *
  *  Shape lookup is two-step:
  *    1. By the row's own `tripId` (Cluj reconciled rows always
@@ -372,16 +396,16 @@ function buildShapesByRouteDir(
  *
  *  Skipped at trip origin:
  *   - For reconciled rows: when `v.schedule.isAtTripStart === true`.
- *     The schedule scanner labels the origin stop; predictEta would
- *     just produce noise from a parked bus's near-zero speed.
+ *     The schedule scanner labels the origin stop; the predictor
+ *     would just produce noise from a parked bus's near-zero speed.
  *   - For orphan kind:'live' rows: detected from the GPS projection
  *     itself — bus's `distAlong` on the shape is < AT_ORIGIN_DIST_M
  *     AND its speed is < AT_ORIGIN_SPEED_MS (or unknown). When the
  *     bus is detected at origin we keep the reconciler's sibling-
  *     derived ETA seed (see reconcile.ts) instead of overwriting
- *     with a GPS-derived noise estimate. The detection re-runs
- *     every render tick, so the ETA self-corrects to GPS-derived
- *     the moment the bus starts moving — handles early departures.
+ *     with a noise estimate. The detection re-runs every render
+ *     tick, so the ETA self-corrects to GPS-derived the moment the
+ *     bus starts moving — handles early departures.
  *
  *  Pure. */
 export function applyGpsEta(
@@ -389,9 +413,13 @@ export function applyGpsEta(
   shapes: Record<string, Polyline>,
   stop: { lat?: number; lon?: number },
   shapesByRouteDir: Record<string, Polyline> = {},
+  ctx: ApplyGpsEtaContext = { nowMs: Date.now(), timezone: 'UTC' },
 ): Vehicle[] {
   if (typeof stop.lat !== 'number' || typeof stop.lon !== 'number') return vehicles;
   const stopPos = { lat: stop.lat, lon: stop.lon };
+  const feedConfig = ctx.feedConfig ?? DEFAULT_FEED_SPEED_CONFIG;
+  const todProfile = ctx.todProfile ?? DEFAULT_TOD_PROFILE;
+  const todBucket = clockToBucket(minSinceMidnightInTz(ctx.nowMs, ctx.timezone), todProfile);
   return vehicles.map<Vehicle>((v) => {
     if (v.kind !== 'reconciled' && v.kind !== 'live') return v;
     if (v.kind === 'reconciled' && v.schedule.isAtTripStart === true) return v;
@@ -400,7 +428,7 @@ export function applyGpsEta(
     if (!polyline || polyline.length < 2) return v;
     // For live orphans: detect "parked at origin" — keep the
     // sibling-derived ETA seed the reconciler attached, don't
-    // overwrite with a GPS estimate driven by FALLBACK_SPEED_MS.
+    // overwrite with a fallback-driven estimate.
     if (v.kind === 'live') {
       const proj = projectOnPolyline(
         { lat: v.position.lat, lon: v.position.lon },
@@ -411,11 +439,14 @@ export function applyGpsEta(
         proj.distAlongM < AT_ORIGIN_DIST_M && speed < AT_ORIGIN_SPEED_MS;
       if (atOrigin && v.eta != null) return v;
     }
-    const p = predictEta({
+    const p = predictArrivalAlongShape({
       vehiclePos: { lat: v.position.lat, lon: v.position.lon },
       stopPos,
       polyline,
       vehicleSpeedMs: v.position.speedMs ?? null,
+      vehicleDirectionId: v.directionId,
+      todBucket,
+      feedConfig,
     });
     return {
       ...v,

@@ -62,21 +62,29 @@ These aren't up for re-litigation; they fix the shape of the work below.
 
 Numbered in dependency order. neary-gtfs work is grouped in §A at the end.
 
-### [ ] 1. Consume `shape_dist_traveled` at runtime
+### [x] 1. Consume `shape_dist_traveled` at runtime
+
+Shipped in **PR #74**.
 
 neary-gtfs already populates this column on every `stop_times` row
 (see §A.1). Web app still re-projects every stop in `buildTripShapePlan`
 on page load — wasted CPU.
 
-- [ ] Surface `shape_dist_traveled` on the rows returned by
+- [x] Surface `shape_dist_traveled` on the rows returned by
       [`getRouteMapView`](../../src/lib/workers/gtfs/queries/routeMapView.ts)
       and [`getStopsAlongTrip`](../../src/lib/workers/gtfs/queries/routeStops.ts).
-- [ ] Drop the `projectOnPolyline` call in `buildTripShapePlan`; read
+- [x] Drop the `projectOnPolyline` call in `buildTripShapePlan`; read
       `distAlongM` directly off the row.
 - [ ] Measure: route-map load CPU drops by the projection share
-      (hot route: 24B).
+      (hot route: 24B). *Not formally profiled — the fast path is
+      structurally guaranteed by the code, fallback path covered by
+      tests.*
 
-### [ ] 2. `predictArrivalAlongShape.ts` — multi-tier ETA
+### [x] 2. `predictArrivalAlongShape.ts` — multi-tier ETA
+
+Shipped in **PR #77**. Single-segment v1 wired into `assembleLiveBoard`;
+the full per-segment walk + dwell is deferred to item 3 (continuous
+position rendering needs the same machinery).
 
 Replaces today's single-tier [`predictEta.ts`](../../src/lib/domain/predictEta.ts).
 Composes the cascade (defined inline here) with the shape walk from
@@ -118,15 +126,15 @@ view all consume the same `ArrivalPlan` — no more `predictEta` vs
 Cascade runs **per segment**, not per vehicle. Speeds ≤ 5 km/h are
 treated as "stopped, not moving" and excluded from tiers 1–2.
 
-- [ ] Cascade module (`speedCascade.ts`) implementing tiers 1–5.
-- [ ] `dwellSecondsFor` helper (today flat 20 s; abstract for per-class
+- [x] Cascade module (`speedCascade.ts`) implementing tiers 1–5.
+- [x] `dwellSecondsFor` helper (today flat 20 s; abstract for per-class
       later).
-- [ ] `clockToBucket` TOD helper (reads `peakWindows` + `nightWindow`
+- [x] `clockToBucket` TOD helper (reads `peakWindows` + `nightWindow`
       from feed config).
-- [ ] `predictArrivalAlongShape.ts` module + tests.
-- [ ] Wire `assembleLiveBoard` to call it instead of `predictEta`.
+- [x] `predictArrivalAlongShape.ts` module + tests.
+- [x] Wire `assembleLiveBoard` to call it instead of `predictEta`.
 - [ ] Optional: feature flag for A/B vs today's single-tier ETA.
-- [ ] Delete `predictEta.ts` once the new path is the sole caller.
+- [x] Delete `predictEta.ts` once the new path is the sole caller.
 
 ### [ ] 3. Continuous position rendering for every visible vehicle
 
@@ -143,9 +151,11 @@ recomputes the anchor at the next tick.
       `predictedVel` alongside `predictedPos`.
 - [ ] Live-GPS path: `predictPositionFromGps` does the same.
 
-### [ ] 4. Freshness bands → border colour
+### [x] 4. Freshness bands → border colour
 
-(Depends on item 2.)
+Shipped in **PR #77**. `predictPositionFromGps` now extrapolates across
+three bands at cascade-driven speeds, and the map page renders the
+corresponding green / yellow / red marker borders.
 
 All three live-GPS bands extrapolate forward along the trip shape from the last
 known projected `distAlongM`, walking `legs[]` forward and consuming
@@ -166,19 +176,23 @@ extrapolates only in the `'fresh'` band (< 2 min) and uses the bus's
 single reported `speedMs` as a stopgap (ignores per-segment variation).
 Four changes:
 
-- [ ] Swap the speed source from `obs.speedMs` to a shape walk over
+- [x] Swap the speed source from `obs.speedMs` to a shape walk over
       `TripShapePlan.legs[]` at cascade-estimated speeds from item 2.
-- [ ] Extend coverage from "fresh only" to "fresh + stale + very-stale":
+      (v1: single-segment walk from the GPS projection; per-leg walk
+      lands with item 3.)
+- [x] Extend coverage from "fresh only" to "fresh + stale + very-stale":
       drop the `freshness === 'fresh'` gate, return positions through
       the 15 min cap.
-- [ ] Add `'very-stale'` to the `GpsFreshness` union; map renders
+- [x] Add `'very-stale'` to the `GpsFreshness` union; map renders
       marker borders by band (none / yellow / red).
-- [ ] Move the `STALE_HARD_MAX_MS = 15 min` cap off the map page into
+- [x] Move the `STALE_HARD_MAX_MS = 15 min` cap off the map page into
       the predictor so every consumer is consistent.
-- [ ] Align the freshness thresholds: today `FRESH_MS = 2 min`, doc
+- [x] Align the freshness thresholds: today `FRESH_MS = 2 min`, doc
       says 3 min. Pick one and reflect it in the code constants.
 
-### [ ] 5. Reconciliation: GPS + route-order tie-break
+### [x] 5. Reconciliation: GPS + route-order tie-break
+
+Shipped in **PR #75**.
 
 For each `(route, direction)` cohort within the existing timing tolerance:
 
@@ -199,8 +213,8 @@ Closes the same-minute-crossings case **and** the "two adjacent buses
 swap" case that independent greedy matching can produce on
 high-frequency lines.
 
-- [ ] Implement in [`reconcileWithLive`](../../src/lib/domain/reconcile.ts).
-- [ ] Tests for: (a) same-minute crossing; (b) two-bus swap that greedy
+- [x] Implement in [`reconcileWithLive`](../../src/lib/domain/reconcile.ts).
+- [x] Tests for: (a) same-minute crossing; (b) two-bus swap that greedy
       would mis-assign; (c) fallback to per-obs greedy when delta is
       implausible.
 
