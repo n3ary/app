@@ -159,16 +159,16 @@ describe('predictPositionFromGps', () => {
   const plan = buildTripShapePlan(twoStops, detourShape)!;
   const NOW = 1_700_000_000_000;
 
-  it('returns null when the GPS fix is older than 5 min', () => {
+  it('returns null when the GPS fix is older than 15 min', () => {
     const out = predictPositionFromGps(
       plan,
-      { lat: 0.5, lon: 1, speedMs: 5, asOfMs: NOW - 6 * 60_000 },
+      { lat: 0.5, lon: 1, speedMs: 5, asOfMs: NOW - 16 * 60_000 },
       NOW,
     );
     expect(out).toBeNull();
   });
 
-  it("flags a < 2 min fix as 'fresh'", () => {
+  it("flags a < 3 min fix as 'fresh'", () => {
     const out = predictPositionFromGps(
       plan,
       { lat: 0.5, lon: 1, speedMs: null, asOfMs: NOW - 30_000 },
@@ -178,24 +178,29 @@ describe('predictPositionFromGps', () => {
     expect(out?.status).toBe('active');
   });
 
-  it("flags a 2–5 min fix as 'stale' and skips dead-reckoning", () => {
-    const fix = { lat: 0.5, lon: 1, speedMs: 20, asOfMs: NOW - 3 * 60_000 };
+  it("flags a 3–5 min fix as 'stale' and still extrapolates via cascade", () => {
+    // Bus stopped at the time of the fix — obs.speedMs is null/0 —
+    // so the cascade falls back to the TOD-bucket speed and walks
+    // forward along the shape across the stale window.
+    const fix = { lat: 0, lon: 0, speedMs: 0, asOfMs: NOW - 4 * 60_000 };
     const stale = predictPositionFromGps(plan, fix, NOW)!;
     expect(stale.freshness).toBe('stale');
-    // Same call without speed should land on the same point — proves
-    // the stale path didn't extrapolate using speed.
-    const noSpeed = predictPositionFromGps(
-      plan,
-      { ...fix, speedMs: null },
-      NOW,
-    )!;
-    expect(stale.lat).toBeCloseTo(noSpeed.lat, 9);
-    expect(stale.lon).toBeCloseTo(noSpeed.lon, 9);
+    // The TOD walk should have advanced the marker from the projected
+    // origin point further along the shape (lon increases monotonically).
+    expect(stale.lon).toBeGreaterThan(0);
   });
 
-  it('dead-reckons forward along the shape when fresh + speed > 0', () => {
+  it("flags a 5–15 min fix as 'very-stale' and still extrapolates", () => {
+    const fix = { lat: 0, lon: 0, speedMs: null, asOfMs: NOW - 10 * 60_000 };
+    const out = predictPositionFromGps(plan, fix, NOW)!;
+    expect(out.freshness).toBe('very-stale');
+    expect(out.status).toBe('active');
+    expect(out.lon).toBeGreaterThan(0);
+  });
+
+  it('dead-reckons faster with an explicit speed than with the TOD fallback', () => {
     const fix = { lat: 0, lon: 0, asOfMs: NOW - 30_000 };
-    const still = predictPositionFromGps(
+    const todWalk = predictPositionFromGps(
       plan,
       { ...fix, speedMs: null },
       NOW,
@@ -205,15 +210,16 @@ describe('predictPositionFromGps', () => {
       { ...fix, speedMs: 50 },
       NOW,
     )!;
-    // Moving fix should have advanced along the shape (lon increases
-    // monotonically along the polyline). With null speed it sits at origin.
-    expect(still.lon).toBeCloseTo(0, 6);
-    expect(moving.lon).toBeGreaterThan(still.lon);
+    // Both walk forward along the shape; the explicit-speed fix
+    // (180 km/h equivalent) should land further along than the TOD
+    // fallback (~22 km/h offpeak default).
+    expect(todWalk.lon).toBeGreaterThan(0);
+    expect(moving.lon).toBeGreaterThan(todWalk.lon);
   });
 
   it('caps dead-reckoning so an outlier speed cannot overshoot the terminus', () => {
-    // Speed × dt would otherwise project far past the 3 km cap, but
-    // the result must still land on the polyline (clamped to total
+    // Speed × dt would otherwise project far past the cap, but the
+    // result must still land on the polyline (clamped to total
     // distance) — never past it.
     const out = predictPositionFromGps(
       plan,

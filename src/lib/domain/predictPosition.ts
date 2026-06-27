@@ -33,6 +33,16 @@ import {
   type MeasuredPolyline,
   type Polyline,
 } from './shapeProjection';
+import { minSinceMidnightInTz } from './pipeline/timeUtils';
+import {
+  DEFAULT_FEED_SPEED_CONFIG,
+  type FeedSpeedConfig,
+} from './speedCascade';
+import {
+  clockToBucket,
+  DEFAULT_TOD_PROFILE,
+  type TodProfile,
+} from './timeOfDay';
 
 export interface PredictStop {
   lat: number;
@@ -199,44 +209,72 @@ export interface GpsObservation {
   asOfMs: number;
 }
 
-export type GpsFreshness = 'fresh' | 'stale' | 'expired';
+export type GpsFreshness = 'fresh' | 'stale' | 'very-stale';
 
 export interface GpsPredictedPosition extends PredictedPosition {
   /** How stale the GPS fix is at `nowMs`:
-   *   - 'fresh':  < 2 min old; full dead-reckoning trusted.
-   *   - 'stale':  2–5 min old; position is the snapped GPS fix
-   *               (no extrapolation), UI should hint at lower confidence.
-   *   - 'expired': > 5 min old; caller should fall back to schedule
-   *                (this helper returns null instead). */
+   *   - 'fresh':       < 3 min old; cascade extrapolation, marker UI
+   *                    treats this as high-trust.
+   *   - 'stale':       3–5 min old; same cascade walk, marker UI hints
+   *                    at reduced trust (e.g. yellow border).
+   *   - 'very-stale':  5–15 min old; same cascade walk, marker UI hints
+   *                    at low trust (e.g. red border).
+   *   - older than 15 min: predictor returns null — caller falls back
+   *                    to schedule prediction or drops the marker. */
   freshness: GpsFreshness;
 }
 
+/** Optional cascade context for `predictPositionFromGps`. When omitted,
+ *  the predictor uses the Cluj-tuned defaults and assumes UTC for
+ *  computing the TOD bucket — fine for tests, but real callers should
+ *  pass `{ timezone }` so peak/night windows align with the feed's
+ *  local clock. */
+export interface PredictPositionFromGpsContext {
+  /** IANA timezone of the feed (e.g. 'Europe/Bucharest'). */
+  timezone?: string;
+  feedConfig?: FeedSpeedConfig;
+  todProfile?: TodProfile;
+}
+
 /** Hard cap on how far forward the dead-reckoner walks the bus per
- *  refresh tick. Caps a 10 m/s × 5 min worst case at 3 km regardless
- *  of the actual interval, so a stale-but-not-expired fix can't fly the
- *  marker off the visible part of the route. */
-const MAX_DEAD_RECKON_M = 3000;
-const FRESH_MS = 2 * 60_000;
-const EXPIRE_MS = 5 * 60_000;
+ *  refresh tick. Sized for the worst-case 15-min very-stale window at
+ *  the city-edge speed (≈45 km/h) — anything beyond that would risk
+ *  the marker skating past the visible part of the route. The poly-
+ *  line clamp in `pointAtDistance` still caps at the trip's total
+ *  length. */
+const MAX_DEAD_RECKON_M = 12_000;
+const FRESH_MS = 3 * 60_000;
+const STALE_MS = 5 * 60_000;
+const VERY_STALE_MS = 15 * 60_000;
+/** Reported speeds below this read as "stopped" — mirrors the speed
+ *  cascade's STOPPED_KMH so a bus parked at a red light falls back
+ *  to the TOD-bucket speed instead of dragging the marker to zero. */
+const STOPPED_KMH = 5;
 
 /**
  * Position from live GPS, dead-reckoned forward along the trip's shape.
  *
  * Why: the reconciler matches a live observation to a scheduled trip, but
  * the observation is a snapshot — between polls the marker shouldn't sit
- * still. Project the GPS fix onto the shape, then walk `speed × dt` metres
- * along the polyline so the marker glides until the next observation lands.
+ * still. Project the GPS fix onto the shape, then walk forward along the
+ * polyline at a speed picked by the cascade (own speed when moving;
+ * otherwise TOD-bucket speed from feed config) so the marker glides
+ * until the next observation lands.
  *
- * Returns `null` when the fix is older than `EXPIRE_MS` (caller falls back
- * to the schedule predictor) or when the projection fails.
+ * Freshness bands let the UI hint at trust:
+ *   - 'fresh' (< 3 min):       high trust.
+ *   - 'stale' (3–5 min):       reduced trust.
+ *   - 'very-stale' (5–15 min): low trust.
+ *   - older than 15 min:       returns `null` (caller falls back).
  */
 export function predictPositionFromGps(
   plan: TripShapePlan,
   obs: GpsObservation,
   nowMs: number,
+  ctx: PredictPositionFromGpsContext = {},
 ): GpsPredictedPosition | null {
   const dt = nowMs - obs.asOfMs;
-  if (dt > EXPIRE_MS) return null;
+  if (dt > VERY_STALE_MS) return null;
   if (plan.measured.points.length < 2) return null;
 
   const proj = projectOnPolyline(
@@ -245,19 +283,35 @@ export function predictPositionFromGps(
   );
 
   const freshness: GpsFreshness =
-    dt < FRESH_MS ? 'fresh' : 'stale';
+    dt < FRESH_MS ? 'fresh' : dt < STALE_MS ? 'stale' : 'very-stale';
 
-  // 'stale' fixes skip dead-reckoning — the speed at the time of the fix
-  // is too old to extrapolate from. Render the snapped point as-is.
-  let distAlongM = proj.distAlongM;
-  if (freshness === 'fresh' && obs.speedMs != null && obs.speedMs > 0) {
-    const forward = Math.min(
-      MAX_DEAD_RECKON_M,
-      (obs.speedMs * Math.max(0, dt)) / 1000,
-    );
-    distAlongM = Math.min(plan.measured.totalDistM, proj.distAlongM + forward);
-  }
+  const kmh = pickWalkKmh(obs, ctx, nowMs);
+  const speedMs = (kmh * 1000) / 3600;
+  const forward = Math.min(
+    MAX_DEAD_RECKON_M,
+    (speedMs * Math.max(0, dt)) / 1000,
+  );
+  const distAlongM = Math.min(plan.measured.totalDistM, proj.distAlongM + forward);
 
   const p = pointAtDistance(plan.measured, distAlongM);
   return { lat: p.lat, lon: p.lon, status: 'active', freshness };
+}
+
+function pickWalkKmh(
+  obs: GpsObservation,
+  ctx: PredictPositionFromGpsContext,
+  nowMs: number,
+): number {
+  if (obs.speedMs != null && obs.speedMs * 3.6 > STOPPED_KMH) {
+    return obs.speedMs * 3.6;
+  }
+  const cfg = ctx.feedConfig ?? DEFAULT_FEED_SPEED_CONFIG;
+  const tz = ctx.timezone ?? 'UTC';
+  const profile = ctx.todProfile ?? DEFAULT_TOD_PROFILE;
+  const bucket = clockToBucket(minSinceMidnightInTz(nowMs, tz), profile);
+  switch (bucket) {
+    case 'peak': return cfg.kmh_peak;
+    case 'night': return cfg.kmh_night;
+    case 'offpeak': default: return cfg.kmh_offpeak;
+  }
 }
