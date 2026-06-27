@@ -157,7 +157,9 @@
         // Fetch route shapes for every visible scheduled trip. The
         // composer uses them to derive GPS-based ETAs for reconciled
         // rows at intermediate stops. Worker caches by shape_id so
-        // re-fetching across renders is O(1).
+        // re-fetching across renders is O(1). Orphan shapes are
+        // topped up by a separate effect below as live observations
+        // arrive.
         const tripIds = selection.boards.flatMap((b) => tripIdsFromVehicles(b.vehicles));
         if (tripIds.length > 0) {
           shapes = await repo.getShapesForTrips(tripIds);
@@ -167,6 +169,37 @@
         expandedStopId = selection.expandedStopId;
       } catch (e) {
         boardsError = e instanceof Error ? e.message : String(e);
+      }
+    })();
+  });
+
+  // Top up `shapes` with any live-observation trip_ids that aren't
+  // already covered. Reconciler emits kind:'live' orphans for live
+  // obs on (route, direction) pairs the schedule scanner returned;
+  // applyGpsEta then needs the orphan's polyline (or a sibling's
+  // via shapesByRouteDir, but we want the orphan's own first).
+  // Filter to live obs whose route appears on a visible board so we
+  // don't fetch shapes for the entire city's live fleet.
+  $effect(() => {
+    if (!boards) return;
+    const visibleRouteIds = new Set<string>();
+    for (const b of boards) for (const v of b.vehicles) visibleRouteIds.add(v.route.id);
+    const missing = Array.from(
+      new Set(
+        liveVehiclesStore.observations
+          .filter((o) => o.tripId && visibleRouteIds.has(o.routeId) && !(o.tripId in shapes))
+          .map((o) => o.tripId),
+      ),
+    );
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const extra = await repo.getShapesForTrips(missing);
+        shapes = { ...shapes, ...extra };
+      } catch {
+        // Soft-fail: orphan ETAs fall back to the sibling shape via
+        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
       }
     })();
   });

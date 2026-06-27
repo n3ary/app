@@ -111,6 +111,8 @@ describe('applyGpsEta', () => {
     id: `trip:${opts.tripId}`,
     route: r24,
     type: 'bus',
+    tripId: opts.tripId,
+    directionId: 0,
     confidence: 'medium',
     schedule: {
       tripId: opts.tripId,
@@ -159,6 +161,53 @@ describe('applyGpsEta', () => {
     const v = reconciled({ tripId: 'T1' });
     const out = applyGpsEta([v], { T1: POLY }, {});
     expect(out[0]).toBe(v);
+  });
+
+  // ── kind:'live' orphan ETAs ────────────────────────────────────────
+
+  const orphan = (opts: { tripId: string; directionId?: 0 | 1 }): Vehicle => ({
+    kind: 'live',
+    id: `live:${opts.tripId}`,
+    route: r24,
+    type: 'bus',
+    tripId: opts.tripId,
+    directionId: opts.directionId ?? 0,
+    confidence: 'medium',
+    position: { lat: 46.770, lon: 23.580, source: 'gps', asOf: 0, speedMs: 5 },
+    liveSources: ['gtfs-rt'],
+  } as Vehicle);
+
+  it('computes ETA for kind:live orphans using their own trip shape', () => {
+    const v = orphan({ tripId: 'orphan-T2' });
+    const out = applyGpsEta([v], { 'orphan-T2': POLY }, STOP);
+    if (out[0].kind !== 'live') throw new Error('expected kind=live');
+    // 2 km @ 5 m/s = 400 s ≈ 7 min
+    expect(out[0].eta?.minutes).toBeGreaterThan(5);
+    expect(out[0].eta?.minutes).toBeLessThan(10);
+  });
+
+  it("falls back to a sibling's (route, dir) shape when the orphan's own trip_id has no shape", () => {
+    // Cluj trip-id-drift case: the orphan's own trip_id isn't in
+    // shapes (because it's not in static), but a scheduled sibling
+    // on the same (route, dir) provides the shape via the by-route-
+    // dir lookup.
+    const v = orphan({ tripId: 'orphan-no-shape' });
+    const out = applyGpsEta(
+      [v],
+      {},                                            // no per-trip shape
+      STOP,
+      { [`${r24.id}|0`]: POLY },                     // sibling-shape fallback
+    );
+    if (out[0].kind !== 'live') throw new Error('expected kind=live');
+    expect(out[0].eta?.minutes).toBeGreaterThan(5);
+    expect(out[0].eta?.minutes).toBeLessThan(10);
+  });
+
+  it('leaves orphan unchanged when neither own nor sibling shape is available', () => {
+    const v = orphan({ tripId: 'orphan-no-shape' });
+    const out = applyGpsEta([v], {}, STOP);  // no shapes at all
+    expect(out[0]).toBe(v);
+    expect(out[0].eta).toBeUndefined();
   });
 });
 

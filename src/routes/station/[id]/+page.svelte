@@ -79,6 +79,37 @@
       }
     })();
   });
+
+  // Top up `shapes` with any live-observation trip_ids that aren't
+  // already covered. Reconciler emits kind:'live' orphans for live
+  // obs on (route, direction) pairs the schedule scanner returned;
+  // applyGpsEta then needs the orphan's polyline (sibling fallback
+  // exists in assembleLiveBoard but its own shape is more accurate).
+  // Filtered to routes the board serves so we don't fetch shapes
+  // for the entire city's live fleet.
+  $effect(() => {
+    if (!board) return;
+    const visibleRouteIds = new Set<string>();
+    for (const v of board.vehicles) visibleRouteIds.add(v.route.id);
+    const missing = Array.from(
+      new Set(
+        liveVehiclesStore.observations
+          .filter((o) => o.tripId && visibleRouteIds.has(o.routeId) && !(o.tripId in shapes))
+          .map((o) => o.tripId),
+      ),
+    );
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const extra = await repo.getShapesForTrips(missing);
+        shapes = { ...shapes, ...extra };
+      } catch {
+        // Soft-fail: orphan ETAs fall back to the sibling shape via
+        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
+      }
+    })();
+  });
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">

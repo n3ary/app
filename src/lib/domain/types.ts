@@ -204,6 +204,19 @@ interface VehicleBase {
   route: Route;
   /** Mode of transport. Set by the pipeline from the route's GTFS route_type. */
   type: VehicleType;
+  /** GTFS trip_id this Vehicle represents. Present for every kind
+   *  that has trip-level identity (scheduled, predicted, reconciled,
+   *  corroborated set it from the static schedule; live orphans set
+   *  it from the live observation). Used by `applyGpsEta` for shape
+   *  lookup so we don't have to reach into `schedule.tripId`
+   *  (which orphans don't have). */
+  tripId?: string;
+  /** GTFS direction_id (0 or 1), or -1 when unknown. Trip-level
+   *  property — set wherever `tripId` is set. Used as the fallback
+   *  shape-lookup key when the trip_id's own shape isn't available
+   *  (route-level shapes are shared across trips on the same
+   *  (route, direction) in every feed we've seen). */
+  directionId?: 0 | 1 | -1;
   /** Final headsign for display; reconciler resolves from schedule or live. */
   headsign?: string;
   eta?: VehicleEta;

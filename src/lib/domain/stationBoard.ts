@@ -186,26 +186,66 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
     nowMs: input.nowMs,
     timezone: input.timezone,
   });
-  const predicted = applyGpsEta(reconciled, input.shapes, input.stop);
+  // Sibling-shape fallback for orphans whose own trip_id isn't in the
+  // shapes Map (Cluj trip-id drift case ~23%). All trips on a single
+  // (route, direction) share their shape_id in every feed we've seen,
+  // so any scheduled sibling's polyline projects an orphan onto the
+  // correct route geometry.
+  const shapesByRouteDir = buildShapesByRouteDir(scoped, input.shapes);
+  const predicted = applyGpsEta(reconciled, input.shapes, input.stop, shapesByRouteDir);
   return assembleStationBoard(predicted, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
-/** Replace the scheduled-based ETA on reconciled rows with a
- *  GPS-derived one, where possible. Skipped at trip origin (no
- *  movement to extrapolate), when the stop has no coords, when no
- *  shape is available for the trip, or when the row isn't reconciled
- *  (we have no GPS to use). Pure. */
+function buildShapesByRouteDir(
+  scheduled: Vehicle[],
+  shapes: Record<string, Polyline>,
+): Record<string, Polyline> {
+  const out: Record<string, Polyline> = {};
+  for (const v of scheduled) {
+    const dir = v.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const key = `${v.route.id}|${dir}`;
+    if (key in out) continue;
+    const tid = v.tripId;
+    if (!tid) continue;
+    const shape = shapes[tid];
+    if (!shape || shape.length < 2) continue;
+    out[key] = shape;
+  }
+  return out;
+}
+
+/** Replace the schedule-based ETA on rows with a live position
+ *  (`kind: 'reconciled'` and `kind: 'live'` orphans) with a GPS-
+ *  derived one, where possible.
+ *
+ *  Shape lookup is two-step:
+ *    1. By the row's own `tripId` (Cluj reconciled rows always
+ *       resolve here; ~77% of orphans do too).
+ *    2. By `(routeId, directionId)` from the sibling-shape fallback
+ *       built in `assembleLiveBoard` — handles orphans whose own
+ *       trip_id is in the live feed but absent from static (the
+ *       remaining ~23% with HHMM/run drift in Cluj).
+ *
+ *  Skipped at trip origin for reconciled rows (parked bus, speed
+ *  ~0, predictEta produces noise). NOT skipped for orphans —
+ *  trip-origin detection without a schedule context is a known
+ *  limitation tracked in /memories/repo/orphan-resolution-plan.md.
+ *
+ *  Pure. */
 export function applyGpsEta(
   vehicles: Vehicle[],
   shapes: Record<string, Polyline>,
   stop: { lat?: number; lon?: number },
+  shapesByRouteDir: Record<string, Polyline> = {},
 ): Vehicle[] {
   if (typeof stop.lat !== 'number' || typeof stop.lon !== 'number') return vehicles;
   const stopPos = { lat: stop.lat, lon: stop.lon };
   return vehicles.map<Vehicle>((v) => {
-    if (v.kind !== 'reconciled') return v;
-    if (v.schedule.isAtTripStart === true) return v;
-    const polyline = shapes[v.schedule.tripId];
+    if (v.kind !== 'reconciled' && v.kind !== 'live') return v;
+    if (v.kind === 'reconciled' && v.schedule.isAtTripStart === true) return v;
+    if (!v.position) return v;
+    const polyline = pickShape(v, shapes, shapesByRouteDir);
     if (!polyline || polyline.length < 2) return v;
     const p = predictEta({
       vehiclePos: { lat: v.position.lat, lon: v.position.lon },
@@ -222,6 +262,18 @@ export function applyGpsEta(
       },
     };
   });
+}
+
+function pickShape(
+  v: Vehicle,
+  shapes: Record<string, Polyline>,
+  shapesByRouteDir: Record<string, Polyline>,
+): Polyline | undefined {
+  const tid = v.tripId;
+  if (tid && shapes[tid]) return shapes[tid];
+  const dir = v.directionId;
+  if (dir !== 0 && dir !== 1) return undefined;
+  return shapesByRouteDir[`${v.route.id}|${dir}`];
 }
 
 /** Deduped, sorted route list for a station based on the schedule.

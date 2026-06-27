@@ -182,6 +182,8 @@ export function reconcileWithLive(
       id: v.id,
       route: v.route,
       type: v.type,
+      tripId: v.tripId,
+      directionId: v.directionId,
       schedule: v.schedule,
       headsign: v.headsign,
       eta: v.eta,
@@ -231,6 +233,8 @@ export function reconcileWithLive(
       id: `live:${obs.tripId}`,
       route: rep.route,
       type: rep.route.type ?? 'unknown',
+      tripId: obs.tripId,
+      directionId: dir,
       headsign: rep.headsign,
       confidence: 'medium',
       position: {
