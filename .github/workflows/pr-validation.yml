@@ -59,10 +59,9 @@ jobs:
           if [ "$CURRENT_VERSION" != "$NEXT_VERSION" ]; then
             echo "Bumping version from $CURRENT_VERSION to $NEXT_VERSION"
             npm version "$NEXT_VERSION" --no-git-tag-version
-            node scripts/update-version.js
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add package.json index.html public/sw.js
+            git add package.json
             git commit -m "chore(release): auto-bump to v${NEXT_VERSION}"
             git push
           else
@@ -70,7 +69,7 @@ jobs:
           fi
 
       - name: Type check
-        run: npx tsc -b
+        run: npm run check
 
       - name: Run tests
         run: npm test

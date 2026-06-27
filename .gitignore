@@ -12,12 +12,15 @@ dist
 dist-ssr
 *.local
 
-# SvelteKit (apps/web)
+# SvelteKit
 .svelte-kit
 build
 
+# Legacy monorepo build artifacts (apps/web moved to root; apps/ is now all gitignored)
+apps/
+
 # Generated SQLite blobs (regenerated locally via scripts/build-sqlite)
-apps/web/static/dev-data/
+static/dev-data/
 
 # Editor directories and files
 .vscode/*

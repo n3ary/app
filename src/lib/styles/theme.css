@@ -1,0 +1,77 @@
+/*
+ * theme.css — the single file that defines the v2 visual identity.
+ *
+ * Skinning the app = forking this file and swapping the values. All
+ * primitives and views consume these tokens via CSS vars; nothing else
+ * should hardcode a color.
+ *
+ * Dark mode: the html[data-theme="auto"] case follows `prefers-color-scheme`;
+ * users can pin light or dark explicitly via the settings (sets data-theme).
+ */
+
+@theme {
+  /* Light defaults */
+  --color-bg: oklch(98% 0 0);
+  --color-surface: oklch(100% 0 0);
+  --color-fg: oklch(20% 0 0);
+  --color-fg-muted: oklch(50% 0 0);
+  --color-border: oklch(90% 0 0);
+  --color-primary: oklch(55% 0.18 255);
+  --color-primary-fg: oklch(98% 0 0);
+  --color-danger: oklch(60% 0.21 25);
+  --color-warning: oklch(75% 0.16 80);
+  --color-success: oklch(60% 0.16 145);
+
+  --radius-card: 0.5rem;
+  --radius-chip: 9999px;
+}
+
+/*
+ * iOS PWA safe-area vars. Kept OUTSIDE the @theme block because
+ * Tailwind v4's @theme serialiser doesn't reliably preserve the
+ * runtime semantics of env() — putting these in plain :root
+ * guarantees the browser evaluates env(safe-area-inset-*) at
+ * paint time (= the inset that the OS reports) rather than at
+ * build time (= 0). Used by Header / BottomNavigation / AppLayout
+ * to extend backgrounds into the notch + home-indicator area and
+ * push content out of the way.
+ */
+:root {
+  --space-safe-top: env(safe-area-inset-top, 0px);
+  --space-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Manual dark override */
+[data-theme='dark'] {
+  --color-bg: oklch(15% 0 0);
+  --color-surface: oklch(20% 0 0);
+  --color-fg: oklch(96% 0 0);
+  --color-fg-muted: oklch(70% 0 0);
+  --color-border: oklch(30% 0 0);
+  --color-primary: oklch(70% 0.16 255);
+  --color-primary-fg: oklch(15% 0 0);
+}
+
+/* System-preference dark when user hasn't pinned */
+@media (prefers-color-scheme: dark) {
+  [data-theme='auto'] {
+    --color-bg: oklch(15% 0 0);
+    --color-surface: oklch(20% 0 0);
+    --color-fg: oklch(96% 0 0);
+    --color-fg-muted: oklch(70% 0 0);
+    --color-border: oklch(30% 0 0);
+    --color-primary: oklch(70% 0.16 255);
+    --color-primary-fg: oklch(15% 0 0);
+  }
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
