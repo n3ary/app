@@ -9,3 +9,4 @@ Short, enforceable rules. Each doc is < 100 lines.
 | [naming.md](naming.md) | Files, directories, code identifiers |
 | [testing.md](testing.md) | Scope, location, size targets |
 | [verification.md](verification.md) | Verify before stating; confidence in answers |
+| [diagramming.md](diagramming.md) | Mermaid + GFM admonitions — visual conventions |

@@ -23,6 +23,13 @@ If none of these match cleanly, the doc probably shouldn't exist.
 - Pointers to source code for anything implementation-specific.
 - Cross-references to related docs.
 
+## Diagrams and call-outs
+
+Use Mermaid for every diagram, and GFM admonitions (`> [!NOTE]`, `> [!TIP]`,
+`> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`) to flag important content.
+`[!CAUTION]` is reserved for **anti-patterns**. Full rules in
+[diagramming.md](diagramming.md).
+
 ## What no doc should have
 
 - Restating what the code already says line-by-line.

@@ -30,6 +30,11 @@ Node 24+.
 Start at [docs/README.md](docs/README.md). Code is the source of truth for
 behavior; docs cover what isn't obvious from reading [src/](src/).
 
+## For AI agents
+
+Read [AGENTS.md](AGENTS.md) first. It owns the "how to work in this repo"
+rules; everything else cascades from there.
+
 ## Deployment
 
 Netlify auto-deploys `main`. See [docs/specs/ci-and-versioning.md](docs/specs/ci-and-versioning.md)

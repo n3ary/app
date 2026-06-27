@@ -23,11 +23,12 @@ isn't obvious from reading [src/](../src/).
 - Anything that becomes obvious from code or grows stale is deleted, not preserved.
 - See [standards/documentation.md](standards/documentation.md) for the placement rules.
 
-## How to read this repo as an agent
+## For AI agents
 
-1. Start at the root [README.md](../README.md).
-2. For "what does the system do" → [architecture/system-overview.md](architecture/system-overview.md).
-3. For "what does this term mean" → [concepts/](concepts/).
-4. For "what is the rule" → [standards/](standards/).
-5. For "what are we building next" → [plan/](plan/).
-6. For "what does the code do" → read the code. Specs only exist where reasoning isn't there.
+Start at [../AGENTS.md](../AGENTS.md) for the canonical agent guide, then:
+
+1. [architecture/system-overview.md](architecture/system-overview.md) — what does the system do.
+2. [concepts/](concepts/) — what does this term mean.
+3. [standards/](standards/) — what is the rule.
+4. [plan/](plan/) — what are we building next.
+5. The actual code — specs only exist where reasoning isn't there.
