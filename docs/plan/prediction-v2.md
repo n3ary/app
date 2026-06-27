@@ -484,60 +484,40 @@ This is the part that's confusing today and gets worse if we don't write it down
 
 | # | Loop | Owns | Cadence | What it does |
 |---|---|---|---|---|
-| L1 | **Live GPS poll** | `liveVehiclesStore.poll()` | every 15 s (`livePollMs`) | fetches `/api/rt/<feed>/vehiclePositions`, parses, writes `observations` to the store |
+| L1 | **Live poll + reconcile** | GTFS worker `tickLive()` | every 15 s (`livePollMs`) | fetches `/api/rt/<feed>/vehiclePositions`, parses, runs `reconcileWithLive(activeTrips, liveObs)`, broadcasts `ReconciledSnapshot` to `reconciledVehiclesStore` on main |
 | L2 | **UI / time tick** | `nowTicker.ms` | every **15 s** (post-P5; 30 s today) | a reactive `$state` representing "the now we use for display" — drives every `$derived` that depends on time |
 | L3 | **Manual data refresh** | `refreshBus.tick` | on user tap | wakes effects that gate on it to re-fetch *static* data (schedules, route lists) from the SQLite worker |
 
 They are **fully decoupled by design**:
 
-- L1 doesn't trigger UI by itself. The store's `observations` is a `$state`; whichever `$derived` reads it re-runs when it changes. That happens *naturally* per Svelte reactivity — no timer involved.
+- L1 doesn't trigger UI by itself. `reconciledVehiclesStore.vehicles` is a `$state`; whichever `$derived` reads it re-runs when it changes. That happens *naturally* per Svelte reactivity — no timer involved.
 - L2 doesn't fetch anything. It only advances a clock value. Pure UI cadence knob.
 - L3 doesn't predict anything. It re-runs the worker queries that loaded the schedule and routes for the current page.
 
 ### Where prediction happens in this picture
 
-After Phases P3–P5, the predictor inputs are `(nowMs, observations, route_static_data)`. Anything that *changes* those inputs re-runs the predictor — because Svelte's reactivity tracks the read graph automatically. So:
+After Phases P3–P5, the predictor inputs are `(nowMs, reconciledVehicles, route_static_data)`. Anything that *changes* those inputs re-runs the predictor — because Svelte's reactivity tracks the read graph automatically. So:
 
-- L1 fires → fresh `observations` → predictor re-runs immediately.
+- L1 fires → fresh `reconciledVehicles` → predictor re-runs immediately.
 - L2 ticks → fresh `nowMs` → predictor re-runs immediately.
 - L3 fires + worker returns → fresh `route_static_data` → predictor re-runs immediately.
 
-The bug today is that `markers` on the Map view doesn't actually read `liveVehiclesStore.observations` (because v2 uses schedule as the spine — see §1.2), so L1 doesn't wake it. That's a v2 limitation P5 fixes.
+The Map view's `markers` now reads `reconciledVehiclesStore.vehicles` (PR #72), so L1 wakes it via the join on `tripId`. The earlier mismatch where the Map's string-equality `obsByTripId` lookup missed ~23 % of Cluj observations is closed by centralized reconciliation in the worker.
 
 ### What the refresh button does today
 
 [`+layout.svelte`](src/routes/+layout.svelte) `onrefresh`:
 
 ```ts
-refreshBus.fire();           // L3 — wake schedule re-fetch
-liveVehiclesStore.refresh(); // L1 — immediate poll, skip the 15 s wait
+refreshBus.fire();                  // L3 — wake schedule re-fetch
+reconciledVehiclesStore.refresh();  // L1 — worker tick now, skip 15 s wait
+nowTicker.bump();                   // L2 — force now to wall-clock right now
 ```
 
-What it *doesn't* do:
-
-- It doesn't advance `nowTicker.ms`. So time-only-derived values (ETA labels, urgency colors, bucketing) still wait for the next L2 tick.
-- (Today) it doesn't matter for `markers` on the Map view because `markers` only depends on `nowMin` and the static schedule — not on live observations. So an "immediate fresh GPS" doesn't help.
-
-### The refresh contract (post-P4)
-
-After P4 the dependencies are right; the refresh button needs one tiny addition to deliver the freshest prediction in one beat:
-
-```ts
-function onrefresh() {
-  refreshBus.fire();           // L3: re-fetch static data
-  liveVehiclesStore.refresh(); // L1: immediate GPS poll
-  nowTicker.bump();            // L2: force now to wall-clock right now
-}
-```
-
-`nowTicker.bump()` sets `ms = Date.now()` and resets the interval. After this:
-
-1. The L1 poll completes in ~100 ms — observations update.
-2. `nowTicker.bump()` fires synchronously — `nowMs` advances.
-3. Both wake the same `$derived`s simultaneously; predictor runs once (Svelte batches the dependency changes within a microtask).
-4. UI re-renders.
-
-End-to-end: **~150 ms from tap to fresh prediction on screen**, vs today's "up to 30 s" worst case waiting for the next L2 tick.
+All three loops fire together. L1 calls `getGtfsRepo().refreshLive()` which
+awakens the worker's `tickLive()` outside its interval; the new
+`ReconciledSnapshot` lands on the store within ~100 ms and every consuming
+`$derived` re-runs.
 
 ### Recommended config (post-P4/P5)
 
@@ -786,7 +766,7 @@ Things this design deliberately does *not* attempt, with reasons:
 ## 9. Glossary / references
 
 - `TripShapePlan` — pre-computed `{measured polyline, [legs]}` for a trip; see [`predictPosition.ts`](src/lib/domain/predictPosition.ts).
-- `LiveVehicleObservation` — one GPS sample from GTFS-RT; see [`liveVehiclesStore.svelte.ts`](src/lib/stores/liveVehiclesStore.svelte.ts).
+- `LiveVehicleObservation` — one GPS sample from GTFS-RT; see [`gtfsRtClient.ts`](src/lib/data/live/gtfsRtClient.ts).
 - `shape_dist_traveled` — GTFS column on `stop_times` carrying cumulative distance along the trip's `shape_id` polyline up to that stop. Currently unpopulated in our pipeline.
 - v1 source map for everything ported in §2: [`legacy/src/utils/vehicle/`](legacy/src/utils/vehicle), [`legacy/src/utils/arrival/`](legacy/src/utils/arrival).
 - Audit of current v2 pipeline (latency + duplication scan): see the chat transcript from 2026-06-27 ("how pipeline runs, when prediction happens…").

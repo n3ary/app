@@ -8,6 +8,7 @@
 
 import type { Feed } from '$lib/data/feeds';
 import type { Route, Station, Vehicle } from '$lib/domain/types';
+import type { ReconcileStats } from '$lib/domain/reconcile';
 
 export interface StopWithDistance extends Station {
   /** Meters from the query coordinate. Optional because the by-id
@@ -25,6 +26,30 @@ export interface UpcomingDeparture {
   headsign: string | null;
   /** "HH:MM:SS" from GTFS (may exceed 24h, e.g. "25:13:00"). */
   departureTime: string;
+}
+
+/** Payload broadcast by the worker after every live-poll + reconcile
+ *  cycle. The single source of truth for "current vehicles" on the main
+ *  thread; consumed by `reconciledVehiclesStore`.
+ *
+ *  `vehicles` holds the global reconciled set — a mix of `kind:
+ *  'scheduled'` (active trips with no live match), `kind: 'reconciled'`
+ *  (matched), and `kind: 'live'` (orphan live observations on a
+ *  (route, dir) the feed knows about). ETA fields are origin-relative;
+ *  station views recompute per-stop ETA locally. */
+export interface ReconciledSnapshot {
+  vehicles: Vehicle[];
+  /** Upstream feed's own timestamp (Unix ms). Null when never fetched. */
+  feedTimestampMs: number | null;
+  /** Worker-side completion time of the latest tick (Unix ms). */
+  lastFetchMs: number | null;
+  /** Reconciler telemetry from the latest tick. Null before the first
+   *  successful poll. */
+  stats: ReconcileStats | null;
+  /** Last error message, if the latest tick failed. Vehicles + stats
+   *  reflect the previous successful tick when this is set, so the UI
+   *  can keep rendering stale data while surfacing the failure. */
+  error: string | null;
 }
 
 export interface GtfsRepo {
@@ -229,6 +254,45 @@ export interface GtfsRepo {
     lookbackMin: number,
     lookaheadMin: number,
   ): Promise<RouteMapView | null>;
+
+  /**
+   * Every trip currently active feed-wide: origin departure within
+   * `[nowMin - lookbackMin, nowMin + lookaheadMin]` AND not yet past
+   * terminus. One round-trip; no per-stop join. Drives the worker-side
+   * reconciliation pipeline that broadcasts a global Vehicle[] every
+   * live poll cycle.
+   *
+   * Returned Vehicles are all `kind: 'scheduled'`. Schedule fields are
+   * origin-relative: `scheduledDeparture = tripStartMin`,
+   * `scheduledArrival = tripEndMin`. No per-stop ETA. Consumers join
+   * by `tripId` and recompute ETA against their own stop context.
+   */
+  getActiveTrips(
+    nowMs: number,
+    lookbackMin: number,
+    lookaheadMin: number,
+  ): Promise<Vehicle[]>;
+
+  /**
+   * Subscribe to the worker's reconciled-vehicles broadcast. The worker
+   * polls GTFS-RT every `DEFAULT_CONFIG.livePollMs`, reconciles against
+   * the active-trip set, and pushes a `ReconciledSnapshot` to every
+   * subscriber. The callback is invoked immediately with the latest
+   * snapshot if one is already available (late-subscriber catch-up).
+   *
+   * Returns an unsubscribe function (Comlink-proxied). Call it on
+   * teardown — listeners are NOT cleared automatically on feed switch.
+   */
+  subscribeReconciled(
+    cb: (snap: ReconciledSnapshot) => void,
+  ): Promise<() => void>;
+
+  /** Force an immediate live poll + reconciliation cycle. Used by the
+   *  manual refresh button in the header. */
+  refreshLive(): Promise<void>;
+
+  /** Latest broadcast payload, or null before the first successful poll. */
+  getReconciledSnapshot(): Promise<ReconciledSnapshot | null>;
 }
 
 /** One trip on a route+direction, surfaced by getRouteSchedule. */

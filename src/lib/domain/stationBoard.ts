@@ -23,10 +23,8 @@ import {
 import { haversineMeters } from './distance';
 import { minSinceMidnightInTz } from './pipeline/timeUtils';
 import { predictEta } from './predictEta';
-import { reconcileWithLive } from './reconcile';
-import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
-import type { Polyline } from './shapeProjection';
-import type { Route, Vehicle } from './types';
+import { projectOnPolyline, type Polyline } from './shapeProjection';
+import type { Route, Vehicle, VehicleEta } from './types';
 
 export interface BoardRow {
   vehicle: Vehicle;
@@ -143,14 +141,18 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
  *
  * The Stations view (and any other consumer that wants a fully-resolved
  * board) calls this ONE function instead of chaining
- *   filter → reconcileWithLive → assembleStationBoard
+ *   filter → mergeReconciledIntoStationBoard → applyGpsEta → assembleStationBoard
  * itself. Keeps pipeline composition + timezone discipline in the
  * domain layer; the UI just renders what comes back.
  *
  * Stage order matches docs/specs/vehicles-and-views.md:
  *   1. Route filter (visual scope chosen by the user) — applied first
  *      so the rest of the pipeline operates on the right subset.
- *   2. Live reconciliation (route+direction+startTime match).
+ *   2. Reconciled-vehicle merge — join per-stop scheduled rows with
+ *      the worker's global reconciled set by `tripId`. Matched rows
+ *      become `kind: 'reconciled'` (GPS-bearing); orphan live obs
+ *      whose (route, dir) the station serves are appended as
+ *      `kind: 'live'` rows with a sibling-derived ETA seed.
  *   3. GPS-derived ETA (predictEta) on reconciled rows at intermediate
  *      stops. Origin rows keep the scheduled departure as their ETA
  *      because the bus isn't moving yet.
@@ -158,9 +160,16 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
  */
 
 export interface AssembleLiveBoardInputs {
+  /** Per-stop scheduled vehicles, all `kind: 'scheduled'`, with
+   *  scheduled arrival/departure at THIS stop (from the worker's
+   *  `getStationBoard` / `getStationArrivals`). */
   vehicles: Vehicle[];
   stop: { lat?: number; lon?: number };
-  liveObservations: LiveVehicleObservation[];
+  /** Globally-reconciled vehicles from the worker's reconciliation
+   *  broadcast (`reconciledVehiclesStore.vehicles`). A mix of
+   *  `kind: 'scheduled' | 'reconciled' | 'live'`. The merge joins
+   *  these into the per-stop board by `tripId`. */
+  reconciledVehicles: Vehicle[];
   /** Route shapes keyed by trip_id, from the worker (cached).
    *  Trips without a shape entry just keep their scheduled ETA.
    *  Pass `{}` to disable GPS-derived ETA altogether. */
@@ -168,9 +177,9 @@ export interface AssembleLiveBoardInputs {
   prefs: BoardPrefs;
   nowMs: number;
   /** Feed's IANA timezone, e.g. 'Europe/Bucharest'. Used uniformly by
-   *  the reconciler and bucketer for every minute-since-midnight
-   *  comparison. Must match the timezone of the static GTFS feed that
-   *  produced `vehicles`. */
+   *  the merge orphan ETA seed and bucketer for every minute-since-
+   *  midnight comparison. Must match the timezone of the static GTFS
+   *  feed that produced `vehicles`. */
   timezone: string;
   /** Optional view-only route filter from the StationCard badge row.
    *  Applied as the very first pipeline stage so it scopes the rest. */
@@ -182,31 +191,226 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
     input.routeFilterId != null
       ? input.vehicles.filter((v) => v.route.id === input.routeFilterId)
       : input.vehicles;
-  const { vehicles: reconciled } = reconcileWithLive(scoped, input.liveObservations, {
-    nowMs: input.nowMs,
-    timezone: input.timezone,
+  const nowMin = minSinceMidnightInTz(input.nowMs, input.timezone);
+  const merged = mergeReconciledIntoStationBoard({
+    perStopVehicles: scoped,
+    reconciledVehicles: input.reconciledVehicles,
+    nowMin,
   });
-  const predicted = applyGpsEta(reconciled, input.shapes, input.stop);
+  // Sibling-shape fallback for orphans whose own trip_id isn't in the
+  // shapes Map (Cluj trip-id drift case ~23%). All trips on a single
+  // (route, direction) share their shape_id in every feed we've seen,
+  // so any scheduled sibling's polyline projects an orphan onto the
+  // correct route geometry.
+  const shapesByRouteDir = buildShapesByRouteDir(scoped, input.shapes);
+  const predicted = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir);
   return assembleStationBoard(predicted, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
-/** Replace the scheduled-based ETA on reconciled rows with a
- *  GPS-derived one, where possible. Skipped at trip origin (no
- *  movement to extrapolate), when the stop has no coords, when no
- *  shape is available for the trip, or when the row isn't reconciled
- *  (we have no GPS to use). Pure. */
+/* ---------------------------------------------------------------------- *
+ * Station-side merge with the worker's reconciled vehicles
+ * ---------------------------------------------------------------------- *
+ *
+ * The worker emits a GLOBAL reconciled vehicle set (no per-stop
+ * context). The station view has a PER-STOP scheduled board with
+ * arrival times at this specific stop. This helper joins them:
+ *
+ *   - Matched (`tripId` present in both): promote the per-stop row
+ *     to `kind: 'reconciled'`, keeping its per-stop schedule and
+ *     copying the GPS position + freshness from the worker.
+ *   - Orphans (worker `kind: 'live'` rows whose (route, dir) is on
+ *     the per-stop board): emit as `kind: 'live'` rows on the
+ *     station's board, with an ETA seed computed from a per-stop
+ *     sibling's travel-time-from-origin (so a bus parked at the
+ *     trip origin gets a sensible "arrives in N min" instead of
+ *     waiting for GPS speed > 0).
+ *
+ * Pure. */
+export interface StationMergeInputs {
+  perStopVehicles: Vehicle[];
+  reconciledVehicles: Vehicle[];
+  /** Minutes since local midnight at the feed's timezone. Used for
+   *  the orphan ETA seed only. */
+  nowMin: number;
+}
+
+export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Vehicle[] {
+  const { perStopVehicles, reconciledVehicles, nowMin } = inputs;
+
+  // Index reconciled (GPS-matched) rows by tripId for O(1) promotion.
+  // We keep ONLY `kind: 'reconciled'` here; orphans are handled below.
+  const reconciledByTripId = new Map<string, Vehicle>();
+  for (const v of reconciledVehicles) {
+    if (v.kind !== 'reconciled') continue;
+    if (!v.tripId) continue;
+    reconciledByTripId.set(v.tripId, v);
+  }
+
+  // Per-stop representative per (route, dir) for orphan ETA seed:
+  // travelTimeMin = scheduledArrival at THIS stop − tripStartMin at
+  // origin. Same recipe the old reconciler used per-station, just
+  // moved here since the worker doesn't know the consumer's stop.
+  const repByKey = new Map<string, {
+    headsign: string | undefined;
+    travelTimeMin: number | undefined;
+  }>();
+  for (const v of perStopVehicles) {
+    if (v.kind !== 'scheduled') continue;
+    const dir = v.schedule.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const key = `${v.route.id}|${dir}`;
+    const arrivalMin = v.schedule.scheduledArrival ?? v.schedule.scheduledDeparture;
+    const startMin = v.schedule.tripStartMin;
+    const travelTimeMin =
+      typeof arrivalMin === 'number' && typeof startMin === 'number' && arrivalMin >= startMin
+        ? arrivalMin - startMin
+        : undefined;
+    const existing = repByKey.get(key);
+    if (
+      !existing ||
+      (!existing.headsign && v.headsign) ||
+      (existing.travelTimeMin == null && travelTimeMin != null)
+    ) {
+      repByKey.set(key, {
+        headsign: v.headsign ?? existing?.headsign,
+        travelTimeMin: travelTimeMin ?? existing?.travelTimeMin,
+      });
+    }
+  }
+
+  // Promote matched per-stop scheduled rows to `kind: 'reconciled'`.
+  // Keep the per-stop schedule (arrival times at THIS stop) — we just
+  // attach the GPS position and confidence from the worker's row.
+  const promoted: Vehicle[] = perStopVehicles.map((v) => {
+    if (v.kind !== 'scheduled') return v;
+    const tid = v.tripId;
+    if (!tid) return v;
+    const reconciled = reconciledByTripId.get(tid);
+    if (!reconciled || !reconciled.position) return v;
+    return {
+      kind: 'reconciled',
+      id: v.id,
+      route: v.route,
+      type: v.type,
+      tripId: v.tripId,
+      directionId: v.directionId,
+      schedule: v.schedule,
+      headsign: v.headsign,
+      eta: v.eta,
+      dropOffOnly: v.dropOffOnly,
+      confidence: 'medium',
+      position: reconciled.position,
+      liveSources: ['gtfs-rt'],
+    };
+  });
+
+  // Emit orphan kind:'live' rows for live obs the worker couldn't
+  // match to any active trip but whose (route, dir) this station
+  // serves. Two gates:
+  //   1) (route, dir) appears in `repByKey` — station-side scope.
+  //      The worker already gated against the global active-trip
+  //      set, so this is a per-station tightening.
+  //   2) The reconciled row has a position (always true for
+  //      kind:'live' per the type union).
+  const orphans: Vehicle[] = [];
+  for (const v of reconciledVehicles) {
+    if (v.kind !== 'live') continue;
+    const dir = v.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const key = `${v.route.id}|${dir}`;
+    const rep = repByKey.get(key);
+    if (!rep) continue;
+    let etaSeed: VehicleEta | undefined;
+    const obsStartMin = v.schedule?.tripStartMin;
+    if (obsStartMin != null && rep.travelTimeMin != null) {
+      etaSeed = {
+        minutes: Math.round(obsStartMin + rep.travelTimeMin - nowMin),
+        distanceMeters: 0,
+        confidence: 'low',
+      };
+    }
+    orphans.push({
+      ...v,
+      headsign: v.headsign ?? rep.headsign,
+      eta: etaSeed,
+    });
+  }
+
+  return [...promoted, ...orphans];
+}
+
+function buildShapesByRouteDir(
+  scheduled: Vehicle[],
+  shapes: Record<string, Polyline>,
+): Record<string, Polyline> {
+  const out: Record<string, Polyline> = {};
+  for (const v of scheduled) {
+    const dir = v.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const key = `${v.route.id}|${dir}`;
+    if (key in out) continue;
+    const tid = v.tripId;
+    if (!tid) continue;
+    const shape = shapes[tid];
+    if (!shape || shape.length < 2) continue;
+    out[key] = shape;
+  }
+  return out;
+}
+
+/** Replace the schedule-based ETA on rows with a live position
+ *  (`kind: 'reconciled'` and `kind: 'live'` orphans) with a GPS-
+ *  derived one, where possible.
+ *
+ *  Shape lookup is two-step:
+ *    1. By the row's own `tripId` (Cluj reconciled rows always
+ *       resolve here; ~77% of orphans do too).
+ *    2. By `(routeId, directionId)` from the sibling-shape fallback
+ *       built in `assembleLiveBoard` — handles orphans whose own
+ *       trip_id is in the live feed but absent from static (the
+ *       remaining ~23% with HHMM/run drift in Cluj).
+ *
+ *  Skipped at trip origin:
+ *   - For reconciled rows: when `v.schedule.isAtTripStart === true`.
+ *     The schedule scanner labels the origin stop; predictEta would
+ *     just produce noise from a parked bus's near-zero speed.
+ *   - For orphan kind:'live' rows: detected from the GPS projection
+ *     itself — bus's `distAlong` on the shape is < AT_ORIGIN_DIST_M
+ *     AND its speed is < AT_ORIGIN_SPEED_MS (or unknown). When the
+ *     bus is detected at origin we keep the reconciler's sibling-
+ *     derived ETA seed (see reconcile.ts) instead of overwriting
+ *     with a GPS-derived noise estimate. The detection re-runs
+ *     every render tick, so the ETA self-corrects to GPS-derived
+ *     the moment the bus starts moving — handles early departures.
+ *
+ *  Pure. */
 export function applyGpsEta(
   vehicles: Vehicle[],
   shapes: Record<string, Polyline>,
   stop: { lat?: number; lon?: number },
+  shapesByRouteDir: Record<string, Polyline> = {},
 ): Vehicle[] {
   if (typeof stop.lat !== 'number' || typeof stop.lon !== 'number') return vehicles;
   const stopPos = { lat: stop.lat, lon: stop.lon };
   return vehicles.map<Vehicle>((v) => {
-    if (v.kind !== 'reconciled') return v;
-    if (v.schedule.isAtTripStart === true) return v;
-    const polyline = shapes[v.schedule.tripId];
+    if (v.kind !== 'reconciled' && v.kind !== 'live') return v;
+    if (v.kind === 'reconciled' && v.schedule.isAtTripStart === true) return v;
+    if (!v.position) return v;
+    const polyline = pickShape(v, shapes, shapesByRouteDir);
     if (!polyline || polyline.length < 2) return v;
+    // For live orphans: detect "parked at origin" — keep the
+    // sibling-derived ETA seed the reconciler attached, don't
+    // overwrite with a GPS estimate driven by FALLBACK_SPEED_MS.
+    if (v.kind === 'live') {
+      const proj = projectOnPolyline(
+        { lat: v.position.lat, lon: v.position.lon },
+        polyline,
+      );
+      const speed = v.position.speedMs ?? 0;
+      const atOrigin =
+        proj.distAlongM < AT_ORIGIN_DIST_M && speed < AT_ORIGIN_SPEED_MS;
+      if (atOrigin && v.eta != null) return v;
+    }
     const p = predictEta({
       vehiclePos: { lat: v.position.lat, lon: v.position.lon },
       stopPos,
@@ -222,6 +426,25 @@ export function applyGpsEta(
       },
     };
   });
+}
+
+/** Bus is "at origin" when its projection onto the trip shape is
+ *  within this distance of the shape's start vertex. */
+const AT_ORIGIN_DIST_M = 100;
+/** And its reported speed (m/s) is below this. Includes null/undefined
+ *  speed (parked buses often don't transmit speed). */
+const AT_ORIGIN_SPEED_MS = 1;
+
+function pickShape(
+  v: Vehicle,
+  shapes: Record<string, Polyline>,
+  shapesByRouteDir: Record<string, Polyline>,
+): Polyline | undefined {
+  const tid = v.tripId;
+  if (tid && shapes[tid]) return shapes[tid];
+  const dir = v.directionId;
+  if (dir !== 0 && dir !== 1) return undefined;
+  return shapesByRouteDir[`${v.route.id}|${dir}`];
 }
 
 /** Deduped, sorted route list for a station based on the schedule.

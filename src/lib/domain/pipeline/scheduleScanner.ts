@@ -139,6 +139,8 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       id: `trip:${r.trip_id}`,
       route,
       type,
+      tripId: r.trip_id,
+      directionId: schedule.directionId,
       schedule,
       headsign: r.trip_headsign ?? undefined,
       dropOffOnly,

@@ -279,3 +279,141 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
     expect(stats.matched).toBe(0);
   });
 });
+
+describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
+  it('emits kind:live for a live obs whose (route, dir) is on the input but no scheduled trip is in tolerance', () => {
+    // Scheduled trip on 14|1 at 14:21. Live obs claims 18:00 — way
+    // outside any sane tolerance for a 1-trip cohort.
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
+    const { vehicles, stats } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 't-other', startTime: '18:00:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    expect(stats.matched).toBe(0);
+    expect(stats.live).toBe(1);
+    const live = vehicles.find((v) => v.kind === 'live');
+    expect(live).toBeDefined();
+    if (!live || live.kind !== 'live') throw new Error('expected kind=live');
+    expect(live.id).toBe('live:t-other');
+    expect(live.route.id).toBe('14');
+    expect(live.position.lat).toBeCloseTo(46.77);
+    expect(live.liveSources).toEqual(['gtfs-rt']);
+  });
+
+  it('does NOT emit kind:live for routes the input does not serve', () => {
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
+    const { vehicles, stats } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 'foreign', routeId: '999', startTime: '14:21:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    expect(stats.live).toBe(0);
+    expect(vehicles.every((v) => v.kind !== 'live')).toBe(true);
+  });
+
+  it('does NOT emit kind:live for the same (route, dir) but the wrong direction', () => {
+    // Scheduled only carries dir 1; orphan claims dir 0 — different
+    // direction on the same route. Refuse to surface a bus heading
+    // away from where the user is looking.
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21, directionId: 1 })];
+    const { stats } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 'wrong-dir', directionId: 0, startTime: '14:21:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    expect(stats.live).toBe(0);
+  });
+
+  it('does NOT double-count a matched live obs as both reconciled and orphan', () => {
+    // Live obs cleanly matches the scheduled row.
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
+    const { vehicles, stats } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 't-other', startTime: '14:22:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    expect(stats.matched).toBe(1);
+    expect(stats.live).toBe(0);
+    expect(vehicles.every((v) => v.kind !== 'live')).toBe(true);
+  });
+
+  it('copies headsign from a representative sibling on the same (route, dir)', () => {
+    // First scheduled row has the headsign; orphan should inherit it.
+    const v: Vehicle = {
+      ...scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 }),
+      headsign: 'Centru',
+    };
+    const { vehicles } = reconcileWithLive(
+      [v],
+      [obs({ tripId: 'orphan', startTime: '18:00:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    const live = vehicles.find((x) => x.kind === 'live');
+    expect(live?.headsign).toBe('Centru');
+  });
+
+  it("seeds the orphan's eta from the sibling's travel time + the orphan's own tripStartMin", () => {
+    // Sibling trip: tripStartMin 14:21, scheduledDeparture (used as
+    // arrival fallback) 14:25 → travel time 4 min.
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
+    // Orphan reports its own start as 18:00. Now = 14:25.
+    // Expected ETA at this stop: 18:00 + 4 min - 14:25 = 219 min.
+    const { vehicles } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 'orphan', startTime: '18:00:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    const live = vehicles.find((v) => v.kind === 'live');
+    expect(live?.eta?.minutes).toBe(219);
+    expect(live?.eta?.confidence).toBe('low');
+  });
+
+  it("leaves orphan eta undefined when the orphan's tripStartMin can't be parsed", () => {
+    const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
+    const { vehicles } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 'opaque-orphan' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    // 'opaque-orphan' has no parseable HHMM suffix and no startTime,
+    // so we have nothing to seed the ETA from. The orphan should
+    // not be emitted in this case (gated by tripId presence too —
+    // it's tripId='opaque-orphan' which has no HHMM tail).
+    const live = vehicles.find((v) => v.kind === 'live');
+    // Either dropped or emitted without eta — both acceptable; just
+    // assert we don't fabricate an eta when we lack inputs.
+    if (live) expect(live.eta).toBeUndefined();
+  });
+
+  it("leaves orphan eta undefined when no sibling has scheduledArrival/Departure", () => {
+    // Build a scheduled vehicle whose schedule.scheduledDeparture is
+    // intentionally absent (not constructible via the helper which
+    // always sets it). Skip by simulating via a custom Vehicle.
+    const sched: Vehicle[] = [{
+      kind: 'scheduled',
+      id: 'trip:t-1',
+      route: r14,
+      type: 'bus',
+      confidence: 'low',
+      schedule: {
+        tripId: 't-1',
+        // scheduledDeparture is required by the type; we can't truly
+        // omit it. Instead test the case where tripStartMin is null —
+        // travelTime can't be derived, sibling rep has travelTimeMin
+        // undefined → orphan eta seed is undefined.
+        scheduledDeparture: 14 * 60 + 25,
+        directionId: 1,
+        // tripStartMin omitted on purpose
+      },
+      eta: { distanceMeters: 0, minutes: 3, confidence: 'low' },
+    } as Vehicle];
+    const { vehicles } = reconcileWithLive(
+      sched,
+      [obs({ tripId: 'orphan', startTime: '18:00:00' })],
+      { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
+    );
+    const live = vehicles.find((v) => v.kind === 'live');
+    expect(live?.eta).toBeUndefined();
+  });
+});

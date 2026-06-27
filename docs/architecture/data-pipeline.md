@@ -42,15 +42,19 @@ PWA boot
    ├─ getStationBoardsNear(lat, lon, radius)
    │      │ joins stops + stop_times + trips + active services
    │      ▼
-   │  Vehicle[] of kind="scheduled" / "predicted"
+   │  Vehicle[] of kind="scheduled"
    │
-   └─ live worker: start polling GTFS-RT (15s cadence)
+   └─ worker: start polling GTFS-RT (15s cadence)
           │
           ▼
-      reconciler joins live observations into the board
+      reconcileWithLive(activeTrips, liveObs) inside the worker
           │
           ▼
-      Vehicle[] now includes kind="reconciled" / "live"
+      ReconciledSnapshot broadcast to reconciledVehiclesStore
+          │
+          ▼
+      Per-view tripId merge → Vehicle[] mix of
+      kind="scheduled" / "reconciled" / "live"
 ```
 
 Lifecycle details (eviction, pinning, offline behavior) live in
@@ -60,7 +64,7 @@ Lifecycle details (eviction, pinning, offline behavior) live in
 
 | Loop | Cadence | What it does |
 |---|---|---|
-| Live poll (L1) | 15 s | GTFS-RT vehicle positions → live worker → reconciler |
+| Live poll (L1) | 15 s | GTFS worker: fetch GTFS-RT → reconcileWithLive → broadcast `ReconciledSnapshot` |
 | UI tick (L2) | 15 s | Re-evaluate ETAs / buckets against new wall-clock |
 | Manual refresh (L3) | on tap | Refresh button forces L1 + L2 immediately |
 

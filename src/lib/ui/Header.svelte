@@ -4,7 +4,8 @@
 
   The dots are wired to a `health` prop, an object the parent fills with
   each source's current state: GPS reflects the geolocation listener,
-  Schedule reflects the DB worker, Live reflects the live worker.
+  Schedule reflects the worker's feed-bind state, Live reflects the
+  worker's reconciliation broadcast.
 
   Refresh callback is optional — when absent (e.g. on routes that have
   nothing to refresh) the button is hidden.

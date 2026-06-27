@@ -18,22 +18,23 @@ repo. All heavy work runs in workers; the UI thread does layout and events only.
 │  - Buckets, prediction, reconciler, shape projection    │
 │  - Vehicle discriminated union — see                    │
 │    ../concepts/vehicle.md                               │
-└──────────▲────────────────────────────▲─────────────────┘
-           │ repository API             │ live data API
-┌──────────┴─────────────┐  ┌───────────┴─────────────────┐
-│ GTFS Worker            │  │ Live Worker                  │
-│  - SQLite-WASM + OPFS  │  │  - GTFS-RT poller (15s)     │
-│  - Schema = real GTFS  │  │  - Optional Tranzy poller   │
-│  - Comlink RPC         │  │  - Emits Vehicle[]          │
-└────────────────────────┘  └─────────────────────────────┘
+└──────────────────────▲──────────────────────────────────┘
+                       │ repository API + reconciled broadcast
+┌──────────────────────┴──────────────────────────────────┐
+│ GTFS Worker                                             │
+│  - SQLite-WASM + OPFS (schema = real GTFS)              │
+│  - GTFS-RT poller (15 s) + protobuf decode              │
+│  - reconcileWithLive(activeTrips, liveObs)              │
+│  - Comlink RPC + ReconciledSnapshot broadcast           │
+└─────────────────────────────────────────────────────────┘
 ```
 
 Source files:
 - UI: [src/routes/](../../src/routes/), [src/lib/ui/](../../src/lib/ui/)
 - Domain: [src/lib/domain/](../../src/lib/domain/)
 - GTFS worker: [src/lib/workers/gtfs.worker.ts](../../src/lib/workers/gtfs.worker.ts)
-- Live worker: [src/lib/data/live/](../../src/lib/data/live/)
-- Stores: [src/lib/stores/](../../src/lib/stores/)
+- Live data parser: [src/lib/data/live/](../../src/lib/data/live/) (imported by the worker)
+- Stores: [src/lib/stores/](../../src/lib/stores/) — notably [reconciledVehiclesStore](../../src/lib/stores/reconciledVehiclesStore.svelte.ts)
 
 ## Top-level views
 
@@ -59,10 +60,13 @@ Drill-downs (path-based for shareability + iOS back button):
    `.sqlite3.gz` to OPFS, opens it.
 3. Page renders `StationCard`s from the worker's `getStationBoardsNear` /
    `getStationBoard` queries.
-4. Live worker (if running) polls GTFS-RT every 15 s and pushes
-   [Vehicle](../concepts/vehicle.md)[] updates.
-5. Domain layer reconciles live + scheduled into board entries, classifies
-   them into [arrival buckets](../concepts/arrival-buckets.md), and the UI
+4. GTFS worker also polls GTFS-RT every 15 s, runs `getActiveTrips`,
+   reconciles live observations against the active set, and broadcasts a
+   [Vehicle](../concepts/vehicle.md)[] (`ReconciledSnapshot`) to every
+   subscriber via [reconciledVehiclesStore](../../src/lib/stores/reconciledVehiclesStore.svelte.ts).
+5. Domain layer joins reconciled vehicles into per-stop boards by
+   `tripId` (`mergeReconciledIntoStationBoard`), classifies them into
+   [arrival buckets](../concepts/arrival-buckets.md), and the UI
    re-renders.
 
 Full data pipeline: [data-pipeline.md](data-pipeline.md).
@@ -72,8 +76,9 @@ Multi-feed lifecycle in the worker: [../specs/multi-feed-data-lifecycle.md](../s
 
 1. **Real GTFS in SQLite.** No dedup hacks, no in-memory Maps, no 5 MB
    localStorage gymnastics. Schema = real GTFS.
-2. **All heavy work in workers.** GTFS queries in the DB worker; live
-   polling + reconciliation in the live worker.
+2. **All heavy work in workers.** GTFS queries, GTFS-RT polling, and
+   reconciliation all live in the single SQLite-WASM worker. The UI
+   thread reads from `reconciledVehiclesStore`; no live polling on main.
 3. **Vehicle taxonomy is data.** Discriminated union encodes what we know
    about each vehicle's position source — see
    [../concepts/vehicle.md](../concepts/vehicle.md).

@@ -41,7 +41,7 @@ The empirical case for keeping Tranzy optional (rather than primary) is in
   directly. No proxy needed (unlike GTFS-RT — see
   [../specs/live-data-pipeline.md](../specs/live-data-pipeline.md)).
 
-Acceptance: with a key set and Cluj active, the live worker reports
+Acceptance: with a key set and Cluj active, the worker reports
 Tranzy poll success in the StatusBar live dot tooltip; without a key or
 on a non-Tranzy feed, the stage is absent from `composePipeline` output.
 

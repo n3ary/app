@@ -48,7 +48,7 @@
   } from '$lib/domain/shapeProjection';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
+  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
@@ -161,6 +161,26 @@
     return measurePolyline(view.shape);
   });
 
+  // Live observations on (routeId, direction) whose trip didn't
+  // surface in view.trips. Sourced from the worker's reconciliation
+  // broadcast — these are the kind:'live' rows: the worker matched
+  // every scheduled trip it could via (route, dir, tripStartMin)
+  // tolerance, and anything left over on this (route, dir) is a
+  // genuine orphan. We render them at raw GPS (no shape projection
+  // — we don't have stop_times for these tripIds, and the static
+  // schedule doesn't have a matching trip we could ride a polyline
+  // along). The bus is *there* now; the next poll updates it.
+  const orphanVehicles = $derived.by(() => {
+    if (!view) return [];
+    return reconciledVehiclesStore.vehicles.filter(
+      (v) =>
+        v.kind === 'live' &&
+        v.route.id === routeId &&
+        v.directionId === direction &&
+        v.position != null,
+    );
+  });
+
   // ── Derived view-model ──────────────────────────────────────────────
   /** Render-ready vehicles for the current nowMin. Each trip yields
    *  one entry; the domain decides position + status, the UI maps
@@ -187,28 +207,51 @@
     if (!view) return [];
     const out: VehicleMarker[] = [];
     let nextScheduledShown = false;
-    // Index live observations by trip_id so each iteration is O(1)
-    // instead of scanning the whole observation array per trip.
-    const obsByTripId = new Map<string, (typeof liveVehiclesStore.observations)[number]>();
-    for (const o of liveVehiclesStore.observations) {
-      if (o.tripId.length > 0) obsByTripId.set(o.tripId, o);
-    }
     const nowMs = nowTicker.ms;
+
+    // Hard cap on GPS-fix age before we stop showing the marker at all
+    // — applies to both reconciled and orphan rows so the two paths
+    // behave identically.
+    const STALE_HARD_MAX_MS = 15 * 60_000;
+
+    // Index reconciled vehicles by their (static) tripId so each
+    // iteration is O(1). The worker matched by (route, dir,
+    // tripStartMin) tolerance — NOT by string-equality on tripId —
+    // so live observations whose tripId drifted from static still
+    // resolve correctly here.
+    const reconciledByTripId = new Map<string, (typeof reconciledVehiclesStore.vehicles)[number]>();
+    for (const v of reconciledVehiclesStore.vehicles) {
+      if (v.tripId) reconciledByTripId.set(v.tripId, v);
+    }
+
     // Sort by tripStartMin so the soonest not-yet-departed trip always wins
     // the single origin slot, regardless of query order from the DB.
     const trips = [...view.trips].sort((a, b) => a.tripStartMin - b.tripStartMin);
     for (const t of trips) {
       const plan = tripPlans.get(t.tripId);
-      // GPS-anchored prediction takes priority when a recent fix exists
-      // for this trip; fall back to schedule interpolation otherwise.
-      const obs = obsByTripId.get(t.tripId);
+      // GPS-anchored prediction takes priority when the worker reconciled
+      // this trip to a live fix; fall back to schedule interpolation
+      // otherwise.
+      const reconciled = reconciledByTripId.get(t.tripId);
       let p: ReturnType<typeof predictPositionOnShape> | null = null;
       let gpsConfidence: 'good' | 'poor' | null = null;
-      if (plan && obs) {
-        const gps = predictPositionFromGps(plan, obs, nowMs);
+      if (plan && reconciled?.kind === 'reconciled' && reconciled.position) {
+        const pos = reconciled.position;
+        const gps = predictPositionFromGps(
+          plan,
+          { lat: pos.lat, lon: pos.lon, speedMs: pos.speedMs ?? null, asOfMs: pos.asOf },
+          nowMs,
+        );
         if (gps) {
           p = gps;
           gpsConfidence = gps.freshness === 'fresh' ? 'good' : 'poor';
+        } else if (nowMs - pos.asOf < STALE_HARD_MAX_MS) {
+          // predictPositionFromGps expired the fix (> 5 min). Render at
+          // the raw last sample anyway — we still know roughly where
+          // the bus is, and that beats letting the schedule mark it
+          // 'after' which silently drops the marker.
+          p = { lat: pos.lat, lon: pos.lon, status: 'active' as const };
+          gpsConfidence = 'poor';
         }
       }
       if (!p) {
@@ -221,7 +264,6 @@
       if (p.status === 'after') continue;
       // 'before' and 'at-origin' are both "not yet departed from origin":
       // show only the soonest one so bubbles don't stack at the origin stop.
-      // (Sorting above ensures the soonest tripStartMin is encountered first.)
       if (p.status === 'before' || p.status === 'at-origin') {
         if (nextScheduledShown) continue;
         nextScheduledShown = true;
@@ -236,6 +278,32 @@
         tripStartMin: t.tripStartMin,
         scheduled: p.status === 'before' || p.status === 'at-origin',
         gpsConfidence,
+      });
+    }
+
+    // Orphans: live buses the worker couldn't match to any active
+    // scheduled trip on this (route, dir). Rendered at raw GPS — no
+    // shape projection because we don't have stop_times for them.
+    // Cap by STALE_HARD_MAX_MS to drop markers whose last fix is
+    // ancient.
+    for (const v of orphanVehicles) {
+      if (!v.position) continue;
+      const age = nowMs - v.position.asOf;
+      if (age > STALE_HARD_MAX_MS) continue;
+      const tripId = v.tripId ?? v.id;
+      out.push({
+        tripId,
+        headsign: v.headsign ?? null,
+        lat: v.position.lat,
+        lon: v.position.lon,
+        opacity: 0.9,
+        selected: tripId === selectedTripId,
+        // Worker sets schedule.tripStartMin on orphans when the live
+        // obs carries a parseable start time; fall back to nowMin so
+        // sort order stays defined.
+        tripStartMin: v.schedule?.tripStartMin ?? nowMin,
+        scheduled: false,
+        gpsConfidence: age < 2 * 60_000 ? 'good' : 'poor',
       });
     }
     return out;

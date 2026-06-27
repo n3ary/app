@@ -37,7 +37,7 @@ if (import.meta.hot) {
   // Self-accept so Vite doesn't escalate updates here to a full page
   // reload (which would force the feed-bind cold path).
   import.meta.hot.accept();
-  // Hand the live worker + wrapper to the next module instance so the
+  // Hand the worker + Comlink wrapper to the next module instance so the
   // restored values above pick them back up. Production untouched —
   // `import.meta.hot` is undefined there.
   import.meta.hot.dispose((data) => {

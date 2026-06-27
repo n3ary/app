@@ -57,12 +57,12 @@ This doc captures the contract from the app's perspective.
 | `name`, `country`, `region` | Settings picker display |
 | `timezone` | All wall-clock math; `nowMin` derivation; bucket boundaries |
 | `bbox`, `center` | GPS auto-pick (`locationStore.pickFeed`) |
-| `agencies` | Live worker matching; future per-agency badging |
+| `agencies` | Worker-side live matching; future per-agency badging |
 | `files.sqlite_gz` | GTFS worker download URL (cold switch) |
 | `hash` | Freshness check — mismatch ⇒ mark stale |
-| `realtime.vehicle_positions` | Live worker poll target |
+| `realtime.vehicle_positions` | Worker GTFS-RT poll target |
 | `realtime.trip_updates`, `service_alerts` | Reserved (not consumed yet) |
-| `tranzy.agency_id` | Live worker enables Tranzy poll iff user has API key |
+| `tranzy.agency_id` | Worker enables Tranzy poll iff user has API key |
 | `license` | Settings "About" attribution panel |
 
 ## Cache headers

@@ -13,7 +13,7 @@
   import { connectionStore } from '$lib/stores/connectionStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
+  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
@@ -48,7 +48,7 @@
       setLocation: (lat: number, lon: number, accuracy = 25) =>
         locationStore.setMockPosition(lat, lon, accuracy),
       clearLocation: () => locationStore.clearMockPosition(),
-      stores: { locationStore, feedsStore, statusBus, userPrefs, refreshBus, liveVehiclesStore, favoritesStore },
+      stores: { locationStore, feedsStore, statusBus, userPrefs, refreshBus, reconciledVehiclesStore, favoritesStore },
     };
   });
 
@@ -94,9 +94,11 @@
       .setFeed($state.snapshot(feed) as typeof feed)
       .then(() => {
         feedsStore.boundFeedId = feed.id;
-        // Kick off live-data polling for this feed. Idempotent across
-        // feed switches; rebinds to the new id when applicable.
-        liveVehiclesStore.bind(feed.id);
+        // Subscribe to the worker's reconciliation broadcast. The worker
+        // owns the live poll loop (started in setFeed); this just wires
+        // the main-thread store to receive every tick. Idempotent across
+        // feed switches.
+        reconciledVehiclesStore.bind();
         statusBus.push({
           id: 'gtfs-bind',
           kind: 'success',
@@ -140,9 +142,9 @@
 
   const title = $derived(TITLES[activeNav]);
 
-  // Schedule and Live dots reflect their underlying workers; today the
-  // schedule dot lights up when the GTFS worker has a feed bound, the
-  // live dot stays idle until a live worker is wired in. GPS and
+  // Schedule and Live dots both reflect the single GTFS worker. Schedule
+  // lights up when the worker has a feed bound; Live reflects the
+  // worker's reconciliation broadcast (lastFetchMs / error). GPS and
   // Connection are real — see locationStore + connectionStore. The GPS
   // watch isn't started by the layout itself; the Stations route calls
   // locationStore.start() on mount so we don't prompt for permission
@@ -167,14 +169,17 @@
       //   last successful fetch < 30s  -> ok
       //   last successful fetch < 2min -> stale
       //   older                        -> error
-      if (liveVehiclesStore.error && liveVehiclesStore.lastFetchMs == null) {
-        return { state: 'error', tooltip: `Live feed error: ${liveVehiclesStore.error}` };
+      if (reconciledVehiclesStore.error && reconciledVehiclesStore.lastFetchMs == null) {
+        return { state: 'error', tooltip: `Live feed error: ${reconciledVehiclesStore.error}` };
       }
-      if (liveVehiclesStore.lastFetchMs == null) {
+      if (reconciledVehiclesStore.lastFetchMs == null) {
         return { state: 'idle', tooltip: 'Live feed not started' };
       }
-      const age = Date.now() - liveVehiclesStore.lastFetchMs;
-      const count = liveVehiclesStore.observations.length;
+      const age = Date.now() - reconciledVehiclesStore.lastFetchMs;
+      // "live vehicles seen" = matched (reconciled) + orphan live obs.
+      // Scheduled-only rows in the snapshot aren't "live".
+      const stats = reconciledVehiclesStore.stats;
+      const count = stats ? stats.matched + stats.live : 0;
       if (age < 30_000) return { state: 'ok', tooltip: `${count} live vehicles · just now` };
       if (age < 2 * 60_000) return { state: 'stale', tooltip: `${count} live vehicles · ${Math.round(age / 1000)}s ago` };
       return { state: 'error', tooltip: `Live feed last fetched ${Math.round(age / 60_000)} min ago` };
@@ -195,7 +200,7 @@
   onnav={(to) => goto(to)}
   onrefresh={() => {
     refreshBus.fire();
-    liveVehiclesStore.refresh();
+    reconciledVehiclesStore.refresh();
     nowTicker.bump();
   }}
 >

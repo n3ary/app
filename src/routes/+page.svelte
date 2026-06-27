@@ -20,11 +20,11 @@
   import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
   import { selectBoardsForView } from '$lib/domain/stationSelection';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
+  import { isPositionInFeedBbox, distanceToFeedBboxKm } from '$lib/domain/feedCoverage';
   import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
-  import { buildOrphanLiveVehicle } from '$lib/domain/orphanLive';
   import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
+  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { nowTicker } from '$lib/stores/nowTicker.svelte';
@@ -158,7 +158,9 @@
         // Fetch route shapes for every visible scheduled trip. The
         // composer uses them to derive GPS-based ETAs for reconciled
         // rows at intermediate stops. Worker caches by shape_id so
-        // re-fetching across renders is O(1).
+        // re-fetching across renders is O(1). Orphan shapes are
+        // topped up by a separate effect below as live observations
+        // arrive.
         const tripIds = selection.boards.flatMap((b) => tripIdsFromVehicles(b.vehicles));
         if (tripIds.length > 0) {
           shapes = await repo.getShapesForTrips(tripIds);
@@ -172,31 +174,27 @@
     })();
   });
 
-  // Top up `shapes` for orphan trip_ids (live observations whose
-  // route is shown on some visible board but whose trip didn't
-  // surface in the schedule scan). Worker caches shapes by shape_id
-  // so re-asking for already-fetched ones is O(1).
+  // Top up `shapes` with any live-observation trip_ids that aren't
+  // already covered. Reconciler emits kind:'live' orphans for live
+  // obs on (route, direction) pairs the schedule scanner returned;
+  // Fetch shapes for orphan kind:'live' rows the worker emitted whose
+  // route appears on a visible board, so applyGpsEta can project them
+  // onto the right polyline. Reconciled rows' shapes were already
+  // fetched on mount via tripIdsFromVehicles(board.vehicles).
   $effect(() => {
     if (!boards) return;
-    const scheduledTripIds = new Set<string>();
     const visibleRouteIds = new Set<string>();
-    for (const b of boards) {
-      for (const v of b.vehicles) {
-        if (v.schedule?.tripId) scheduledTripIds.add(v.schedule.tripId);
-        visibleRouteIds.add(v.route.id);
-      }
-    }
+    for (const b of boards) for (const v of b.vehicles) visibleRouteIds.add(v.route.id);
     const missing = Array.from(
       new Set(
-        liveVehiclesStore.observations
-          .filter(
-            (o) =>
-              o.tripId &&
-              !scheduledTripIds.has(o.tripId) &&
-              visibleRouteIds.has(o.routeId) &&
-              !(o.tripId in shapes),
+        reconciledVehiclesStore.vehicles
+          .filter((v) =>
+            v.kind === 'live' &&
+            v.tripId != null &&
+            visibleRouteIds.has(v.route.id) &&
+            !(v.tripId in shapes),
           )
-          .map((o) => o.tripId),
+          .map((v) => v.tripId as string),
       ),
     );
     if (missing.length === 0) return;
@@ -206,37 +204,11 @@
         const extra = await repo.getShapesForTrips(missing);
         shapes = { ...shapes, ...extra };
       } catch {
-        // Soft-fail: orphan rows just don't render this tick.
+        // Soft-fail: orphan ETAs fall back to the sibling shape via
+        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
       }
     })();
   });
-
-  /** Build orphan live Vehicles for one stop. The stop's vehicles
-   *  already define which routes are eligible (orphans on other
-   *  routes aren't relevant to this card). Pure; cheap to call from
-   *  the {#each}. */
-  function orphansForStop(
-    stop: { id: number; lat?: number; lon?: number },
-    vehicles: Vehicle[],
-  ): Vehicle[] {
-    if (typeof stop.lat !== 'number' || typeof stop.lon !== 'number') return [];
-    const stationPos = { lat: stop.lat, lon: stop.lon };
-    const scheduledTripIds = new Set(
-      vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
-    );
-    const routesById = new Map(vehicles.map((v) => [v.route.id, v.route]));
-    const out: Vehicle[] = [];
-    for (const o of liveVehiclesStore.observations) {
-      if (!o.tripId || scheduledTripIds.has(o.tripId)) continue;
-      const route = routesById.get(o.routeId);
-      if (!route) continue;
-      const shape = shapes[o.tripId];
-      if (!shape) continue;
-      const v = buildOrphanLiveVehicle(o, route, shape, stationPos);
-      if (v) out.push(v);
-    }
-    return out;
-  }
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -263,15 +235,35 @@
       </CardContent>
     </Card>
   {:else if boards.length === 0}
+    {@const activeFeed = feedsStore.byId(feedsStore.boundFeedId)}
+    {@const userPos = locationStore.position
+      ? { lat: locationStore.position.coords.latitude, lon: locationStore.position.coords.longitude }
+      : null}
+    {@const outsideBbox = activeFeed && userPos && gpsState === 'available'
+      ? !isPositionInFeedBbox(userPos, activeFeed)
+      : false}
+    {@const distanceKm = outsideBbox && activeFeed && userPos
+      ? Math.round(distanceToFeedBboxKm(userPos, activeFeed))
+      : 0}
     <Card>
       <CardContent>
-        <Stack spacing={1}>
-          <Typography variant="h6">No nearby stations</Typography>
-          <Typography variant="caption">
-            No stops within {DEFAULT_CONFIG.nearbyRadiusM} m of {gpsState === 'available' ? 'your current position' : 'the fallback location'}.
-            Try moving closer to a transit corridor or enabling location.
-          </Typography>
-        </Stack>
+        {#if outsideBbox && activeFeed}
+          <Stack spacing={1}>
+            <Typography variant="h6">Wrong feed for your location</Typography>
+            <Typography variant="caption">
+              You're about {distanceKm} km from the <strong>{activeFeed.name}</strong> service area.
+              Pick a feed that covers your location in <a href="/settings" class="underline">Settings</a>.
+            </Typography>
+          </Stack>
+        {:else}
+          <Stack spacing={1}>
+            <Typography variant="h6">No nearby stations</Typography>
+            <Typography variant="caption">
+              No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of {gpsState === 'available' ? 'your current position' : 'the fallback location'}.
+              Try moving closer to a transit corridor or enabling location.
+            </Typography>
+          </Stack>
+        {/if}
       </CardContent>
     </Card>
   {:else}
@@ -287,9 +279,9 @@
       {@const rawTotal = boards.reduce((n, b) => n + b.vehicles.length, 0)}
       {@const filteredTotal = boards.reduce(
         (n, b) => n + assembleLiveBoard({
-          vehicles: [...b.vehicles, ...orphansForStop(b.stop, b.vehicles)],
+          vehicles: b.vehicles,
           stop: b.stop,
-          liveObservations: liveVehiclesStore.observations,
+          reconciledVehicles: reconciledVehiclesStore.vehicles,
           shapes,
           prefs: userPrefs,
           nowMs,
@@ -306,11 +298,10 @@
       {/if}
       {#each boards as { stop, vehicles } (stop.id)}
         {@const routeFilter = routeFilters[stop.id] ?? null}
-        {@const merged = [...vehicles, ...orphansForStop(stop, vehicles)]}
         {@const board = assembleLiveBoard({
-          vehicles: merged,
+          vehicles,
           stop,
-          liveObservations: liveVehiclesStore.observations,
+          reconciledVehicles: reconciledVehiclesStore.vehicles,
           shapes,
           prefs: userPrefs,
           nowMs,

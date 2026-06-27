@@ -1,24 +1,33 @@
 /*
  * reconcile — merge live GPS observations into a scheduled vehicle list.
  *
- * Match key (spec: vehicles-and-views.md §6; see /memories/session/
- * reconciler-design.md for the full agreement):
+ * Match key (spec: docs/specs/live-data-pipeline.md):
  *
  *   (routeId, directionId, tripStartMin) with adaptive tolerance.
  *
  * trip_id equality is NOT used as a fast-path. Some operators publish
  * static GTFS and GTFS-RT from independent build pipelines that happen
- * to share the same `route_dir_service_run_HHMM` schema but use
- * independent run numbering and slightly different start times
- * (observed in Cluj — static run 84 starts at 14:21, live run 101 starts
- * at 14:23, same trip in reality). Trip-id equality is therefore at best
- * coincidental and at worst a false-positive across days/services.
+ * to share the same `route_dir_service_run_HHMM` schema but populate
+ * `<run>_<HHMM>` from independent dispatch databases. Cluj sampling
+ * 2026-06-27 showed ~23% of live trip_ids drifted from their static
+ * counterparts by ±1 run number and/or ±a few minutes in HHMM. Strict
+ * trip_id matching would silently lose those buses.
  *
  * Adaptive tolerance: median gap between consecutive scheduled trip
  * starts on the same (routeId, directionId) within the local ±1h window
  * around `now`, divided by 2. Clamped to [TOLERANCE_FLOOR_MIN,
  * TOLERANCE_CEILING_MIN]. When <3 samples exist in the local hour we
  * widen progressively (±4h → full day) until we have enough.
+ *
+ * Output is a uniform Vehicle[]: matched scheduled rows are upgraded
+ * to `kind: 'reconciled'`; unmatched scheduled rows stay `kind:
+ * 'scheduled'`; AND unmatched live observations are emitted as
+ * `kind: 'live'` rows when their (routeId, directionId) has a
+ * representative scheduled sibling on the input (so we know the
+ * route+direction is relevant to whatever view called us, and we
+ * have a sibling headsign to copy onto the orphan). True orphans
+ * — live observations on a (route, direction) that doesn't appear
+ * in the input scheduled list at all — are dropped.
  *
  * Re-attribution: this function is stateless and runs every poll cycle.
  * Each cycle picks the best (closest tripStartMin) match independently.
@@ -47,6 +56,10 @@ export interface ReconcileStats {
    *  (multiple scheduled trips within tolerance, all tied for closest).
    *  Reserved for future telemetry; today the closest still wins. */
   ambiguous: number;
+  /** Live observations emitted as `kind: 'live'` orphan rows because
+   *  no scheduled row was a match but their (route, direction) is on
+   *  the input. */
+  live: number;
 }
 
 export interface ReconcileOptions {
@@ -169,6 +182,8 @@ export function reconcileWithLive(
       id: v.id,
       route: v.route,
       type: v.type,
+      tripId: v.tripId,
+      directionId: v.directionId,
       schedule: v.schedule,
       headsign: v.headsign,
       eta: v.eta,
@@ -185,7 +200,104 @@ export function reconcileWithLive(
     };
   });
 
-  return { vehicles, stats: { matched, unmatched, ambiguous } };
+  // Emit kind: 'live' rows for live observations that didn't match any
+  // scheduled row. Two gates:
+  //   1) The (routeId, directionId) must appear on the input — we copy
+  //      a representative sibling's route + headsign onto the orphan
+  //      and refuse to surface a route the view doesn't already show.
+  //   2) The observation must carry a usable directionId (0 | 1).
+  // The Vehicle the reconciler emits is uniform with the rest of the
+  // pipeline (downstream applyGpsEta / assembleStationBoard treat
+  // kind: 'live' alongside kind: 'reconciled' for bucketing).
+  //
+  // ETA seed for parked-at-origin orphans:
+  //   We also record the sibling's TRAVEL TIME from origin to this
+  //   stop (sibling.scheduledArrival − sibling.tripStartMin). When
+  //   the orphan reports its own tripStartMin (from `start_time` or
+  //   the `..._HHMM` suffix), we synthesize an ETA on the emitted
+  //   row: `(obs.tripStartMin + travelTimeMin) − nowMin`. This gives
+  //   a sensible ETA for a bus parked at the trip's origin where
+  //   GPS speed is zero and a pure-GPS ETA would use the fallback
+  //   speed (noisy). `applyGpsEta` downstream KEEPS this seed for
+  //   genuinely-at-origin orphans and OVERWRITES it with a GPS-
+  //   derived ETA once the bus is moving — so an early departure
+  //   self-corrects on the next render tick.
+  let liveOut = 0;
+  const repByKey = new Map<string, {
+    route: Vehicle['route'];
+    headsign: string | undefined;
+    travelTimeMin: number | undefined;
+  }>();
+  for (const v of scheduled) {
+    if (v.kind !== 'scheduled') continue;
+    const dir = v.schedule.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const key = `${v.route.id}|${dir}`;
+    const arrivalMin = v.schedule.scheduledArrival ?? v.schedule.scheduledDeparture;
+    const startMin = v.schedule.tripStartMin;
+    const travelTimeMin =
+      typeof arrivalMin === 'number' && typeof startMin === 'number' && arrivalMin >= startMin
+        ? arrivalMin - startMin
+        : undefined;
+    const existing = repByKey.get(key);
+    if (
+      !existing ||
+      // Prefer reps with both headsign + travel time when filling in.
+      (!existing.headsign && v.headsign) ||
+      (existing.travelTimeMin == null && travelTimeMin != null)
+    ) {
+      repByKey.set(key, {
+        route: v.route,
+        headsign: v.headsign ?? existing?.headsign,
+        travelTimeMin: travelTimeMin ?? existing?.travelTimeMin,
+      });
+    }
+  }
+  for (const obs of live) {
+    if (matchedLiveObs.has(obs)) continue;
+    if (!obs.tripId) continue;
+    const dir = obs.directionId;
+    if (dir !== 0 && dir !== 1) continue;
+    const rep = repByKey.get(`${obs.routeId}|${dir}`);
+    if (!rep) continue;
+    // Sibling-derived ETA seed (re-evaluated each tick by applyGpsEta).
+    let etaSeed: Vehicle['eta'] | undefined;
+    const obsStartMin = parseLiveStartMin(obs);
+    if (
+      obsStartMin != null &&
+      rep.travelTimeMin != null &&
+      nowMinSinceMidnight != null
+    ) {
+      const expectedArrivalMin = obsStartMin + rep.travelTimeMin;
+      etaSeed = {
+        minutes: Math.round(expectedArrivalMin - nowMinSinceMidnight),
+        distanceMeters: 0,
+        confidence: 'low',
+      };
+    }
+    vehicles.push({
+      kind: 'live',
+      id: `live:${obs.tripId}`,
+      route: rep.route,
+      type: rep.route.type ?? 'unknown',
+      tripId: obs.tripId,
+      directionId: dir,
+      headsign: rep.headsign,
+      confidence: 'medium',
+      eta: etaSeed,
+      position: {
+        lat: obs.lat,
+        lon: obs.lon,
+        source: 'gps',
+        asOf: obs.asOfMs > 0 ? obs.asOfMs : Date.now(),
+        speedMs: obs.speedMs,
+      },
+      liveSources: ['gtfs-rt'],
+    });
+    liveOut += 1;
+  }
+
+  return { vehicles, stats: { matched, unmatched, ambiguous, live: liveOut } };
 }
 
 /** Parse the live observation's scheduled start time into minutes since
