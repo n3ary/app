@@ -2,7 +2,7 @@
 
 Reasoning behind the PWA setup. Implementation:
 [svelte.config.js](../../svelte.config.js), [vite.config.ts](../../vite.config.ts),
-[netlify.toml](../../netlify.toml).
+[netlify.toml](../../netlify.toml), [src/routes/+layout.svelte](../../src/routes/+layout.svelte).
 
 ## Goals
 
@@ -12,12 +12,41 @@ Reasoning behind the PWA setup. Implementation:
 
 ## Update propagation
 
-SvelteKit emits a `_app/version.json` on every build. The client polls it
-periodically and reloads when the version changes.
+The build emits `build/_app/version.json` containing a unique
+build identifier (git short SHA, falling back to `t<timestamp>` when the
+build runs outside a git checkout). The SvelteKit client polls this file
+on a fixed interval and reloads when the string changes.
 
-**Netlify cache headers** must NOT cache `version.json`, the service
-worker, or `index.html`; otherwise updates appear delayed by the CDN TTL.
-The headers in [netlify.toml](../../netlify.toml) enforce this.
+### Configuration
+
+In [svelte.config.js](../../svelte.config.js):
+
+```js
+kit: {
+  version: {
+    name: buildVersion(),       // git short SHA (e.g. "0b75986") or "t<ms>"
+    pollInterval: 60 * 1000,    // 60 s
+  },
+}
+```
+
+Why 60 s: long enough to be invisible in network panels and battery use,
+short enough that a returning user catches a fresh deploy within a few
+minutes. Lower values don't help — Netlify's edge cache TTL on
+`version.json` is bounded anyway.
+
+### Reload trigger
+
+[src/routes/+layout.svelte](../../src/routes/+layout.svelte) subscribes
+to `updated.current` from `$app/state`. When the poll detects a new
+version, the layout reloads the page.
+
+### Cache headers
+
+[netlify.toml](../../netlify.toml) explicitly excludes `version.json`,
+the service worker, and `index.html` from CDN caching. Without these
+overrides the version poll would lag the CDN TTL and the update story
+silently breaks.
 
 ## iOS safe-area
 
@@ -28,10 +57,10 @@ from the home screen.
 ## What we deliberately don't do
 
 - No custom install prompt UI — rely on the browser's native install affordance.
-- No background sync — we re-fetch on focus instead.
+- No background sync — re-fetch on focus instead.
 - No push notifications — out of scope.
 
 ## Manifest
 
-`static/manifest.json` is the source. Update icons + name there; the
-PWA plugin picks it up at build time.
+[static/manifest.json](../../static/manifest.json) is the source. Update
+icons + name there; the PWA plugin picks it up at build time.
