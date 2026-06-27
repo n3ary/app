@@ -211,10 +211,11 @@
     })();
   });
 
-  /** Build orphan live Vehicles for one stop. The stop's vehicles
-   *  already define which routes are eligible (orphans on other
-   *  routes aren't relevant to this card). Pure; cheap to call from
-   *  the {#each}. */
+  /** Build orphan live Vehicles for one stop. Only surfaces orphans
+   *  on a (route, direction) pair that the schedule scanner ALSO
+   *  returned for this station — that filter doubles as the source
+   *  of the sibling-trip headsign (GTFS-RT vehicle positions don't
+   *  carry headsign themselves). Pure; cheap to call from the {#each}. */
   function orphansForStop(
     stop: { id: number; lat?: number; lon?: number },
     vehicles: Vehicle[],
@@ -224,26 +225,26 @@
     const scheduledTripIds = new Set(
       vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
     );
-    const routesById = new Map(vehicles.map((v) => [v.route.id, v.route]));
-    // GTFS-RT doesn't carry headsign on vehicle positions; copy from
-    // any scheduled sibling on the same (route, direction). Trips on
-    // the same route+direction share the destination headsign in
-    // every feed we've seen.
-    const headsignByKey = new Map<string, string>();
+    // (routeId, directionId) → { route, headsign } for orphan inclusion.
+    // Trips on the same route+direction share their destination
+    // headsign in every feed we've seen.
+    const siblingByKey = new Map<string, { route: Vehicle['route']; headsign: string | undefined }>();
     for (const v of vehicles) {
-      if (!v.headsign) continue;
-      const key = `${v.route.id}|${v.schedule?.directionId ?? 0}`;
-      if (!headsignByKey.has(key)) headsignByKey.set(key, v.headsign);
+      if (v.schedule?.directionId !== 0 && v.schedule?.directionId !== 1) continue;
+      const key = `${v.route.id}|${v.schedule.directionId}`;
+      const existing = siblingByKey.get(key);
+      if (!existing || (!existing.headsign && v.headsign)) {
+        siblingByKey.set(key, { route: v.route, headsign: v.headsign });
+      }
     }
     const out: Vehicle[] = [];
     for (const o of liveVehiclesStore.observations) {
       if (!o.tripId || scheduledTripIds.has(o.tripId)) continue;
-      const route = routesById.get(o.routeId);
-      if (!route) continue;
+      const sibling = siblingByKey.get(`${o.routeId}|${o.directionId}`);
+      if (!sibling) continue;
       const shape = shapes[o.tripId];
       if (!shape) continue;
-      const headsign = headsignByKey.get(`${o.routeId}|${o.directionId}`);
-      const v = buildOrphanLiveVehicle(o, route, shape, stationPos, headsign);
+      const v = buildOrphanLiveVehicle(o, sibling.route, shape, stationPos, sibling.headsign);
       if (v) out.push(v);
     }
     return out;

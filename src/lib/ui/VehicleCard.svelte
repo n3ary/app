@@ -110,10 +110,6 @@
   //   'high'   corroborated (≥2 live sources agree); full opacity.
   // See spec §2 “Card border, opacity, and anomaly indicator”.
   const dim = $derived(vehicle.confidence === 'low');
-
-  const isGpsBased = $derived(
-    vehicle.kind === 'live' || vehicle.kind === 'corroborated' || vehicle.kind === 'reconciled',
-  );
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -176,47 +172,55 @@
     {/if}
   </span>
 
+  <!--
+    Action + state column order: [schedule btn] [map btn] [state indicator].
+    Schedule / map are neutral icon BUTTONS — visible only when a target
+    exists, hidden entirely otherwise. The state indicator on the right
+    is a non-interactive badge whose color encodes whether we have a live
+    GPS fix for this vehicle (success=GPS, warning=predicted-only,
+    muted=schedule-only).
+  -->
   {#if scheduleHref}
     <a
       href={scheduleHref}
-      title={`${KIND.label} — open route schedule`}
-      aria-label={`${KIND.label}, open route schedule`}
+      title="Open route schedule"
+      aria-label={`Open ${vehicle.route.shortName} schedule`}
       class={cn(
-        'inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0',
-        'hover:ring-2 hover:ring-[color:var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
-        KIND.iconBg,
+        'inline-flex items-center justify-center w-6 h-6 rounded-md shrink-0',
+        'bg-[color:var(--color-border)]/40 text-[color:var(--color-fg)]',
+        'hover:bg-[color:var(--color-border)]/70',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
       )}
     >
-      <KindIcon size={12} strokeWidth={2.5} />
+      <Calendar size={13} strokeWidth={2.25} />
     </a>
-  {:else}
-    <span
-      title={KIND.label}
-      aria-label={KIND.label}
-      class={cn(
-        'inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0',
-        KIND.iconBg,
-      )}
-    >
-      <KindIcon size={12} strokeWidth={2.5} />
-    </span>
   {/if}
 
-  <!-- Map slot — always reserves space so the map icon is always the last column -->
   {#if mapHref}
     <a
       href={mapHref}
       title="Open route map"
       aria-label={`Open ${vehicle.route.shortName} on the map`}
       class={cn(
-        'inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0',
-        'hover:ring-2 hover:ring-[color:var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
-        isGpsBased ? 'bg-[color:var(--color-success)]' : 'bg-[color:var(--color-border)]/60 text-[color:var(--color-fg-muted)]',
+        'inline-flex items-center justify-center w-6 h-6 rounded-md shrink-0',
+        'bg-[color:var(--color-border)]/40 text-[color:var(--color-fg)]',
+        'hover:bg-[color:var(--color-border)]/70',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
       )}
     >
       <MapIcon size={14} strokeWidth={2.25} />
     </a>
-  {:else}
-    <span class="w-6 h-6 shrink-0" aria-hidden="true"></span>
   {/if}
+
+  <!-- State indicator: non-interactive. Color = GPS health. -->
+  <span
+    title={KIND.label}
+    aria-label={KIND.label}
+    class={cn(
+      'inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0',
+      KIND.iconBg,
+    )}
+  >
+    <KindIcon size={12} strokeWidth={2.5} />
+  </span>
 </div>

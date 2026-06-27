@@ -80,6 +80,12 @@
   // ── Data ────────────────────────────────────────────────────────────
   let view = $state<RouteMapView | null>(null);
   let error = $state<string | null>(null);
+  /** Polylines for orphan tripIds: live GPS observations on
+   *  (routeId, direction) whose trip didn't surface in view.trips
+   *  (running early/late, calendar mismatch, etc.). Keyed by tripId.
+   *  Worker caches shapes by shape_id so re-fetching across renders
+   *  is O(1). Reset when the route or direction changes. */
+  let orphanShapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
 
   const tz = $derived(feedsStore.activeTimezone);
   const nowMin = $derived(minSinceMidnightInTz(nowTicker.ms, tz));
@@ -161,6 +167,73 @@
     return measurePolyline(view.shape);
   });
 
+  // Live observations on (routeId, direction) whose trip didn't
+  // surface in view.trips. They're real buses on this route; the
+  // schedule scanner just doesn't have them in window. We render
+  // them as extra markers (and let the URL's selectedTripId
+  // highlight them just like a static-scheduled trip).
+  const orphanObservations = $derived.by(() => {
+    if (!view) return [];
+    const known = new Set(view.trips.map((t) => t.tripId));
+    return liveVehiclesStore.observations.filter(
+      (o) =>
+        o.tripId.length > 0 &&
+        o.routeId === routeId &&
+        o.directionId === direction &&
+        !known.has(o.tripId),
+    );
+  });
+
+  // Reset the orphan-shape cache whenever route or direction changes
+  // so we don't carry stale entries across navigations.
+  $effect(() => {
+    void routeId;
+    void direction;
+    orphanShapes = {};
+  });
+
+  // Top up orphanShapes for any orphan tripId we haven't fetched yet.
+  $effect(() => {
+    const missing = Array.from(
+      new Set(orphanObservations.map((o) => o.tripId).filter((id) => !(id in orphanShapes))),
+    );
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const extra = await repo.getShapesForTrips(missing);
+        orphanShapes = { ...orphanShapes, ...extra };
+      } catch {
+        // Soft-fail: orphan markers simply won't appear this tick.
+      }
+    })();
+  });
+
+  // Per-orphan trip-shape plans. We don't know intermediate stops
+  // for these trips (would need a separate worker call); plug an
+  // empty `legs` list and rely on `predictPositionFromGps` to
+  // dead-reckon along the polyline. `predictPositionFromGps` only
+  // reads `plan.measured`, never `plan.legs`, so this is safe.
+  const orphanPlans = $derived.by<Map<string, TripShapePlan | null>>(() => {
+    const map = new Map<string, TripShapePlan | null>();
+    for (const tripId in orphanShapes) {
+      const shape = orphanShapes[tripId];
+      if (!shape || shape.length < 2) {
+        map.set(tripId, null);
+        continue;
+      }
+      map.set(tripId, { measured: measurePolyline(shape), legs: [] });
+    }
+    return map;
+  });
+
+  /** A representative headsign for this route+direction, copied from
+   *  the first view.trips entry. All trips on the same (route, dir)
+   *  share their headsign in every feed we've seen. */
+  const directionHeadsign = $derived<string | null>(
+    view?.trips[0]?.headsign ?? null,
+  );
+
   // ── Derived view-model ──────────────────────────────────────────────
   /** Render-ready vehicles for the current nowMin. Each trip yields
    *  one entry; the domain decides position + status, the UI maps
@@ -236,6 +309,31 @@
         tripStartMin: t.tripStartMin,
         scheduled: p.status === 'before' || p.status === 'at-origin',
         gpsConfidence,
+      });
+    }
+
+    // Orphans: live buses on this (route, direction) whose trip the
+    // static-schedule scanner didn't surface. Render at the GPS fix
+    // (dead-reckoned forward) so the user can still see — and click
+    // from a station card to highlight — a running bus.
+    for (const o of orphanObservations) {
+      const plan = orphanPlans.get(o.tripId);
+      if (!plan) continue;
+      const p = predictPositionFromGps(plan, o, nowMs);
+      if (!p) continue;
+      out.push({
+        tripId: o.tripId,
+        headsign: directionHeadsign,
+        lat: p.lat,
+        lon: p.lon,
+        opacity: 0.9,
+        selected: o.tripId === selectedTripId,
+        // Use the trip's start_time from the observation when present
+        // (we lack stop_times for orphan trips). Falls back to nowMin
+        // so sorting stays defined.
+        tripStartMin: nowMin,
+        scheduled: false,
+        gpsConfidence: p.freshness === 'fresh' ? 'good' : 'poor',
       });
     }
     return out;

@@ -123,16 +123,22 @@
     const scheduledTripIds = new Set(
       board.vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
     );
-    const routesById = new Map(board.vehicles.map((v) => [v.route.id, v.route]));
-    // GTFS-RT vehicle positions don't carry the headsign, so reuse
-    // any scheduled sibling's headsign on the same (route, direction).
-    // Trips on the same route+direction share the destination in
-    // every feed we've seen.
-    const headsignByKey = new Map<string, string>();
+    // (routeId, directionId) → { route, headsign } for the orphan
+    // pipeline. Direction-keyed so:
+    //   (a) we don't surface a bus heading e.g. dir 1 on a station
+    //       that's only served by dir 0 of that route, and
+    //   (b) we always have a sibling headsign to copy (GTFS-RT
+    //       vehicle positions don't carry headsign themselves).
+    // Trips on the same route+direction share their destination
+    // headsign in every feed we've seen.
+    const siblingByKey = new Map<string, { route: typeof board.vehicles[number]['route']; headsign: string | undefined }>();
     for (const v of board.vehicles) {
-      if (!v.headsign) continue;
-      const key = `${v.route.id}|${v.schedule?.directionId ?? 0}`;
-      if (!headsignByKey.has(key)) headsignByKey.set(key, v.headsign);
+      if (v.schedule?.directionId !== 0 && v.schedule?.directionId !== 1) continue;
+      const key = `${v.route.id}|${v.schedule.directionId}`;
+      const existing = siblingByKey.get(key);
+      if (!existing || (!existing.headsign && v.headsign)) {
+        siblingByKey.set(key, { route: v.route, headsign: v.headsign });
+      }
     }
     const stationPos =
       typeof board.stop.lat === 'number' && typeof board.stop.lon === 'number'
@@ -142,12 +148,11 @@
     const out: Vehicle[] = [];
     for (const o of liveVehiclesStore.observations) {
       if (!o.tripId || scheduledTripIds.has(o.tripId)) continue;
-      const route = routesById.get(o.routeId);
-      if (!route) continue;
+      const sibling = siblingByKey.get(`${o.routeId}|${o.directionId}`);
+      if (!sibling) continue;
       const shape = shapes[o.tripId];
       if (!shape) continue;
-      const headsign = headsignByKey.get(`${o.routeId}|${o.directionId}`);
-      const v = buildOrphanLiveVehicle(o, route, shape, stationPos, headsign);
+      const v = buildOrphanLiveVehicle(o, sibling.route, shape, stationPos, sibling.headsign);
       if (v) out.push(v);
     }
     return out;
