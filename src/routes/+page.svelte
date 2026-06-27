@@ -20,6 +20,7 @@
   import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
   import { selectBoardsForView } from '$lib/domain/stationSelection';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
+  import { isPositionInFeedBbox, distanceToFeedBboxKm } from '$lib/domain/feedCoverage';
   import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
   import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
@@ -229,15 +230,35 @@
       </CardContent>
     </Card>
   {:else if boards.length === 0}
+    {@const activeFeed = feedsStore.byId(feedsStore.boundFeedId)}
+    {@const userPos = locationStore.position
+      ? { lat: locationStore.position.coords.latitude, lon: locationStore.position.coords.longitude }
+      : null}
+    {@const outsideBbox = activeFeed && userPos && gpsState === 'available'
+      ? !isPositionInFeedBbox(userPos, activeFeed)
+      : false}
+    {@const distanceKm = outsideBbox && activeFeed && userPos
+      ? Math.round(distanceToFeedBboxKm(userPos, activeFeed))
+      : 0}
     <Card>
       <CardContent>
-        <Stack spacing={1}>
-          <Typography variant="h6">No nearby stations</Typography>
-          <Typography variant="caption">
-            No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of {gpsState === 'available' ? 'your current position' : 'the fallback location'}.
-            Try moving closer to a transit corridor or enabling location.
-          </Typography>
-        </Stack>
+        {#if outsideBbox && activeFeed}
+          <Stack spacing={1}>
+            <Typography variant="h6">Wrong feed for your location</Typography>
+            <Typography variant="caption">
+              You're about {distanceKm} km from the <strong>{activeFeed.name}</strong> service area.
+              Pick a feed that covers your location in <a href="/settings" class="underline">Settings</a>.
+            </Typography>
+          </Stack>
+        {:else}
+          <Stack spacing={1}>
+            <Typography variant="h6">No nearby stations</Typography>
+            <Typography variant="caption">
+              No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of {gpsState === 'available' ? 'your current position' : 'the fallback location'}.
+              Try moving closer to a transit corridor or enabling location.
+            </Typography>
+          </Stack>
+        {/if}
       </CardContent>
     </Card>
   {:else}
