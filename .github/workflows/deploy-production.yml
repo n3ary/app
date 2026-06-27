@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -36,7 +36,7 @@ jobs:
         run: npm run build
 
       - name: Install Netlify CLI
-        run: npm install -g netlify-cli
+        run: npm install -g netlify-cli@latest
 
       - name: Deploy to Netlify
         run: netlify deploy --prod --dir=build
