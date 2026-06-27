@@ -181,7 +181,7 @@
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
             <Typography variant="body2">Show off-route vehicles</Typography>
-            <Typography variant="caption">Diagnostic: vehicles too far from the route shape to match a trip. Empty until live tracking is active.</Typography>
+            <Typography variant="caption">Diagnostic: vehicles too far from the route shape to match a trip.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showOffRouteVehicles}
