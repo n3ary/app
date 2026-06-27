@@ -10,38 +10,47 @@ Reasoning behind the PWA setup. Implementation:
 - Updates propagate without forcing the user to clear caches.
 - Safe-area aware on iPhone X+ (notch, home indicator).
 
+## Single version source
+
+`package.json#version` is the single source of truth for "what build is
+this". It's:
+
+- Bumped on every PR by the auto-version GitHub Action — see
+  [ci-and-versioning.md](ci-and-versioning.md).
+- Read at build time in [svelte.config.js](../../svelte.config.js) and passed
+  to SvelteKit as `kit.version.name`.
+- Emitted into `build/_app/version.json` (e.g. `{"version":"1.5.20"}`).
+- Available to UI code via `import { version } from '$app/environment'` —
+  use it anywhere a version string needs to be displayed.
+
+> [!IMPORTANT]
+> One version everywhere. Don't introduce a separate git-SHA, build
+> timestamp, or PWA-only version string. The auto-bump action guarantees
+> uniqueness per shipped bundle.
+
 ## Update propagation
 
-The build emits `build/_app/version.json` containing a unique
-build identifier (git short SHA, falling back to `t<timestamp>` when the
-build runs outside a git checkout). The SvelteKit client polls this file
-on a fixed interval and reloads when the string changes.
-
-### Configuration
-
-In [svelte.config.js](../../svelte.config.js):
+SvelteKit's client polls `_app/version.json` on a fixed interval (60 s).
+When the returned string differs from the one the client booted with,
+`updated.current` from `$app/state` flips to `true`. The root layout
+([src/routes/+layout.svelte](../../src/routes/+layout.svelte)) subscribes
+and reloads the page.
 
 ```js
+// svelte.config.js
 kit: {
   version: {
-    name: buildVersion(),       // git short SHA (e.g. "0b75986") or "t<ms>"
-    pollInterval: 60 * 1000,    // 60 s
+    name: pkg.version,         // package.json version
+    pollInterval: 60 * 1000,   // 60 s
   },
 }
 ```
 
 Why 60 s: long enough to be invisible in network panels and battery use,
 short enough that a returning user catches a fresh deploy within a few
-minutes. Lower values don't help — Netlify's edge cache TTL on
-`version.json` is bounded anyway.
+minutes.
 
-### Reload trigger
-
-[src/routes/+layout.svelte](../../src/routes/+layout.svelte) subscribes
-to `updated.current` from `$app/state`. When the poll detects a new
-version, the layout reloads the page.
-
-### Cache headers
+## Cache headers
 
 [netlify.toml](../../netlify.toml) explicitly excludes `version.json`,
 the service worker, and `index.html` from CDN caching. Without these
