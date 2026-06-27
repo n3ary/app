@@ -2,7 +2,7 @@
 
 ETA estimation — what the app shows for "in X minutes" or "Departed".
 
-## Current state (as of 2026-06-27)
+## Current state
 
 Shipped:
 - Schedule-spine prediction: ETA = scheduled time, optionally corrected by
@@ -13,6 +13,11 @@ Shipped:
 - Reconciler matches live vehicles to scheduled rows with adaptive
   tolerance, bipartite greedy matching, direction-id resolution (Cluj
   feed bug workaround — see [../specs/live-data-pipeline.md](../specs/live-data-pipeline.md)).
+
+Known gap: today's prediction uses **schedule as the spine** (regression
+vs v1's GPS-spine cascade) and the UI update cycles are opaque — a manual
+refresh can take up to ~30 s to flip ETA labels. Both addressed by the
+active plan: [../plan/prediction-v2.md](../plan/prediction-v2.md).
 
 Source: [src/lib/domain/predictEta.ts](../../src/lib/domain/predictEta.ts),
 [src/lib/domain/shapeProjection.ts](../../src/lib/domain/shapeProjection.ts),

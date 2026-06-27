@@ -4,9 +4,22 @@ Future work, in-flight design, and open questions. Short-lived per doc;
 distilled into [../specs/](../specs/) or [../concepts/](../concepts/)
 once shipped.
 
-| Document | Status |
+## Active priority
+
+[prediction-v2.md](prediction-v2.md) is the primary near-term focus. It
+fixes two real pain points in the current app:
+
+1. **Schedule-spine prediction** — regression vs v1; live GPS is only used
+   for reconciliation, not as the spine for position rendering.
+2. **Opaque UI update cycles** — three loops (live poll, UI tick, refresh)
+   are decoupled in ways that aren't obvious; refresh can take up to ~30 s
+   to flip ETA labels. Section 6.5 of the plan spells out the contract.
+
+## All plan docs
+
+| Document | Scope |
 |---|---|
-| [prediction-v2.md](prediction-v2.md) | Active — primary near-term focus |
+| [prediction-v2.md](prediction-v2.md) | The above — active |
 | [neary-gtfs-evolution.md](neary-gtfs-evolution.md) | M3–M5 roadmap on the separate `neary-gtfs` repo |
 | [polish-and-perf.md](polish-and-perf.md) | Phase 9 — Histoire, Biome, perf budgets, store install |
 | [open-questions.md](open-questions.md) | Deferred decisions awaiting more signal |
