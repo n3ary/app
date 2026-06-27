@@ -67,9 +67,9 @@ export interface GtfsRepo {
 
   /**
    * Domain-shaped arrivals at a stop, ready for bucketing + rendering.
-   * Schedule-only in Phase 4: every entry is `kind: 'scheduled'` or
-   * `kind: 'predicted'` (no live data wired yet). Phase 5 plugs the live
-   * pipeline stages downstream of the scheduleScanner.
+   * Schedule-only today: every entry is `kind: 'scheduled'` or
+   * `kind: 'predicted'` (no live data wired yet). The live pipeline
+   * stages will plug in downstream of the scheduleScanner.
    *
    *   nowMs           Unix ms — the moment this query represents
    *   windowMinutes   How many minutes into the future to include
@@ -116,7 +116,7 @@ export interface GtfsRepo {
 
   /**
    * Resolve trip_id → route shape polyline for many trips in one
-   * round-trip. Used by the Phase 5.4 prediction stage: the page
+   * round-trip. Used by the GPS-derived ETA pipeline: the page
    * collects the trip_ids of every reconciled vehicle currently on
    * screen and asks for their shapes; the predictor then projects
    * vehicle + stop onto the polyline to derive a GPS-based ETA.

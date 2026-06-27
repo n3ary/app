@@ -2,7 +2,7 @@
  * stationSelection — chooses which stations the Stations view should
  * surface for a given GPS context. Pure, no DOM, no SQL.
  *
- * Rules (spec: docs/rebuild-v2/vehicles-and-views.md §… TBC):
+ * Rules (spec: docs/specs/vehicles-and-views.md):
  *
  *   1. PRIMARY — closest stop within `nearbyRadiusM`. If a second
  *      stop is also within `nearbyRadiusM` AND its distance to the user

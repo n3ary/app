@@ -3,7 +3,7 @@
  * (RouteBadge, VehicleCard, StationCard) and by the upcoming domain layer
  * (prediction, reconciler, buckets).
  *
- * Vehicle model follows docs/rebuild-v2/vehicles-and-views.md §2. Five kinds
+ * Vehicle model follows docs/specs/vehicles-and-views.md. Five kinds
  * describing the *source of position knowledge*:
  *
  *   scheduled     trip in schedule, not yet active, no position yet

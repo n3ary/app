@@ -15,11 +15,12 @@
  *   + tranzy          | scheduleScanner, rtIngester, tranzyIngester,
  *                     |   scheduleReconciler, multiSourceCorroborator
  *
- * Phase 4 ships only `scheduleScanner`. Phase 5 layers the live stages on
- * top without touching scheduleScanner or anything downstream of the
+ * Today only `scheduleScanner` is wired. The live stages (rtIngester,
+ * tranzyIngester, scheduleReconciler, multiSourceCorroborator) will layer
+ * on top without touching scheduleScanner or anything downstream of the
  * pipeline (UI, buckets, sort).
  *
- * Spec: docs/rebuild-v2/vehicles-and-views.md §pipeline.
+ * Spec: docs/specs/vehicles-and-views.md.
  */
 
 import type { Vehicle } from '../types';

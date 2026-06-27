@@ -2,11 +2,11 @@
  * shapeProjection — pure geometry for projecting GPS points onto a
  * GTFS route shape (polyline) and measuring distance-along-shape.
  *
- * Why: GPS-derived ETA (Phase 5.4) needs to know how far a vehicle
- * is along its route shape so it can divide remaining distance by
- * speed. Treating "distance to stop" as crow-flies haversine is
- * wrong for any route that bends — the bus drives along the polyline,
- * not through buildings.
+ * Why: GPS-derived ETA needs to know how far a vehicle is along its
+ * route shape so it can divide remaining distance by speed. Treating
+ * "distance to stop" as crow-flies haversine is wrong for any route
+ * that bends — the bus drives along the polyline, not through
+ * buildings.
  *
  * Ported and trimmed from apps/legacy/src/utils/arrival/distanceUtils.ts.
  * The legacy version carried a richer ProjectionResult; here we

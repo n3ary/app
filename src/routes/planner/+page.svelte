@@ -1,6 +1,6 @@
 <!--
-  Planner — placeholder. Implementation deferred to Phase 8 per plan §9.
-  Visible in the bottom nav now so the navigation surface is final.
+  Planner — placeholder. Visible in the bottom nav so the navigation
+  surface is final; implementation lands later.
 -->
 <script lang="ts">
   import { Home } from 'lucide-svelte';

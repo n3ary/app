@@ -1,12 +1,10 @@
 <!--
   Header — fixed top bar. Carries the view title (left) and the four health
-  dots + refresh button (right) per plan §4.
+  dots + refresh button (right).
 
   The dots are wired to a `health` prop, an object the parent fills with
-  each source's current state. Phase 3 ships placeholder states (all idle);
-  GPS lights up when the geolocation listener is on (Phase 4), Schedule when
-  the DB worker has data (Phase 4), Live when the live worker is running
-  (Phase 5).
+  each source's current state: GPS reflects the geolocation listener,
+  Schedule reflects the DB worker, Live reflects the live worker.
 
   Refresh callback is optional — when absent (e.g. on routes that have
   nothing to refresh) the button is hidden.

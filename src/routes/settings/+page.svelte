@@ -1,28 +1,47 @@
 <!--
-  Settings — user preferences. Theme picker, behavior toggles, and the
-  feed selector (sources feeds.json from the neary-gtfs binaries branch via
-  jsDelivr). Advanced settings (storage, API key, force reload, version,
-  debug toggles) live at /settings/advanced — placeholder linked at the
-  bottom for now.
+  Settings — user preferences. Theme picker, behavior toggles, the feed
+  selector (sources feeds.json from the neary-gtfs binaries branch via
+  jsDelivr), and a tiny Advanced section with the app version + when this
+  client first saw it. A dedicated /settings/advanced view will land
+  alongside storage / debug toggles in a later phase.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { version } from '$app/environment';
   import { CheckCheck, Locate, Moon, Sun } from 'lucide-svelte';
   import {
     Box, Button, Card, CardContent, Chip, List, ListItem, ListItemText,
     Spinner, Stack, Switch, ToggleGroup, Typography,
+    formatBytes, formatRelative, formatAbsolute,
   } from '$lib/ui';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
 
+  /** localStorage key for tracking when this client first saw the current
+   *  app version. Stored as `{ version, at }` so a version bump resets the
+   *  timestamp on next load. */
+  const VERSION_SEEN_KEY = 'neary:version-first-seen';
+
+  let versionFirstSeenAt = $state<number | null>(null);
+
   onMount(() => {
     void feedsStore.load();
-  });
 
-  function fmtBytes(n: number | undefined | null): string {
-    if (!n) return '';
-    return n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
-  }
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(VERSION_SEEN_KEY);
+      const parsed = raw ? (JSON.parse(raw) as { version: string; at: number }) : null;
+      if (parsed && parsed.version === version && typeof parsed.at === 'number') {
+        versionFirstSeenAt = parsed.at;
+      } else {
+        const at = Date.now();
+        localStorage.setItem(VERSION_SEEN_KEY, JSON.stringify({ version, at }));
+        versionFirstSeenAt = at;
+      }
+    } catch {
+      // localStorage unavailable or corrupted; fall back to "unknown"
+    }
+  });
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6 space-y-6">
@@ -70,7 +89,7 @@
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
             <Typography variant="body2">Show drop-off-only vehicles</Typography>
-            <Typography variant="caption">Include vehicles that stop at this station only to let passengers off (you can't board). They get a "drop off only" chip when shown.</Typography>
+            <Typography variant="caption">Vehicles you can't board here. Marked with a chip.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showDropOffOnly}
@@ -81,8 +100,8 @@
 
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
-            <Typography variant="body2">Show recently departed vehicles</Typography>
-            <Typography variant="caption">Include vehicles that already passed this station and are still en route to their terminus. One row per route (the most recent). Map view always shows them all.</Typography>
+            <Typography variant="body2">Show recently departed</Typography>
+            <Typography variant="caption">Vehicles that just passed this stop. One row per route.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showDepartedVehicles}
@@ -127,7 +146,7 @@
               >
                 <ListItemText
                   primary={f.name}
-                  secondary={`${f.country}${f.region ? ' · ' + f.region : ''} · ${f.timezone}${f.size_bytes?.sqlite_gz ? ' · ' + fmtBytes(f.size_bytes.sqlite_gz) : ''}`}
+                  secondary={`${f.country}${f.region ? ' · ' + f.region : ''} · ${f.timezone}${f.size_bytes?.sqlite_gz ? ' · ' + formatBytes(f.size_bytes.sqlite_gz) : ''}`}
                 />
                 {#if selected}
                   <Chip size="small" color="primary">
@@ -162,7 +181,7 @@
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
             <Typography variant="body2">Show off-route vehicles</Typography>
-            <Typography variant="caption">Diagnostic: include vehicles the reconciler couldn't match to the route shape (stale GPS, off the line). Not relevant in schedule-only mode; lights up once a live source is configured.</Typography>
+            <Typography variant="caption">Diagnostic: vehicles too far from the route shape to match a trip.</Typography>
           </Box>
           <Switch
             checked={userPrefs.showOffRouteVehicles}
@@ -171,10 +190,12 @@
           />
         </Stack>
 
-        <Typography variant="caption">
-          Storage breakdown, data freshness, force schedule reload, app version,
-          and more debug toggles land in a separate view in Phase 7.
-        </Typography>
+        <Stack spacing={0.5}>
+          <Typography variant="body2">App version</Typography>
+          <Typography variant="caption">
+            v{version} · updated {formatRelative(versionFirstSeenAt)}{#if versionFirstSeenAt} ({formatAbsolute(versionFirstSeenAt)}){/if}
+          </Typography>
+        </Stack>
       </Stack>
     </CardContent>
   </Card>

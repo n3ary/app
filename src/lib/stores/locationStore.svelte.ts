@@ -1,6 +1,6 @@
 /*
  * locationStore — GPS state singleton consumed by the header's GPS dot and
- * (eventually, Phase 4) the Stations view's proximity query.
+ * the Stations view's proximity query.
  *
  * Lifecycle:
  *   - Constructed lazily on first reactive access (module-level $state is

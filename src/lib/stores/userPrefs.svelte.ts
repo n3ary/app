@@ -24,9 +24,9 @@ class UserPrefs {
    *  most users only care about what's still coming. */
   showDepartedVehicles = $state(false);
   /** Advanced — show vehicles the reconciler couldn't pin to the route
-   *  shape (off-route bucket). Diagnostic; default off. Phase 4 never
-   *  emits off-route (only live vehicles can), so this is a no-op now
-   *  but reserves the contract for Phase 5+. */
+   *  shape (off-route bucket). Diagnostic; default off. Only live
+   *  vehicles can land in this bucket, so it's a no-op until live
+   *  tracking is wired — the toggle reserves the contract. */
   showOffRouteVehicles = $state(false);
   /** Maximum number of vehicle rows shown per station card. */
   stationBoardMaxRows = $state(5);

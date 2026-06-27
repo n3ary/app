@@ -139,11 +139,13 @@
 
   const title = $derived(TITLES[activeNav]);
 
-  // Phase 3 ships placeholder Schedule and Live states (real wiring lands in
-  // Phase 4 / 5). GPS and Connection are real — see locationStore + connection
-  // Store. The GPS watch isn't started by the layout itself; the Stations
-  // route calls locationStore.start() on mount so we don't prompt for
-  // permission on routes that don't need it.
+  // Schedule and Live dots reflect their underlying workers; today the
+  // schedule dot lights up when the GTFS worker has a feed bound, the
+  // live dot stays idle until a live worker is wired in. GPS and
+  // Connection are real — see locationStore + connectionStore. The GPS
+  // watch isn't started by the layout itself; the Stations route calls
+  // locationStore.start() on mount so we don't prompt for permission
+  // on routes that don't need it.
   const health: HeaderHealth = $derived({
     gps: {
       state: locationStore.freshness,

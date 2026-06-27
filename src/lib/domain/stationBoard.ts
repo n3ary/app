@@ -2,7 +2,7 @@
  * stationBoard — pure helpers for turning a raw Vehicle[] into a
  * ready-to-render board for a single station. Used by:
  *   - the Stations view (/) per nearby stop
- *   - the Schedule drill-down (/schedule/route/[id]?stop=…) (Phase 6)
+ *   - the Schedule drill-down (/schedule/route/[id]?stop=…)
  *
  * No DOM, no stores, no SQL. The worker hands us Vehicle[]; this module
  * applies the user's view preferences and produces sorted bucketed rows
@@ -147,7 +147,7 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
  * itself. Keeps pipeline composition + timezone discipline in the
  * domain layer; the UI just renders what comes back.
  *
- * Stage order matches docs/rebuild-v2/vehicles-and-views.md §5.5:
+ * Stage order matches docs/specs/vehicles-and-views.md:
  *   1. Route filter (visual scope chosen by the user) — applied first
  *      so the rest of the pipeline operates on the right subset.
  *   2. Live reconciliation (route+direction+startTime match).

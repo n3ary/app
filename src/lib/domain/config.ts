@@ -1,12 +1,12 @@
 /*
  * NearyConfig — single source of truth for all tunable thresholds used by
- * the bucketing, prediction, and reconciliation layers. Spec:
- * docs/rebuild-v2/vehicles-and-views.md §7.1.
+ * the bucketing, prediction, and reconciliation layers.
+ * Spec: docs/specs/vehicles-and-views.md.
  *
- * For now everyone reads `DEFAULT_CONFIG`. In Phase 5 the live worker
- * and the /settings/advanced view will be able to override individual
- * fields per session. Keeping all magic numbers behind one type means we
- * never have to grep the codebase to tune the app.
+ * For now everyone reads `DEFAULT_CONFIG`. A future advanced-settings
+ * view will be able to override individual fields per session.
+ * Keeping all magic numbers behind one type means we never have to
+ * grep the codebase to tune the app.
  */
 
 export interface NearyConfig {

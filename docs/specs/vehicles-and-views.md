@@ -21,7 +21,7 @@ multiple entry points.
 |---|---|---|
 | Stations (primary) | `/` | Nearby stations, each with its arrivals board |
 | Favorites (primary) | `/favorites` | Saved routes; tap opens the drill-downs |
-| Planner (primary) | `/planner` | Reserved — Phase 8 |
+| Planner (primary) | `/planner` | Reserved — not yet implemented |
 | Settings (primary) | `/settings` | Theme, feed picker, display toggles |
 | Schedule (drill-down) | `/schedule/route/[id]/[[view]]` | Per-route schedule with today / tomorrow / week tabs |
 | Map (drill-down) | `/map/route/[id]/[[selected]]` | Whole route on the map: shape + every vehicle + selected highlight |
@@ -38,11 +38,16 @@ assembly with a 24-hour window scoped to one route.
 
 | From | Tap target | Lands on |
 |---|---|---|
-| Stations card route badge | route id | `/schedule/route/[id]?stop=[stopId]` |
-| Stations card map icon | vehicle id | `/map/route/[id]?selected=[vehicleId]` |
-| Favorites saved route | card body | `/schedule/route/[id]` |
-| Favorites saved route | map icon | `/map/route/[id]` |
-| Map vehicle marker | marker | `/map/route/[id]?selected=[vehicleId]` |
+| Stations card route badge | route id | `/schedule/route/[id]_[direction]` (path-based; the picked direction is encoded as `_0` or `_1`) |
+| Stations card map icon | trip id | `/map/route/[id]_[direction]/[tripId]` (selected trip is a path segment) |
+| Favorites saved route | schedule icon | `/schedule/route/[id]_0` |
+| Favorites saved route | map icon | `/map/route/[id]_0` |
+| Map vehicle marker | marker | navigates to `/map/route/[id]_[direction]/[tripId]` with the new trip in the path |
+
+The favorites card body is intentionally not tappable — the badge is
+identity-only (mirrors VehicleCard). Navigation goes through the dedicated
+map / schedule icon buttons, so a quick tap on the colored badge doesn't
+lead anywhere unexpected.
 
 ## 2. Vehicle taxonomy
 
@@ -91,36 +96,61 @@ view only — map always shows them).
 
 ## 4. Map view
 
-| Vehicle kind | Marker fill | Border | Pane |
-|---|---|---|---|
-| `corroborated` | route color | 2 px route color + white outline | `corroborated` |
-| `reconciled` | route color | 2 px route color | `reconciled` |
-| `live` | route color | 1 px route color | `live` |
-| `predicted` | route color | 1 px dashed | `predicted` |
-| `scheduled` | — | — | not rendered (list-only kind) |
-| selected (any of the above) | overlay ring 3 px accent | — | `selected-overlay` |
+The map ([src/routes/map/route/[id]/[[selected]]/+page.svelte](../../src/routes/map/route/%5Bid%5D/%5B%5Bselected%5D%5D/+page.svelte))
+uses a simpler 2-state marker model than the full `Vehicle.kind` union:
 
-Pane order, top → bottom:
+| Marker state | When | Visual |
+|---|---|---|
+| **en-route** | trip is in transit (predicted from shape or live GPS) | solid route-color badge with the route shortName |
+| **scheduled** | the soonest not-yet-departed trip on the route (`status === 'before'` or `'at-origin'`) | white badge, route-colored border + text (outlined) |
+
+On top of the badge fill, a ring conveys live-data state:
+
+| Ring | Meaning |
+|---|---|
+| white (default) | no live GPS yet (Phase 4 baseline) |
+| green | live GPS, healthy freshness (Phase 5+) |
+| yellow | live GPS, poor / stale freshness |
+| white inner + dark outer | the currently selected vehicle |
+
+### One scheduled marker, not many
+
+Multiple upcoming trips can be "before" or "at-origin" at the same time;
+rendering all of them would stack bubbles on top of each other at the
+origin stop. The page sorts trips by `tripStartMin` and keeps the
+**soonest one only**. Trips already finished (`status === 'after'`) are
+dropped entirely.
+
+### Leaflet panes
+
+The page uses Leaflet panes to control z-order without relying on render
+order:
 
 ```
-selected-overlay > corroborated > reconciled > live > predicted >
-user-location > stations > route-shapes > tiles
+nearyVehicles (z=620) > markerPane (z=600, stops) > overlayPane (route shape) > tilePane
 ```
 
-So a `corroborated` marker is never visually buried under a `predicted` one
-overlapping it.
+So vehicle badges always render above stop markers; stop markers always
+render above the route polyline.
 
 ### Selected vehicle highlight
 
-`/map/route/[id]?selected=[vehicleId]` reads the query param and renders
-the ring overlay on the matching marker. Tapping another marker updates
-the query param without navigation, so the back button still returns to
-the screen that opened the map.
+The selected trip is encoded as a **path segment**, not a query param:
+`/map/route/[id]/[[selected]]`. Tapping another marker navigates to the new
+path, so the back button returns to the screen that opened the map.
 
 ## 5. Reconciliation gotchas
 
 These are the cases where a simple "match by trip_id then by timing"
 breaks down and the bug is easy to re-introduce.
+
+> [!IMPORTANT]
+> Only §5.5 is implemented today (Phase 4 baseline; the rest are Phase 5+
+> work tracked in [../plan/prediction-v2.md](../plan/prediction-v2.md) and
+> [../plan/tranzy-integration.md](../plan/tranzy-integration.md)). The
+> rules below are the **design** the reconciler must satisfy when live
+> reconciliation lands — if a future PR ships live matching without these,
+> you get the bugs listed.
 
 ### 5.1 The late-vehicle phantom
 
@@ -197,11 +227,24 @@ re-litigate them.
 
 ## 7. Schedule-only kinds and the map
 
-`predicted` and `scheduled` are list-row kinds. The map renders `predicted`
-markers (dashed border) but **not** `scheduled` — a vehicle that's
-scheduled but no live source has even been polled has no meaningful
-position to plot.
+`scheduled` and `predicted` are list-row kinds for the station and
+schedule views — the discriminated union encodes how we know what we
+know about the vehicle.
 
-If a scheduled trip is active per the calendar and live sources have been
-polled with no result, it gets promoted to `predicted` by the
-scheduleScanner and at that point appears on the map.
+The **map** doesn't consume the full union; it has its own simpler 2-state
+model (see §4). What matters at the spec level:
+
+- The **soonest upcoming scheduled trip** for the route is rendered at the
+  origin as an outlined white badge. Later upcoming trips are not
+  rendered (would stack at origin).
+- En-route trips render with their predicted position whether or not a
+  live source has been polled. Without live GPS the position comes from
+  schedule interpolation along the shape.
+- Finished trips (past terminus) are dropped.
+
+The richer 5-kind taxonomy (`corroborated` / `reconciled` / `live` /
+`predicted` / `scheduled`) is consumed by the **list** views (Stations,
+Schedule) where the kind drives row dimming and confidence pips. The
+map deliberately doesn't try to encode all five at once — the badge
+space is too small and the rider only needs to know "waiting at origin"
+vs "already moving".

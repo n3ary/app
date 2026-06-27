@@ -7,10 +7,10 @@
  * EVERY row emitted here is `kind: 'scheduled'`. That's intentional:
  * 'scheduled' just means "this trip exists in the schedule", which is
  * the only thing we know in a schedule-only pipeline. The `'predicted'`
- * kind is reserved for the live reconciler (Phase 5+): it emits a
- * `predicted` vehicle when we've polled live sources, found none
- * reporting the trip, and chose to *estimate* its position from the
- * schedule. That choice doesn't exist at this layer.
+ * kind is reserved for the live reconciler: it emits a `predicted`
+ * vehicle when we've polled live sources, found none reporting the
+ * trip, and chose to *estimate* its position from the schedule.
+ * That choice doesn't exist at this layer.
  *
  * Map view position interpolation along the route shape is a separate
  * rendering concern and doesn't change the kind.
@@ -68,7 +68,7 @@ export interface ScheduleScannerInputs {
   /** Minutes since local midnight when "now" happened. */
   nowMinSinceMidnight: number;
   /** Unix ms for the same "now". Reserved — unused now that nothing here
-   *  stamps a position; the live reconciler will use it in Phase 5. */
+   *  stamps a position; the live reconciler will use it. */
   nowMs: number;
   /** How many minutes in the future to include. */
   windowMinutes: number;

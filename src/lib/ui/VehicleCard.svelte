@@ -53,13 +53,12 @@
     class: className,
   }: Props = $props();
 
-  // Per-kind visuals. Spec §2 visual-variant table. The kind only drives
-  // the badge icon and color now — every row gets the same solid border.
-  // Schedule-only kinds (`scheduled` / `predicted`) used to render with
-  // a dashed border + opacity dim, but that's misleading when there is
-  // no live source to contrast against (Phase 4). Once a live source is
-  // configured (Phase 5+) the dim is applied separately via the `dim`
-  // prop — see spec §2 for the new rule.
+  // Per-kind visuals. The kind only drives the badge icon and color now —
+  // every row gets the same solid border. Schedule-only kinds (`scheduled`
+  // / `predicted`) used to render with a dashed border + opacity dim, but
+  // that's misleading when there is no live source to contrast against.
+  // Dimming is now driven by `vehicle.confidence === 'low'` via the `dim`
+  // prop — see docs/concepts/confidence.md.
   const KIND = $derived({
     corroborated: { icon: CheckCircle2, label: 'Corroborated', iconBg: 'bg-[color:var(--color-success)]' },
     reconciled:   { icon: Calendar,     label: 'Reconciled',   iconBg: 'bg-[color:var(--color-success)]' },
