@@ -18,6 +18,7 @@
   import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
   import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
+  import { buildOrphanLiveVehicle } from '$lib/domain/orphanLive';
   import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { liveVehiclesStore } from '$lib/stores/liveVehiclesStore.svelte';
@@ -79,6 +80,71 @@
       }
     })();
   });
+
+  // Orphan live vehicles: live observations whose trip_id wasn't
+  // surfaced by the schedule scanner, but whose route is one this
+  // station serves. We need the trip's shape to project the bus onto
+  // it and compute ETA — top up the existing shapes cache when a new
+  // orphan trip_id appears (worker caches by shape_id, so re-asking
+  // for a known shape is O(1)).
+  $effect(() => {
+    if (!board) return;
+    const scheduledTripIds = new Set(
+      board.vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
+    );
+    const routesById = new Map(board.vehicles.map((v) => [v.route.id, v.route]));
+    const missing = Array.from(
+      new Set(
+        liveVehiclesStore.observations
+          .filter(
+            (o) =>
+              o.tripId &&
+              !scheduledTripIds.has(o.tripId) &&
+              routesById.has(o.routeId) &&
+              !(o.tripId in shapes),
+          )
+          .map((o) => o.tripId),
+      ),
+    );
+    if (missing.length === 0) return;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const extra = await repo.getShapesForTrips(missing);
+        shapes = { ...shapes, ...extra };
+      } catch {
+        // Soft-fail: orphan rows will just not appear this tick.
+      }
+    })();
+  });
+
+  const orphanVehicles = $derived.by<Vehicle[]>(() => {
+    if (!board) return [];
+    const scheduledTripIds = new Set(
+      board.vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
+    );
+    const routesById = new Map(board.vehicles.map((v) => [v.route.id, v.route]));
+    const stationPos =
+      typeof board.stop.lat === 'number' && typeof board.stop.lon === 'number'
+        ? { lat: board.stop.lat, lon: board.stop.lon }
+        : null;
+    if (!stationPos) return [];
+    const out: Vehicle[] = [];
+    for (const o of liveVehiclesStore.observations) {
+      if (!o.tripId || scheduledTripIds.has(o.tripId)) continue;
+      const route = routesById.get(o.routeId);
+      if (!route) continue;
+      const shape = shapes[o.tripId];
+      if (!shape) continue;
+      const v = buildOrphanLiveVehicle(o, route, shape, stationPos);
+      if (v) out.push(v);
+    }
+    return out;
+  });
+
+  const mergedVehicles = $derived<Vehicle[]>(
+    board ? [...board.vehicles, ...orphanVehicles] : [],
+  );
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -116,7 +182,7 @@
     </Card>
   {:else}
     {@const rows = assembleLiveBoard({
-      vehicles: board.vehicles,
+      vehicles: mergedVehicles,
       stop: board.stop,
       liveObservations: liveVehiclesStore.observations,
       shapes,
