@@ -94,7 +94,7 @@
     SIZE[size],
     !useRouteColor && 'border border-[color:var(--color-border)]',
     onclick && 'cursor-pointer',
-    selected && 'ring-2 ring-offset-1 ring-offset-[color:var(--color-surface)] ring-[color:var(--color-fg)]',
+    selected && 'ring-2 ring-white ring-offset-1 ring-offset-[color:var(--color-surface)]',
     className,
   )}
 >

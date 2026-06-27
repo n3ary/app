@@ -635,24 +635,31 @@
   // ── Inline HTML helpers (kept here, not exported, since they are
   // purely the Leaflet `divIcon` payload). ──────────────────────────
   function vehiclePopupHtml(m: VehicleMarker, rId: string, dir: 0 | 1, nowMinVal: number): string {
-    // Calendar icon = position is schedule-based (Phase 4)
-    const calSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;opacity:0.65;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
-    // CalendarDays icon for the schedule link button
+    // Source indicator: calendar = schedule-estimated (Phase 4).
+    // Phase 5 will swap in a signal/GPS icon when live position is available.
+    const calSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    // ArrowUpRight = departure (same icon as station-view departing bucket).
+    const depSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>`;
+    // Clock icon for scheduled/waiting vehicles.
+    const clockSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+    // CalendarDays for the schedule-link button.
     const schedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="14" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/><circle cx="8" cy="18" r="1" fill="currentColor"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>`;
     const headsignHtml = m.headsign
       ? `<div style="font-weight:600;margin-bottom:5px;white-space:nowrap;">${escapeHtml(m.headsign)}</div>`
       : '';
-    let infoText: string;
+    // Time info: active trips show departure time with ↑ icon; scheduled show countdown.
+    let timeHtml: string;
     if (m.scheduled) {
       const minsUntil = m.tripStartMin - nowMinVal;
-      infoText = minsUntil <= 0 ? 'departing now' : `in ${minsUntil} min`;
+      timeHtml = `${clockSvg}<span style="margin-left:2px;">${minsUntil <= 0 ? 'now' : `in ${minsUntil} min`}</span>`;
     } else {
-      infoText = `dep ${escapeHtml(formatHHMM(m.tripStartMin))}`;
+      timeHtml = `${depSvg}<span style="margin-left:2px;font-variant-numeric:tabular-nums;">${escapeHtml(formatHHMM(m.tripStartMin))}</span>`;
     }
-    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:140px;">
-      ${headsignHtml}<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <div style="display:flex;align-items:center;gap:3px;color:#888;font-size:11px;">
-          ${calSvg}<span>${infoText}</span>
+    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:145px;">
+      ${headsignHtml}<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <div style="display:flex;align-items:center;gap:4px;color:#888;font-size:11px;">
+          <span style="display:flex;align-items:center;gap:2px;opacity:0.8;">${calSvg}<span>est.</span></span>
+          <span style="display:flex;align-items:center;">${timeHtml}</span>
         </div>
         <a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule"
           style="display:inline-flex;align-items:center;justify-content:center;

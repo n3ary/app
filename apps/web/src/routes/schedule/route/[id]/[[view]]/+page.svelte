@@ -104,8 +104,8 @@
   let lastDepartedTrip = $state<ScheduleTrip | null>(null);
   // Whether the week table is fully expanded (showing all times including past ones).
   let weekExpanded = $state(false);
-  // Guard so clock-tick re-fetches don't re-expand the first trip after the user collapses it.
-  let todayAutoExpanded = $state(false);
+  // Guard kept for back-compat but auto-expand is intentionally disabled — trips start collapsed.
+  let todayAutoExpanded = $state(true);
   // Whether the today list is expanded past the initial visible window.
   let todayListExpanded = $state(false);
   // Max upcoming trips shown before the "show more" button appears.
@@ -134,7 +134,6 @@
   // Reset expansion state whenever view or direction changes.
   $effect(() => {
     view; direction; // reactive dependencies only — no logic here
-    todayAutoExpanded = false;
     todayListExpanded = false;
     lastDepartedTrip = null;
   });
@@ -176,11 +175,6 @@
               const pastFrom = qp.fromMin - pastWindow;
               const pastTrips = await repo.getRouteSchedule(rid, dir, qp.localDate, pastFrom, pastWindow);
               lastDepartedTrip = pastTrips.filter(t => t.tripStartMin < qp.fromMin).pop() ?? null;
-            }
-            // Auto-expand the first upcoming trip once per (view, direction) load.
-            if (!todayAutoExpanded && trips.length > 0) {
-              todayAutoExpanded = true;
-              expandedTripId = trips[0].tripId;
             }
           }
         }

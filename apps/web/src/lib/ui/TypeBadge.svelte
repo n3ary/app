@@ -14,7 +14,7 @@
 -->
 <script lang="ts">
   import type { VehicleType } from '$lib/domain/types';
-  import { VEHICLE_TYPE_COLOR, vehicleTypeLabel } from '$lib/domain/types';
+  import { VEHICLE_TYPE_COLOR, pickContrastingText, vehicleTypeLabel } from '$lib/domain/types';
   import { cn } from './cn';
 
   type Size = 'small' | 'medium' | 'large';
@@ -34,8 +34,6 @@
     type, color, active = false, onclick, size = 'medium', class: className,
   }: Props = $props();
 
-  // Match the RouteBadge size scale so a row mixing both reads as
-  // visually consistent.
   const SIZE: Record<Size, string> = {
     small: 'h-6 px-1.5 text-xs',
     medium: 'h-7 px-2 text-sm',
@@ -43,22 +41,25 @@
   };
 
   const accent = $derived(color ?? VEHICLE_TYPE_COLOR[type]);
+  const fg = $derived(pickContrastingText(accent));
   const label = $derived(vehicleTypeLabel(type));
 </script>
 
+<!-- Always filled (like RouteBadge in route mode) so filter chips look
+     like the route badges they filter. Active = full opacity + white ring;
+     inactive = same fill but dimmed so the unselected state reads clearly. -->
 <button
   type="button"
   aria-label={`Filter by ${label}`}
   aria-pressed={active}
   title={label}
   onclick={onclick}
-  style={active
-    ? `background:${accent};color:#fff;border-color:${accent};`
-    : `background:transparent;color:${accent};border-color:${accent};`}
+  style={`background:${accent};color:${fg};${!active ? 'opacity:0.6;' : ''}`}
   class={cn(
-    'inline-flex items-center justify-center font-semibold rounded-md select-none whitespace-nowrap border-2 cursor-pointer',
-    'transition-colors',
+    'inline-flex items-center justify-center font-semibold rounded-md select-none whitespace-nowrap cursor-pointer',
+    'transition-all',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
+    active && 'ring-2 ring-white ring-offset-1 ring-offset-[color:var(--color-surface)]',
     SIZE[size],
     className,
   )}

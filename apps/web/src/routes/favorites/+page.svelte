@@ -22,16 +22,12 @@
 
   let allRoutes = $state<Route[] | null>(null);
   let error = $state<string | null>(null);
-  // Multi-select type filter. Empty set = no filter (show all).
-  // View-only; resets on page remount per the same pattern as the
-  // Stations route filter.
-  let typeFilter = $state<Set<VehicleType>>(new Set());
+  // Single-select type filter. null = no filter (show all).
+  // Clicking the active type deselects; clicking another selects only that one.
+  let typeFilter = $state<VehicleType | null>(null);
 
   function toggleType(t: VehicleType) {
-    const next = new Set(typeFilter);
-    if (next.has(t)) next.delete(t);
-    else next.add(t);
-    typeFilter = next;
+    typeFilter = typeFilter === t ? null : t;
   }
 
   $effect(() => {
@@ -86,8 +82,8 @@
   }
   const filteredRoutes = $derived.by<Route[]>(() => {
     if (!allRoutes) return [];
-    if (typeFilter.size === 0) return allRoutes;
-    return allRoutes.filter((r) => typeFilter.has(r.type ?? 'unknown'));
+    if (typeFilter === null) return allRoutes;
+    return allRoutes.filter((r) => (r.type ?? 'unknown') === typeFilter);
   });
   const favRoutes = $derived(
     sortRoutes(filteredRoutes.filter((r) => favoritesStore.has(r.id))),
@@ -172,20 +168,20 @@
               <Stack spacing={0.5}>
                 <Typography variant="h5">Filter by mode</Typography>
                 <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                  {typeFilter.size === 0
+                  {typeFilter === null
                     ? `Showing all ${allRoutes.length} routes. Tap a mode to narrow down.`
                     : `${filteredRoutes.length} of ${allRoutes.length} routes match.`}
                 </Typography>
               </Stack>
               <Stack direction="row" spacing={1} align="center" wrap>
                 {#each presentTypes as t (t)}
-                  <TypeBadge type={t} color={typeAccent.get(t)} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
+                  <TypeBadge type={t} color={typeAccent.get(t)} active={typeFilter === t} onclick={() => toggleType(t)} />
                 {/each}
-                {#if typeFilter.size > 0}
+                {#if typeFilter !== null}
                   <button
                     type="button"
                     class="text-xs underline text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)]"
-                    onclick={() => (typeFilter = new Set())}
+                    onclick={() => (typeFilter = null)}
                   >
                     Clear filter
                   </button>

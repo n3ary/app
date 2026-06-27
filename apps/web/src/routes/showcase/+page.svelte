@@ -10,9 +10,10 @@
     Collapsible, Dialog, DialogContent, DialogTitle,
     IconButton, List, ListItem, ListItemText,
     ProgressBar, RouteBadge, Spinner, Stack, StationCard,
-    Switch, Tabs, TextField, ToggleGroup, Tooltip, Typography, VehicleCard,
+    Switch, Tabs, TextField, ToggleGroup, Tooltip, Typography, TypeBadge, VehicleCard,
   } from '$lib/ui';
-  import type { Route, Station, Vehicle } from '$lib/domain/types';
+  import type { Route, Station, Vehicle, VehicleType } from '$lib/domain/types';
+  import { VEHICLE_TYPE_COLOR } from '$lib/domain/types';
   import type { BoardRow } from '$lib/domain/stationBoard';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
@@ -70,6 +71,7 @@
 
   let stationExpanded = $state(true);
   let selectedRouteId = $state<string | null>(null);
+  let activeTypeFilter = $state<VehicleType | null>(null);
   const favorites = new Set<string>(['35']);
   // All routes serving the demo station (pre-filter), so the badge row
   // stays stable when a single route is selected.
@@ -378,16 +380,37 @@
     </Stack>
 
     <Stack spacing={1}>
-      <Typography variant="body2">VehicleCard — one of each kind</Typography>
+      <Typography variant="body2">TypeBadge — single-select filter pattern</Typography>
+      <Stack direction="row" spacing={1} align="center" wrap>
+        {#each (['bus', 'tram', 'trolleybus', 'metro'] as VehicleType[]) as t (t)}
+          <TypeBadge
+            type={t}
+            color={VEHICLE_TYPE_COLOR[t]}
+            active={activeTypeFilter === t}
+            onclick={() => { activeTypeFilter = activeTypeFilter === t ? null : t; }}
+          />
+        {/each}
+      </Stack>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Active: {activeTypeFilter ?? 'none'}
+      </Typography>
+    </Stack>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">VehicleCard — one of each kind, with schedule + map links</Typography>
       <Stack spacing={0.5}>
         {#each demoVehicles as v (v.id)}
-          <VehicleCard vehicle={v} />
+          <VehicleCard
+            vehicle={v}
+            scheduleHref={`/schedule/route/${v.route.id}_0`}
+            mapHref={v.schedule?.tripId ? `/map/route/${v.route.id}_0/${encodeURIComponent(v.schedule.tripId)}` : `/map/route/${v.route.id}_0`}
+          />
         {/each}
       </Stack>
     </Stack>
 
     <Stack spacing={1}>
-      <Typography variant="body2">StationCard</Typography>
+      <Typography variant="body2">StationCard — with route colors + isStart ▶</Typography>
       <StationCard
         station={demoStation}
         rows={(demoVehicles
@@ -404,6 +427,7 @@
         selectedRouteId={selectedRouteId}
         onRouteClick={(id: string) => (selectedRouteId = selectedRouteId === id ? null : id)}
         favoriteRouteIds={favorites}
+        originRouteIds={new Set(['24'])}
       />
     </Stack>
   </section>
