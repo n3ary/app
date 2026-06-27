@@ -129,6 +129,30 @@
   });
   const isEmpty = $derived(groups.length === 0);
 
+  // Map link eligibility: live/tracked vehicles always qualify (real position).
+  // Scheduled/predicted vehicles only qualify if they're the first (next) for
+  // that route+direction — so the map icon links to the vehicle actually shown
+  // on the map, not a future trip with no position yet.
+  // Rows arrive domain-sorted (soonest first), so the first hit per key IS next.
+  const mapEligibleIds = $derived.by<Set<string>>(() => {
+    const seen = new Set<string>();
+    const eligible = new Set<string>();
+    for (const row of rows) {
+      const v = row.vehicle;
+      if (v.kind === 'live' || v.kind === 'corroborated' || v.kind === 'reconciled') {
+        eligible.add(v.id);
+        continue;
+      }
+      // Predicted / scheduled: only the soonest per route+direction.
+      const key = `${v.route.id}_${v.schedule?.directionId ?? 0}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        eligible.add(v.id);
+      }
+    }
+    return eligible;
+  });
+
   // Per-bucket section header styling. The icon mirrors the bucket
   // verb (incoming → clock, departing → outbound arrow, etc.) and
   // the accent color matches the urgency band the VehicleCards in
@@ -242,9 +266,9 @@
                     {vehicle}
                     urgency={etaUrgency(group.bucket, vehicle.eta?.minutes ?? 0)}
                     scheduleHref={`/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}`}
-                    mapHref={`/map/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}${
-                      vehicle.schedule?.tripId ? `/${encodeURIComponent(vehicle.schedule.tripId)}` : ''
-                    }`}
+                    mapHref={mapEligibleIds.has(vehicle.id)
+                      ? `/map/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}${vehicle.schedule?.tripId ? `/${encodeURIComponent(vehicle.schedule.tripId)}` : ''}`
+                      : undefined}
                   />
                 {/each}
               </Stack>
