@@ -13,7 +13,7 @@
   union; this component reads it.
 -->
 <script lang="ts">
-  import { ArrowDownLeft, ArrowRight, Calendar, CheckCircle2, Clock, Map as MapIcon, Radio } from 'lucide-svelte';
+  import { ArrowDownLeft, ArrowRight, Calendar, Map as MapIcon } from 'lucide-svelte';
   import type { Vehicle } from '$lib/domain/types';
   import { formatHHMM, formatRelativeMin } from '$lib/domain/types';
   import type { Urgency } from '$lib/domain/buckets';
@@ -53,21 +53,17 @@
     class: className,
   }: Props = $props();
 
-  // Per-kind visuals. The kind only drives the badge icon and color now —
-  // every row gets the same solid border. Schedule-only kinds (`scheduled`
-  // / `predicted`) used to render with a dashed border + opacity dim, but
-  // that's misleading when there is no live source to contrast against.
-  // Dimming is now driven by `vehicle.confidence === 'low'` via the `dim`
-  // prop — see docs/concepts/confidence.md.
+  // Per-kind state dot. Two colors only: green = GPS-backed (live /
+  // reconciled / corroborated), grey = schedule-derived (scheduled /
+  // predicted). Tooltip carries the specific kind. A darker-green
+  // variant for `corroborated` is planned but not yet differentiated.
   const KIND = $derived({
-    corroborated: { icon: CheckCircle2, label: 'Corroborated', iconBg: 'bg-[color:var(--color-success)]' },
-    reconciled:   { icon: Calendar,     label: 'Reconciled',   iconBg: 'bg-[color:var(--color-success)]' },
-    live:         { icon: Radio,        label: 'Live',         iconBg: 'bg-[color:var(--color-success)]' },
-    predicted:    { icon: Clock,        label: 'Predicted',    iconBg: 'bg-[color:var(--color-warning)]' },
-    scheduled:    { icon: Calendar,     label: 'Scheduled',    iconBg: 'bg-[color:var(--color-fg-muted)]' },
+    corroborated: { label: 'Corroborated', dotBg: 'bg-[color:var(--color-success)]' },
+    reconciled:   { label: 'Reconciled',   dotBg: 'bg-[color:var(--color-success)]' },
+    live:         { label: 'Live',         dotBg: 'bg-[color:var(--color-success)]' },
+    predicted:    { label: 'Predicted',    dotBg: 'bg-[color:var(--color-fg-muted)]' },
+    scheduled:    { label: 'Scheduled',    dotBg: 'bg-[color:var(--color-fg-muted)]' },
   }[vehicle.kind]);
-
-  const KindIcon = $derived(KIND.icon);
 
   // ETA / scheduled-time secondary line.
   const secondaryLine = $derived.by(() => {
@@ -177,12 +173,10 @@
   </span>
 
   <!--
-    Action + state column order: [schedule btn] [map btn] [state indicator].
+    Action + state column order: [schedule btn] [map btn] [state dot].
     Schedule / map are neutral icon BUTTONS — visible only when a target
-    exists, hidden entirely otherwise. The state indicator on the right
-    is a non-interactive badge whose color encodes whether we have a live
-    GPS fix for this vehicle (success=GPS, warning=predicted-only,
-    muted=schedule-only).
+    exists, hidden entirely otherwise. The state dot on the right is
+    non-interactive; green = GPS-backed, grey = schedule-derived.
   -->
   {#if scheduleHref}
     <a
@@ -216,15 +210,13 @@
     </a>
   {/if}
 
-  <!-- State indicator: non-interactive. Color = GPS health. -->
+  <!-- State dot: non-interactive. Color = GPS health. -->
   <span
     title={KIND.label}
     aria-label={KIND.label}
     class={cn(
-      'inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0',
-      KIND.iconBg,
+      'inline-block w-2.5 h-2.5 rounded-full shrink-0',
+      KIND.dotBg,
     )}
-  >
-    <KindIcon size={12} strokeWidth={2.5} />
-  </span>
+  ></span>
 </div>
