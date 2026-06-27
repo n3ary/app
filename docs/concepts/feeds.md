@@ -25,10 +25,18 @@ The id is what:
 
 ## Per-feed scoping
 
-- **Favorites** key on `{ feedId, stopId }` because the same numeric stop_id
-  in Cluj and Bucharest refers to different stops.
-- **Worker live poll** fetches only the active feed's `realtime` URLs.
-- **Reconciler** only sees vehicles for the active feed's `agencies`.
+The worker is bound to **one feed at a time** — its open SQLite DB and its
+GTFS-RT poll target are both that feed's. Switching feeds re-binds both.
+Consequences:
+
+- **Favorites** key on `{ feedId, stopId }` because the same numeric
+  stop_id in Cluj and Bucharest refers to different stops.
+- **Live data is feed-scoped by construction.** The worker polls only the
+  active feed's `realtime` URL, reconciles those observations against
+  that feed's schedule, and broadcasts the result via
+  [reconciledVehiclesStore](../../src/lib/stores/reconciledVehiclesStore.svelte.ts).
+  No filtering by `agencies` happens — there's only one feed's data in
+  flight at any moment.
 
 ## Lifecycle
 
