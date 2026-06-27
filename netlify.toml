@@ -1,17 +1,15 @@
 [build]
   command = "npm run build"
-  publish = "dist"
+  publish = "build"
 
 # Local `netlify dev` configuration.
-# This project's Vite dev server runs on port 5175 (see vite.config.ts), not
-# Vite's default 5173. Without this, Netlify Dev auto-detects Vite, waits on
-# 5173, and times out. `#custom` disables framework auto-detection and just
-# runs the command, waits for targetPort, then serves on `port` (8888).
+# `#custom` disables framework auto-detection and proxies to the Vite dev
+# server. Runs the command, waits for targetPort, then serves on port 8888.
 [dev]
   command = "npm run dev"
-  targetPort = 5175
+  targetPort = 5173
   framework = "#custom"
-  publish = "dist"
+  publish = "build"
 
 # API proxy redirects (must come BEFORE the SPA redirect)
 [[redirects]]
@@ -44,7 +42,7 @@
     Expires = "0"
 
 # SvelteKit's version-poll manifest — MUST NOT be cached, otherwise
-# the client can't detect new deploys. See apps/web/svelte.config.js `kit.version`.
+# the client can't detect new deploys. See svelte.config.js `kit.version`.
 [[headers]]
   for = "/_app/version.json"
   [headers.values]

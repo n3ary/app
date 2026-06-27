@@ -21,7 +21,7 @@ Anything not explicitly contradicted here still matches plan.md.
 
 ## 1. Views
 
-Validated against [the current Svelte routes](../../apps/web/src/routes/) and
+Validated against [the current Svelte routes](../../src/routes/) and
 [plan.md §4](plan.md). The user-facing surface is **four primary views plus
 two drill-downs**, in this hierarchy:
 
@@ -369,7 +369,7 @@ tie-break by `vehicle.id`.
 Time is the single most important piece of information on a vehicle row,
 so `VehicleCard` colors the secondary line by an **urgency tier** computed
 in the domain (`etaUrgency(bucket, etaMinutes, config?)` in
-[buckets.ts](../../apps/web/src/lib/domain/buckets.ts)). The UI never
+[buckets.ts](../../src/lib/domain/buckets.ts)). The UI never
 re-derives "which buckets are urgent"; it just maps the urgency enum to a
 CSS class.
 
@@ -387,7 +387,7 @@ Threshold for "imminent incoming" is `NearyConfig.imminentEtaThresholdMin`
 
 The station card stays scannable by capping at **5 rows** (constant
 `STATION_BOARD_MAX_ROWS` in
-[`stationBoard.ts`](../../apps/web/src/lib/domain/stationBoard.ts) via
+[`stationBoard.ts`](../../src/lib/domain/stationBoard.ts) via
 the helper `capStationBoard`):
 
 1. After bucket+filter+sort, take the **first row** of each bucket in
