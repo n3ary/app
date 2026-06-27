@@ -31,9 +31,12 @@ These aren't up for re-litigation; they fix the shape of the work below.
 - **`nowTicker = 15 s`** globally, synced with `livePollMs`. Map marker
   smoothness comes from RAF interpolation between ticks, not from a
   faster global tick.
-- **VERY_STALE GPS (≥ 5 min)**: freeze marker at last projected
-  `distAlongM` with a yellow border. No dead-reckoning forward. Vehicle
-  stays visible (don't drop like v1).
+- **All live-GPS bands dead-reckon.** HEALTHY, STALE, and VERY_STALE
+  all extrapolate forward from the last GPS sample's reported speed
+  (capped at `MAX_DEAD_RECKON_M = 3 km` so the marker can't drift
+  implausibly far). The bands differ only by **border colour** on the
+  map marker, not by motion. Drop the marker only past the hard cap
+  in item 4.
 - No Kalman, no ML, no always-on historical service. Cascade is
   heuristic; everything's debuggable line by line.
 - **Validation is empirical.** No formal test corpus; quality is judged
@@ -139,19 +142,36 @@ recomputes the anchor at the next tick.
       `predictedVel` alongside `predictedPos`.
 - [ ] Live-GPS path: `predictPositionFromGps` does the same.
 
-### [ ] 4. VERY_STALE handling on the map
+### [ ] 4. Freshness bands → border colour
 
-Freshness bands: HEALTHY < 3 min · STALE < 5 min · VERY_STALE ≥ 5 min.
+All three live-GPS bands dead-reckon. Differentiation is purely visual:
+border colour on the map marker tells the user how fresh the underlying
+fix is. Vehicle drops off the map only past the hard cap.
 
-- [x] HEALTHY: dead-reckon from last GPS sample. (Already shipped —
-      `predictPositionFromGps`, `freshness: 'fresh'`.)
-- [x] STALE: render at the snapped GPS without forward dead-reckoning.
-      (Already shipped — `freshness: 'stale'`.)
-- [ ] VERY_STALE: freeze at last projected `distAlongM`, yellow border,
-      vehicle remains visible.
+| Band       | Age      | Border | Behaviour                                       |
+|------------|----------|--------|-------------------------------------------------|
+| HEALTHY    | < 3 min  | none   | Dead-reckon at last reported speed              |
+| STALE      | 3–5 min  | yellow | Dead-reckon at last reported speed              |
+| VERY_STALE | 5–15 min | red    | Dead-reckon at last reported speed              |
+| (expired)  | ≥ 15 min | —      | Drop marker                                     |
 
-Today the map page has a defensive `STALE_HARD_MAX_MS = 15 min` cap for
-orphans but no VERY_STALE-with-border path.
+Today's [`predictPositionFromGps`](../../src/lib/domain/predictPosition.ts)
+only dead-reckons in the `'fresh'` band (< 2 min) and returns `null`
+past 5 min. The two changes:
+
+- [ ] **STALE**: drop the `if (freshness === 'fresh')` gate so dead-
+      reckoning runs across the full 0–5 min window. Map renders the
+      marker with a yellow border.
+- [ ] **VERY_STALE**: extend `predictPositionFromGps` to return a
+      position for 5–15 min old fixes (it returns `null` today). Add a
+      `'very-stale'` value to `GpsFreshness`. Map renders the marker
+      with a red border.
+- [ ] **Hard cutoff at 15 min**: function returns `null`; marker drops.
+      Replaces the ad-hoc `STALE_HARD_MAX_MS = 15 min` cap currently
+      living on the map page — cap moves into the predictor so every
+      consumer is consistent.
+- [ ] Align the freshness thresholds: today `FRESH_MS = 2 min`, doc
+      says 3 min. Pick one and reflect it in the code constants.
 
 ### [ ] 5. Reconciliation: GPS + route-order tie-break
 
