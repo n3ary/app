@@ -15,14 +15,14 @@ once shipped.
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Foundations (monorepo, SvelteKit shell) | ✓ shipped |
-| 1 | UI primitive library | ✓ shipped |
-| 2 | GTFS DB worker (SQLite-WASM + OPFS) | ✓ shipped |
-| 3 | App shell (Header / StatusBar / BottomNav, 4 routes) | ✓ shipped |
-| 4 | Domain + Stations (schedule-only) | ✓ shipped |
-| 5 | Live data (GTFS-RT, reconciler, shape projection) | ✓ shipped |
-| 6 | Favorites, Schedule, Map drill-downs | ✓ shipped |
-| 7 | Settings + Advanced | 🟡 partial |
+| 0 | Foundations (monorepo, SvelteKit shell) | shipped |
+| 1 | UI primitive library | shipped |
+| 2 | GTFS DB worker (SQLite-WASM + OPFS) | shipped |
+| 3 | App shell (Header / StatusBar / BottomNav, 4 routes) | shipped |
+| 4 | Domain + Stations (schedule-only) | shipped |
+| 5 | Live data (GTFS-RT, reconciler, shape projection) | shipped |
+| 6 | Favorites, Schedule, Map drill-downs | shipped |
+| 7 | Settings + Advanced | partial |
 | 8 | Planner (with transfers) | TBD |
 | 9 | Polish, perf budgets, store install | TBD |
 

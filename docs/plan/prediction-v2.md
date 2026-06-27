@@ -1,9 +1,7 @@
 # Prediction v2 — Design Document
 
-Status: **DRAFT for review**
-Owner: TBD
-Last updated: 2026-06-27
-Related code: `src/lib/domain/predictPosition.ts`, `src/lib/domain/predictEta.ts`, `src/lib/workers/gtfs.worker.ts`, `legacy/src/utils/vehicle/**`, `neary-gtfs/feeds/cluj-napoca/build.js`
+Status: **draft for review**.
+Related code: [src/lib/domain/predictPosition.ts](../../src/lib/domain/predictPosition.ts), [src/lib/domain/predictEta.ts](../../src/lib/domain/predictEta.ts), [src/lib/workers/gtfs.worker.ts](../../src/lib/workers/gtfs.worker.ts), [legacy/src/utils/vehicle/](../../legacy/src/utils/vehicle/), `neary-gtfs/feeds/cluj-napoca/build.js`.
 
 ---
 

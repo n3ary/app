@@ -6,9 +6,9 @@ app-side consumer change.
 
 ## M0–M2 (history)
 
-- **M0** — baseline. Single agency (Cluj). v1 app read per-agency JSON. ✓ historical.
-- **M1** — repo scaffold per the [neary-gtfs README](https://github.com/ciotlosm/neary-gtfs). ✓ done.
-- **M2** — first multi-feed publish. Cluj (enhanced) + Bucharest (Transitous mirror) live on `binaries` branch. ✓ done on the pipeline side.
+- **M0** — baseline. Single agency (Cluj). v1 app read per-agency JSON. *Historical.*
+- **M1** — repo scaffold per the [neary-gtfs README](https://github.com/ciotlosm/neary-gtfs). *Done.*
+- **M2** — first multi-feed publish. Cluj (enhanced) + Bucharest (Transitous mirror) live on `binaries` branch. *Done on the pipeline side.*
 
 Currently shipped on the app side: cold-switch download, no eviction.
 
