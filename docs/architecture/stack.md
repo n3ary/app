@@ -25,7 +25,7 @@ Tech stack and non-functional targets. Authoritative dependency list is
 |---|---|
 | Build | Vite (rolldown-vite) |
 | Tests | Vitest + `@testing-library/svelte` |
-| Lint | (none currently — see [../plan/open-questions.md](../plan/open-questions.md)) |
+| Lint | none |
 
 ## Deployment
 
@@ -35,9 +35,7 @@ Tech stack and non-functional targets. Authoritative dependency list is
 
 ## Performance targets
 
-Non-functional targets the app aims to hold. CI doesn't enforce them today —
-see [../plan/open-questions.md](../plan/open-questions.md) for the "add
-perf budgets to CI" decision.
+Non-functional targets the app aims to hold. CI doesn't enforce them today.
 
 | Metric | Target |
 |---|---|

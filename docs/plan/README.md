@@ -21,7 +21,6 @@ fixes two real pain points in the current app:
 |---|---|
 | [prediction-v2.md](prediction-v2.md) | Prediction overhaul — active priority |
 | [tranzy-integration.md](tranzy-integration.md) | Opt-in second live source for higher-confidence reconciliation |
-| [open-questions.md](open-questions.md) | Deferred decisions awaiting more signal |
 
 ## Where the app is
 
