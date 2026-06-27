@@ -38,11 +38,11 @@ These aren't up for re-litigation; they fix the shape of the work below.
 
 ## Open questions
 
-- **Q5 — GPS tie-break in reconciliation?** Among candidates within
+- **Q1 — GPS tie-break in reconciliation?** Among candidates within
   timing tolerance, prefer the one whose projected `distAlongM` is
   closest to elapsed-time expectation. Cheap to add; closes same-minute
   crossings. *Decide before item 6.*
-- **Q7 — Prediction-quality test corpus.** Without one, item 3 ships
+- **Q2 — Prediction-quality test corpus.** Without one, item 3 ships
   blind. *Decide before item 3 starts in earnest.*
 
 ---
@@ -121,7 +121,7 @@ Per segment walked forward from `vehicleDistAlongM`:
 view all consume the same `ArrivalPlan` — no more `predictEta` vs
 `predictPositionOnShape` ad-hoc split.
 
-- [ ] Module + tests (needs Q7 corpus to score against).
+- [ ] Module + tests (needs Q2 corpus to score against).
 - [ ] Wire `assembleLiveBoard` to call it instead of `predictEta`.
 - [ ] Optional: feature flag for A/B vs today's single-tier ETA.
 - [ ] Delete `predictEta.ts` once the new path is the sole caller.
@@ -157,17 +157,17 @@ orphans but no VERY_STALE-with-border path.
 
 ### 6. Reconciliation GPS tie-break — [ ]
 
-(Resolves Q5.) Among candidates within timing tolerance, prefer the one
+(Resolves Q1.) Among candidates within timing tolerance, prefer the one
 whose projected `distAlongM` is closest to the elapsed-time expectation.
 Fall back to timing-only when no GPS is available for the candidate.
 
-- [ ] Decide Q5.
+- [ ] Decide Q1.
 - [ ] Implement in [`reconcileWithLive`](../../src/lib/domain/reconcile.ts).
 - [ ] Tests for the same-minute-crossing case.
 
 ### 7. Prediction-quality test corpus — [ ]
 
-(Resolves Q7.) Lets items 1 / 3 / 4 ship with a real number behind them.
+(Resolves Q2.) Lets items 1 / 3 / 4 ship with a real number behind them.
 
 - [ ] Capture script: a week of GTFS-RT pings + matching scheduled
       arrival rows.
