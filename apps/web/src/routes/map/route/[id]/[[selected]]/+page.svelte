@@ -171,6 +171,7 @@
     lon: number;
     opacity: number;
     selected: boolean;
+    tripStartMin: number;
   };
   const markers = $derived.by<VehicleMarker[]>(() => {
     if (!view) return [];
@@ -195,6 +196,7 @@
         lon: p.lon,
         opacity,
         selected: t.tripId === selectedTripId,
+        tripStartMin: t.tripStartMin,
       });
     }
     return out;
@@ -368,6 +370,10 @@
         const dotsPane = mapInstance.createPane('nearyDots');
         dotsPane.style.zIndex = '450';
         dotsPane.style.pointerEvents = 'none';
+        // Vehicles pane sits above markerPane (600) so vehicle badges
+        // always paint over stop circles, but below tooltipPane (650).
+        const vehiclesPane = mapInstance.createPane('nearyVehicles');
+        vehiclesPane.style.zIndex = '620';
         // Future-resize listener (rotation, splitscreen, sidebar).
         if (typeof ResizeObserver !== 'undefined') {
           resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
@@ -460,8 +466,8 @@
                 html: isOrigin
                   ? endpointHtml(currentView.route.color, 'origin')
                   : endpointHtml(currentView.route.color, 'terminus'),
-                iconSize: [22, 22],
-                iconAnchor: [11, 11],
+                iconSize: isOrigin ? [18, 18] : [22, 22],
+                iconAnchor: isOrigin ? [9, 9] : [11, 11],
               }),
               keyboard: false,
               riseOnHover: true,
@@ -555,29 +561,30 @@
   $effect(() => {
     if (!L || !mapInstance || !vehiclesLayer || !view) return;
     void nowMin; // declare dependency so the effect re-runs each tick
+    const Lref = L;
+    const dir = direction;
+    const rid = routeId;
+    if (dir == null) return;
     vehiclesLayer.clearLayers();
     const routeColor = view.route.color;
     const labelFg = pickContrastingText(routeColor);
     for (const m of markers) {
       const html = vehicleHtml(view.route.shortName, routeColor, labelFg, m.selected, m.opacity);
-      const icon = L.divIcon({
+      const icon = Lref.divIcon({
         className: 'neary-vehicle',
         html,
         iconSize: [44, 28],
         iconAnchor: [22, 14],
       });
-      const marker = L.marker([m.lat, m.lon], { icon });
-      // Popup only needs the headsign — the route number is already
-      // painted on the badge. `offset: [0, -16]` anchors the popup
-      // tail just above the top edge of the 28 px badge instead of
-      // its center, so the popup floats above the vehicle rather
-      // than half-covering it.
-      if (m.headsign) {
-        marker.bindPopup(escapeHtml(m.headsign), {
-          closeButton: false,
-          offset: L.point(0, -16),
-        });
-      }
+      // pane: 'nearyVehicles' (z=620) keeps vehicles above stop markers
+      // (markerPane z=600) so they're never hidden behind station icons.
+      const marker = Lref.marker([m.lat, m.lon], { icon, pane: 'nearyVehicles' });
+      // offset: [0, -16] anchors the popup tail just above the badge
+      // top edge so it floats above the vehicle rather than covering it.
+      marker.bindPopup(vehiclePopupHtml(m, rid, dir), {
+        closeButton: false,
+        offset: Lref.point(0, -16),
+      });
       marker.addTo(vehiclesLayer);
     }
   });
@@ -611,6 +618,28 @@
 
   // ── Inline HTML helpers (kept here, not exported, since they are
   // purely the Leaflet `divIcon` payload). ──────────────────────────
+  function vehiclePopupHtml(m: VehicleMarker, rId: string, dir: 0 | 1): string {
+    // Calendar icon = position is schedule-based (Phase 4 only)
+    const calSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;opacity:0.65;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    // CalendarDays icon for the schedule link button
+    const schedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="14" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/><circle cx="8" cy="18" r="1" fill="currentColor"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>`;
+    const headsignHtml = m.headsign
+      ? `<div style="font-weight:600;margin-bottom:5px;white-space:nowrap;">${escapeHtml(m.headsign)}</div>`
+      : '';
+    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:140px;">
+      ${headsignHtml}<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="display:flex;align-items:center;gap:3px;color:#888;font-size:11px;">
+          ${calSvg}<span>dep ${escapeHtml(formatHHMM(m.tripStartMin))}</span>
+        </div>
+        <a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule"
+          style="display:inline-flex;align-items:center;justify-content:center;
+                 width:22px;height:22px;border-radius:4px;
+                 background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">
+          ${schedSvg}
+        </a>
+      </div>
+    </div>`;
+  }
   function vehicleHtml(
     shortName: string,
     bg: string,
@@ -659,11 +688,14 @@
    *  Terminus shows a white square (■) — RouteBadge's isEnd cap. */
   function endpointHtml(routeColor: string, kind: 'origin' | 'terminus'): string {
     const fg = pickContrastingText(routeColor);
+    // Origin is slightly smaller (18×18) so vehicles aren't hidden when
+    // they're at the start stop; terminus stays at 22×22 for emphasis.
+    const size = kind === 'origin' ? 18 : 22;
     const glyph = kind === 'origin'
-      ? `<svg width="9" height="9" viewBox="0 0 24 24" fill="${fg}" style="margin-left:1px;"><polygon points="6 4 20 12 6 20"/></svg>`
+      ? `<svg width="8" height="8" viewBox="0 0 24 24" fill="${fg}" style="margin-left:1px;"><polygon points="6 4 20 12 6 20"/></svg>`
       : `<svg width="8" height="8" viewBox="0 0 24 24" fill="${fg}"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg>`;
     return `<div style="
-      width:22px;height:22px;border-radius:50%;
+      width:${size}px;height:${size}px;border-radius:50%;
       background:${routeColor};
       display:inline-flex;align-items:center;justify-content:center;
       box-shadow:0 0 0 2px #fff, 0 1px 3px rgba(0,0,0,0.3);
