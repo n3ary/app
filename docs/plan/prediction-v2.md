@@ -32,9 +32,12 @@ These aren't up for re-litigation; they fix the shape of the work below.
   smoothness comes from RAF interpolation between ticks, not from a
   faster global tick.
 - **All live-GPS bands dead-reckon.** HEALTHY, STALE, and VERY_STALE
-  all extrapolate forward from the last GPS sample's reported speed
-  (capped at `MAX_DEAD_RECKON_M = 3 km` so the marker can't drift
-  implausibly far). The bands differ only by **border colour** on the
+  all walk the shape forward from the last GPS-anchored `distAlongM`,
+  accumulating per-segment time using the cascade speeds from item 2
+  (the same speed source `predictArrivalAlongShape` uses to look
+  forward; here we use it to look backward over the elapsed `dt`).
+  Capped at `MAX_DEAD_RECKON_M = 3 km` so a parked bus can't drift
+  implausibly far. The bands differ only by **border colour** on the
   map marker, not by motion. Drop the marker only past the hard cap
   in item 4.
 - No Kalman, no ML, no always-on historical service. Cascade is
@@ -144,32 +147,36 @@ recomputes the anchor at the next tick.
 
 ### [ ] 4. Freshness bands → border colour
 
-All three live-GPS bands dead-reckon. Differentiation is purely visual:
-border colour on the map marker tells the user how fresh the underlying
-fix is. Vehicle drops off the map only past the hard cap.
+(Depends on item 2.)
 
-| Band       | Age      | Border | Behaviour                                       |
-|------------|----------|--------|-------------------------------------------------|
-| HEALTHY    | < 3 min  | none   | Dead-reckon at last reported speed              |
-| STALE      | 3–5 min  | yellow | Dead-reckon at last reported speed              |
-| VERY_STALE | 5–15 min | red    | Dead-reckon at last reported speed              |
-| (expired)  | ≥ 15 min | —      | Drop marker                                     |
+All three live-GPS bands dead-reckon along the trip shape from the last
+known projected `distAlongM`, walking `legs[]` forward and consuming
+`dt_segment = segmentDist / cascadeSpeed(segment)` until the elapsed
+`dt` is exhausted. Capped at `MAX_DEAD_RECKON_M = 3 km`. Bands differ
+only by **border colour** on the map marker — the projection math is
+identical across all three.
+
+| Band       | Age      | Border | Behaviour                       |
+|------------|----------|--------|---------------------------------|
+| HEALTHY    | < 3 min  | none   | Dead-reckon (cascade speeds)    |
+| STALE      | 3–5 min  | yellow | Dead-reckon (cascade speeds)    |
+| VERY_STALE | 5–15 min | red    | Dead-reckon (cascade speeds)    |
+| (expired)  | ≥ 15 min | —      | Drop marker                     |
 
 Today's [`predictPositionFromGps`](../../src/lib/domain/predictPosition.ts)
-only dead-reckons in the `'fresh'` band (< 2 min) and returns `null`
-past 5 min. The two changes:
+dead-reckons only in the `'fresh'` band (< 2 min) and uses the bus's
+single reported `speedMs` as a stopgap (ignores per-segment variation).
+Four changes:
 
-- [ ] **STALE**: drop the `if (freshness === 'fresh')` gate so dead-
-      reckoning runs across the full 0–5 min window. Map renders the
-      marker with a yellow border.
-- [ ] **VERY_STALE**: extend `predictPositionFromGps` to return a
-      position for 5–15 min old fixes (it returns `null` today). Add a
-      `'very-stale'` value to `GpsFreshness`. Map renders the marker
-      with a red border.
-- [ ] **Hard cutoff at 15 min**: function returns `null`; marker drops.
-      Replaces the ad-hoc `STALE_HARD_MAX_MS = 15 min` cap currently
-      living on the map page — cap moves into the predictor so every
-      consumer is consistent.
+- [ ] Swap the speed source from `obs.speedMs` to a shape walk over
+      `TripShapePlan.legs[]` at cascade-estimated speeds from item 2.
+- [ ] Extend coverage from "fresh only" to "fresh + stale + very-stale":
+      drop the `freshness === 'fresh'` gate, return positions through
+      the 15 min cap.
+- [ ] Add `'very-stale'` to the `GpsFreshness` union; map renders
+      marker borders by band (none / yellow / red).
+- [ ] Move the `STALE_HARD_MAX_MS = 15 min` cap off the map page into
+      the predictor so every consumer is consistent.
 - [ ] Align the freshness thresholds: today `FRESH_MS = 2 min`, doc
       says 3 min. Pick one and reflect it in the code constants.
 
