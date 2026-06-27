@@ -29,10 +29,10 @@
   let tabsValue = $state<'today' | 'tomorrow' | 'week'>('today');
 
   // Composite-primitives demo data
-  const route24: Route = { id: 24, shortName: '24', color: '#1e88e5' };
-  const route35: Route = { id: 35, shortName: '35', color: '#43a047' };
-  const route9: Route  = { id: 9,  shortName: '9',  color: '#fdd835' };
-  const routeM: Route  = { id: 100, shortName: 'M5', color: '#e53935' };
+  const route24: Route = { id: '24',  shortName: '24', color: '#1e88e5' };
+  const route35: Route = { id: '35',  shortName: '35', color: '#43a047' };
+  const route9: Route  = { id: '9',   shortName: '9',  color: '#fdd835' };
+  const routeM: Route  = { id: '100', shortName: 'M5', color: '#e53935' };
 
   const demoStation: Station = {
     id: 4012, name: 'Piața Mihai Viteazul',
@@ -70,7 +70,7 @@
 
   let stationExpanded = $state(true);
   let selectedRouteId = $state<string | null>(null);
-  const favorites = new Set<number>([35]);
+  const favorites = new Set<string>(['35']);
   // All routes serving the demo station (pre-filter), so the badge row
   // stays stable when a single route is selected.
   const demoAllRoutes = Array.from(
@@ -156,8 +156,8 @@
       <Button size="medium">Medium</Button>
       <Button size="large">Large</Button>
     </Stack>
+    {#snippet refreshIcon()}<RefreshCw size={16} />{/snippet}
     <Stack direction="row" spacing={1} wrap align="center">
-      {#snippet refreshIcon()}<RefreshCw size={16} />{/snippet}
       <Button startIcon={refreshIcon}>Refresh</Button>
       <IconButton aria-label="Search"><Search size={20} /></IconButton>
       <IconButton color="primary" aria-label="Locate"><Locate size={20} /></IconButton>
@@ -306,11 +306,11 @@
       <Typography variant="caption">Active: {tabsValue}</Typography>
     </Stack>
 
+    {#snippet sunIcon()}<Sun size={16} />{/snippet}
+    {#snippet autoIcon()}<Locate size={16} />{/snippet}
+    {#snippet moonIcon()}<Moon size={16} />{/snippet}
     <Stack spacing={1}>
       <Typography variant="body2">ToggleGroup — bound to userPrefs.theme</Typography>
-      {#snippet sunIcon()}<Sun size={16} />{/snippet}
-      {#snippet autoIcon()}<Locate size={16} />{/snippet}
-      {#snippet moonIcon()}<Moon size={16} />{/snippet}
       <Stack direction="row" spacing={1} align="center" wrap>
         <ToggleGroup
           value={userPrefs.theme}

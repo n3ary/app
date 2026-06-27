@@ -87,7 +87,7 @@
   // in the page) so every StationCard consumer gets the same badge-row
   // contract for free.
   const routes = $derived.by(() => {
-    const map = new Map<number, Route>();
+    const map = new Map<string, Route>();
     if (allRoutes && allRoutes.length > 0) {
       for (const r of allRoutes) map.set(r.id, r);
     } else {

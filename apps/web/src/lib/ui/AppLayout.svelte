@@ -10,7 +10,8 @@
 <script lang="ts" generics="T extends string">
   import type { Snippet } from 'svelte';
   import BottomNavigation from './BottomNavigation.svelte';
-  import Header, { type HeaderHealth } from './Header.svelte';
+  import Header from './Header.svelte';
+  import type { HeaderHealth } from './headerTypes';
   import StatusBar from './StatusBar.svelte';
 
   type NavItem = {
@@ -24,7 +25,7 @@
     health: HeaderHealth;
     onrefresh?: () => void;
     refreshing?: boolean;
-    navItems: NavItem[];
+    navItems: readonly NavItem[];
     activeNav: T;
     onnav: (next: T) => void;
     children?: Snippet;

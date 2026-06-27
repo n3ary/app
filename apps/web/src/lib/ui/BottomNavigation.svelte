@@ -20,7 +20,7 @@
 
   type Props = {
     value: T;
-    items: Item[];
+    items: readonly Item[];
     onchange: (next: T) => void;
     class?: string;
   };

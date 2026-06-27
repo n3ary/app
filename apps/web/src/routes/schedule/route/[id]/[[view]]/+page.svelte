@@ -6,8 +6,8 @@
     /schedule/route/[id]_0|[id]_1              single-direction view, today
     /schedule/route/[id]_0|[id]_1/[view]       single-direction, explicit tab
 
-  Where [view] is one of: next-trip | tomorrow | week. 'today' is the
-  default and never appears in the URL.
+  Where [view] is one of: tomorrow | week. 'today' is the default and
+  never appears in the URL.
 
   Path-based instead of ?dir=&view= because query strings tripped the
   dev WebSocket suspension on iOS Safari and because deep links read
@@ -17,9 +17,7 @@
   in ids. If a feed ever does, we'll switch the separator.
 
   Tabs:
-    - 'next-trip': stop timeline for the next upcoming trip in the
-      selected direction. Enabled only when a direction is set.
-    - 'today':    today's remaining departures from origin (default).
+    - 'today':    today's remaining departures + last departed row (default).
     - 'tomorrow': tomorrow's morning departures (00:00 → noon).
     - 'week':     recurring weekly pattern (Mon-Fri / Sat / Sun).
 
@@ -29,7 +27,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, ChevronDown, ExternalLink, Moon } from 'lucide-svelte';
+  import { ArrowRightLeft, ArrowUpRight, ChevronDown, ExternalLink, Moon } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
     Stack, ToggleGroup, Typography,
@@ -68,12 +66,11 @@
   const direction = $derived(parsed.direction);
   const routeIdValid = $derived(routeId.length > 0);
 
-  type View = 'next-trip' | 'today' | 'tomorrow' | 'week';
+  type View = 'today' | 'tomorrow' | 'week';
   const view = $derived.by<View>(() => {
     const v = page.params.view;
-    if (v === 'today' || v === 'tomorrow' || v === 'next-trip' || v === 'week') return v;
-    // Back-compat for old links that used ?view=this-trip.
-    if (v === 'this-trip') return 'next-trip';
+    if (v === 'today' || v === 'tomorrow' || v === 'week') return v;
+    // Back-compat for old links that used ?view=next-trip or ?view=this-trip.
     return 'today';
   });
 
@@ -91,8 +88,7 @@
   // One-shot guard so the auto-redirect doesn't fight the user if
   // they manually navigate back to today after we swapped them.
   let autoSwapped = $state(false);
-  // Per-trip stop timelines. Drives the 'Next trip' tab AND the
-  // inline row expansion in Today/Tomorrow.
+  // Per-trip stop timelines. Drives the inline row expansion in Today/Tomorrow.
   let tripStops = $state<Map<string, ScheduleTripStop[]>>(new Map());
   // Which row is open in the Today/Tomorrow accordion. Local state
   // only — the URL no longer carries a trip pin.
@@ -104,6 +100,16 @@
   let weeklyDirection = $state<0 | 1 | null>(null);
   let weeklyLoading = $state(false);
   let error = $state<string | null>(null);
+  // Last departed trip on today's tab: non-expandable separator row shown above upcoming trips.
+  let lastDepartedTrip = $state<ScheduleTrip | null>(null);
+  // Whether the week table is fully expanded (showing all times including past ones).
+  let weekExpanded = $state(false);
+  // Guard so clock-tick re-fetches don't re-expand the first trip after the user collapses it.
+  let todayAutoExpanded = $state(false);
+  // Whether the today list is expanded past the initial visible window.
+  let todayListExpanded = $state(false);
+  // Max upcoming trips shown before the "show more" button appears.
+  const TODAY_TRIP_LIMIT = 5;
 
   const tz = $derived(feedsStore.activeTimezone);
 
@@ -118,12 +124,20 @@
   // populates Today/Tomorrow keeps the list warm for fast tab swaps.
   const queryParams = $derived(
     scheduleWindowFor({
-      view: view === 'week' ? 'today' : view,
+      view: view === 'week' ? 'today' : (view as 'today' | 'tomorrow'),
       isNight: nightRoute,
       nowMs: nowTicker.ms,
       timeZone: tz,
     }),
   );
+
+  // Reset expansion state whenever view or direction changes.
+  $effect(() => {
+    view; direction; // reactive dependencies only — no logic here
+    todayAutoExpanded = false;
+    todayListExpanded = false;
+    lastDepartedTrip = null;
+  });
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;
@@ -148,13 +162,27 @@
           ]);
           tripsByDir = { 0: d0, 1: d1 };
         } else {
-          // Single-direction: schedule for the day + warm the
-          // next-upcoming trip's stop list so the Next trip tab
-          // renders without an extra round-trip.
+          // Single-direction: fetch upcoming trips + warm the first trip's stops.
           const trips = await repo.getRouteSchedule(rid, dir, qp.localDate, qp.fromMin, qp.windowMin);
           tripsByDir = dir === 0 ? { 0: trips, 1: [] } : { 0: [], 1: trips };
           const stopsTripId = trips[0]?.tripId ?? null;
           if (stopsTripId) await loadTripStops(stopsTripId);
+
+          if (v === 'today') {
+            // Fetch the most recently departed trip (up to 2 h back) to show
+            // as the non-expandable "Departed" separator row above upcoming trips.
+            if (qp.fromMin > 0) {
+              const pastWindow = Math.min(120, qp.fromMin);
+              const pastFrom = qp.fromMin - pastWindow;
+              const pastTrips = await repo.getRouteSchedule(rid, dir, qp.localDate, pastFrom, pastWindow);
+              lastDepartedTrip = pastTrips.filter(t => t.tripStartMin < qp.fromMin).pop() ?? null;
+            }
+            // Auto-expand the first upcoming trip once per (view, direction) load.
+            if (!todayAutoExpanded && trips.length > 0) {
+              todayAutoExpanded = true;
+              expandedTripId = trips[0].tripId;
+            }
+          }
         }
         fetchedView = v;
         error = null;
@@ -210,6 +238,7 @@
     weeklyLoading = true;
     weekly = null;
     weeklyDirection = direction;
+    weekExpanded = false;
     const rid = routeId;
     const dir = direction;
     (async () => {
@@ -230,8 +259,8 @@
     : direction === 1 ? tripsByDir[1]
     : [],
   );
-  // The trip whose timeline drives the header (origin name + headsign)
-  // and the 'Next trip' tab.
+  // First upcoming trip's stops — used as a fallback for the header when
+  // the endpoints query hasn't returned yet.
   const nextTripId = $derived(trips[0]?.tripId ?? null);
   const focusStops = $derived(nextTripId ? tripStops.get(nextTripId) ?? [] : []);
   const originStopName = $derived(focusStops[0]?.stopName ?? null);
@@ -247,27 +276,47 @@
     return 'weekday';
   });
 
-  // Tab availability: Next trip is offered whenever a direction is
-  // set, even if there are no more trips today — the tab content
-  // then shows an empty state with a one-tap shortcut to Tomorrow.
-  // Hiding the tab on transient empty data would make it vanish
-  // mid-interaction.
-  const tabItems = $derived(
-    direction != null
-      ? [
-          { value: 'next-trip', label: 'Next trip' },
-          { value: 'today', label: 'Today' },
-          { value: 'tomorrow', label: 'Tomorrow' },
-          { value: 'week', label: 'Week' },
-        ]
-      : [
-          { value: 'today', label: 'Today' },
-          { value: 'tomorrow', label: 'Tomorrow' },
-          { value: 'week', label: 'Week' },
-        ],
+  const tabItems = [
+    { value: 'today', label: 'Today' },
+    { value: 'tomorrow', label: 'Tomorrow' },
+    { value: 'week', label: 'Week' },
+  ];
+
+  // Today: only first TODAY_TRIP_LIMIT upcoming trips are shown initially.
+  // Derived here so the template stays free of slicing / comparison logic.
+  const todayVisibleTrips = $derived(
+    view === 'today' && !todayListExpanded ? trips.slice(0, TODAY_TRIP_LIMIT) : trips,
+  );
+  const todayHiddenCount = $derived(
+    view === 'today' ? Math.max(0, trips.length - TODAY_TRIP_LIMIT) : 0,
   );
 
   const isFav = $derived(route ? favoritesStore.has(route.id) : false);
+
+  // ── Week-table derived ──────────────────────────────────────────────
+  // All unique departure minutes across the three day-patterns, sorted.
+  // Lives in the script so the weekColumns snippet is pure markup.
+  const weekAllTimes = $derived.by<number[]>(() => {
+    if (!weekly) return [];
+    return Array.from(new Set([...weekly.weekday, ...weekly.saturday, ...weekly.sunday]))
+      .sort((a, b) => a - b);
+  });
+  const weekdaySet = $derived(new Set(weekly?.weekday ?? []));
+  const saturdaySet = $derived(new Set(weekly?.saturday ?? []));
+  const sundaySet  = $derived(new Set(weekly?.sunday  ?? []));
+  // The set for today's column — drives the "first upcoming" search.
+  const weekTodaySet = $derived<Set<number>>(
+    todayCol === 'weekday' ? weekdaySet : todayCol === 'saturday' ? saturdaySet : sundaySet,
+  );
+  // Index of the first time in today's column that is ≥ nowMin.
+  // When no such time exists (service over for today), collapse to 0
+  // so the full table is visible rather than collapsing to an empty tail.
+  const weekCollapseAt = $derived.by(() => {
+    const idx = weekAllTimes.findIndex(t => weekTodaySet.has(t) && t >= nowMin);
+    return idx <= 0 ? 0 : idx;
+  });
+  const weekHiddenCount = $derived(weekCollapseAt);
+  const weekVisibleTimes = $derived(weekExpanded ? weekAllTimes : weekAllTimes.slice(weekCollapseAt));
 
   // ── Title / subtitle ────────────────────────────────────────────────
   // Title is the origin station — that's what THIS schedule is about
@@ -369,9 +418,9 @@
   );
 </script>
 
-<!-- One stop-timeline renderer reused by the 'Next trip' tab AND the
-     expanded rows of the Today/Tomorrow accordion. Row 1 is the
-     origin departure; the rest are arrivals. -->
+<!-- Stop-timeline for an expanded trip row.
+     Origin shows an ArrowUpRight departure icon (same as StationCard's
+     departing bucket); subsequent stops show just the arrival time. -->
 {#snippet tripTimeline(stops: ScheduleTripStop[])}
   <Stack spacing={0.5}>
     {#each stops as s, i (s.stopId)}
@@ -383,23 +432,20 @@
         class="px-2 py-1 rounded-md hover:bg-[color:var(--color-border)]/30"
       >
         <Chip size="small" class="font-mono shrink-0">{i + 1}</Chip>
-        <Typography variant="body2" class="flex-1 truncate">
-          {s.stopName}
-        </Typography>
-        {#if isOrigin}
-          <Typography variant="caption" class={`font-mono shrink-0 ${relClass(s.arrivalMin)}`}>
-            {relText(s.arrivalMin)}
-          </Typography>
-        {/if}
-        <Typography variant="caption" class="text-[color:var(--color-fg-muted)] font-mono shrink-0">
-          {isOrigin ? 'dep' : 'arr'} {formatHHMM(s.arrivalMin)}
-        </Typography>
-        <IconButton
+        <span class="flex-1 min-w-0 text-xs truncate">{s.stopName}</span>
+        <span class="flex items-center gap-0.5 text-[color:var(--color-fg-muted)] font-mono text-xs shrink-0">
+          {#if isOrigin}
+            <ArrowUpRight size={12} class="text-[color:var(--color-danger)]" aria-label="Departure" />
+          {/if}
+          {formatHHMM(s.arrivalMin)}
+        </span>
+        <a
+          href={`/station/${s.stopId}`}
           aria-label={`Open station ${s.stopName}`}
-          onclick={() => goto(`/station/${s.stopId}`)}
+          class="shrink-0 text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)]"
         >
           <ExternalLink size={16} />
-        </IconButton>
+        </a>
       </Stack>
     {/each}
   </Stack>
@@ -409,7 +455,9 @@
      given clock time lines up horizontally across day columns.
      Today's column stays full-color; the other two are greyed so
      the user reads 'this is what runs today' at a glance. Within
-     today's column, times that have already passed are also greyed. -->
+     today's column, times that have already passed are also greyed.
+     Rows before today's first upcoming departure are hidden by default;
+     an expand button above the table reveals the full history. -->
 {#snippet weekColumns()}
   {#if weekly == null}
     <Stack direction="row" spacing={1} align="center" class="py-2">
@@ -418,54 +466,59 @@
         Loading weekly schedule…
       </Typography>
     </Stack>
+  {:else if weekAllTimes.length === 0}
+    <Typography variant="caption" class="text-[color:var(--color-fg-muted)] py-2">
+      No service defined for this direction in calendar.txt.
+    </Typography>
   {:else}
-    {@const allTimes = Array.from(new Set([
-      ...weekly.weekday, ...weekly.saturday, ...weekly.sunday,
-    ])).sort((a, b) => a - b)}
-    {@const weekdaySet = new Set(weekly.weekday)}
-    {@const saturdaySet = new Set(weekly.saturday)}
-    {@const sundaySet = new Set(weekly.sunday)}
-    {#if allTimes.length === 0}
-      <Typography variant="caption" class="text-[color:var(--color-fg-muted)] py-2">
-        No service defined for this direction in calendar.txt.
-      </Typography>
-    {:else}
-      <table class="week-table">
-        <thead>
-          <tr>
-            <th class={todayCol === 'weekday' ? 'today' : 'other'}>
-              Mon–Fri
-              <span class="count">({weekly.weekday.length})</span>
-            </th>
-            <th class={todayCol === 'saturday' ? 'today' : 'other'}>
-              Saturday
-              <span class="count">({weekly.saturday.length})</span>
-            </th>
-            <th class={todayCol === 'sunday' ? 'today' : 'other'}>
-              Sunday
-              <span class="count">({weekly.sunday.length})</span>
-            </th>
+    <table class="week-table">
+      <thead>
+        <tr>
+          <th class={todayCol === 'weekday' ? 'today' : 'other'}>
+            Mon–Fri
+            <span class="count">({weekly.weekday.length})</span>
+          </th>
+          <th class={todayCol === 'saturday' ? 'today' : 'other'}>
+            Saturday
+            <span class="count">({weekly.saturday.length})</span>
+          </th>
+          <th class={todayCol === 'sunday' ? 'today' : 'other'}>
+            Sunday
+            <span class="count">({weekly.sunday.length})</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {#if !weekExpanded && weekHiddenCount > 0}
+          <tr class="week-expand-row">
+            <td colspan="3">
+              <button
+                type="button"
+                onclick={() => { weekExpanded = true; }}
+                class="w-full text-xs text-[color:var(--color-primary)] hover:text-[color:var(--color-fg)] py-1"
+              >
+                ↑ Show {weekHiddenCount} earlier departure{weekHiddenCount !== 1 ? 's' : ''}
+              </button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {#each allTimes as t (t)}
-            <tr>
-              {#each [
-                { col: 'weekday', has: weekdaySet.has(t) },
-                { col: 'saturday', has: saturdaySet.has(t) },
-                { col: 'sunday', has: sundaySet.has(t) },
-              ] as cell (cell.col)}
-                {@const isToday = cell.col === todayCol}
-                {@const isPast = isToday && t < nowMin - 1}
-                <td class={`${isToday ? 'today' : 'other'} ${isPast ? 'past' : ''}`}>
-                  {cell.has ? formatHHMM(t) : '—'}
-                </td>
-              {/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
+        {/if}
+        {#each weekVisibleTimes as t (t)}
+          <tr>
+            {#each [
+              { col: 'weekday', has: weekdaySet.has(t) },
+              { col: 'saturday', has: saturdaySet.has(t) },
+              { col: 'sunday', has: sundaySet.has(t) },
+            ] as cell (cell.col)}
+              {@const isToday = cell.col === todayCol}
+              {@const isPast = isToday && t < nowMin - 1}
+              <td class={`${isToday ? 'today' : 'other'} ${isPast ? 'past' : ''}`}>
+                {cell.has ? formatHHMM(t) : '—'}
+              </td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 {/snippet}
 
@@ -499,7 +552,7 @@
           <Stack direction="row" spacing={1.5} align="center" wrap>
             <BackButton />
             <RouteBadge route={route} size="large" isFavorite={isFav} />
-            <Stack spacing={0.25} class="flex-1 min-w-0">
+            <Stack spacing={0.5} class="flex-1 min-w-0">
               <Stack direction="row" spacing={1} align="center" wrap>
                 <Typography variant="h5" class="truncate">{headerTitle}</Typography>
                 {#if nightRoute}
@@ -536,26 +589,7 @@
 
         <Card>
           <CardContent>
-            {#if view === 'next-trip' && focusStops.length > 0}
-              <!-- Stop timeline for the next upcoming trip. -->
-              {@render tripTimeline(focusStops)}
-            {:else if view === 'next-trip'}
-              <!-- No more trips today: tell the user, give them a
-                   one-tap shortcut to tomorrow so the empty state
-                   isn't a dead end. -->
-              <Stack spacing={1}>
-                <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-                  No more trips today on this direction.
-                </Typography>
-                <button
-                  type="button"
-                  onclick={() => pickView('tomorrow')}
-                  class="text-sm underline text-[color:var(--color-primary)] hover:text-[color:var(--color-fg)] self-start"
-                >
-                  Show tomorrow's schedule →
-                </button>
-              </Stack>
-            {:else if view === 'week'}
+            {#if view === 'week'}
               <!-- Weekly pattern: three columns for Mon–Fri / Sat / Sun
                    showing every scheduled departure from the origin in
                    the selected direction. Recurring pattern, not a
@@ -564,19 +598,23 @@
               {@render weekColumns()}
             {:else}
               <!-- Today / Tomorrow: one row per trip, click to expand
-                   the stop timeline below the row. Both day-tabs
-                   render rows identically; the only difference is
-                   which window the repo query covers. -->
+                   the stop timeline below the row. Today also shows a
+                   non-expandable "Departed" row at the top for the most
+                   recently departed trip. -->
               <Stack spacing={0.5}>
+                {#if view === 'today' && lastDepartedTrip != null}
+                  <!-- Last departed trip: non-interactive, heavily muted. -->
+                  <div class="flex items-center gap-2 px-2 py-1 rounded-md departed-row">
+                    <Chip size="small" class="font-mono shrink-0 opacity-50">{formatHHMM(lastDepartedTrip.tripStartMin)}</Chip>
+                    <span class="flex-1 min-w-0 text-xs text-[color:var(--color-fg-muted)] italic">Departed</span>
+                  </div>
+                {/if}
                 {#if trips.length === 0}
                   <Stack spacing={1} class="py-1">
                     <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
                       {view === 'tomorrow' ? 'No departures scheduled tomorrow.' : 'No more departures today.'}
                     </Typography>
                     {#if view === 'today'}
-                      <!-- Mirrors the Next-trip empty state: one-tap
-                           shortcut to tomorrow so the empty state
-                           isn't a dead end. -->
                       <button
                         type="button"
                         onclick={() => pickView('tomorrow')}
@@ -587,7 +625,7 @@
                     {/if}
                   </Stack>
                 {:else}
-                  {#each trips as t (t.tripId)}
+                  {#each todayVisibleTrips as t (t.tripId)}
                     {@const isOpen = expandedTripId === t.tripId}
                     {@const stops = tripStops.get(t.tripId)}
                     <Stack spacing={0}>
@@ -607,7 +645,7 @@
                         />
                       </button>
                       {#if isOpen}
-                        <div class="pl-2 pr-1 pb-2 pt-1">
+                        <div class="mt-1 mb-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-raised,var(--color-surface))] py-1">
                           {#if stops == null}
                             <Stack direction="row" spacing={1} align="center" class="px-2 py-1">
                               <Spinner size={14} />
@@ -622,6 +660,23 @@
                       {/if}
                     </Stack>
                   {/each}
+                  {#if todayHiddenCount > 0 && !todayListExpanded}
+                    <button
+                      type="button"
+                      onclick={() => { todayListExpanded = true; }}
+                      class="text-sm underline text-[color:var(--color-primary)] hover:text-[color:var(--color-fg)] px-2 py-1 text-left"
+                    >
+                      Show {todayHiddenCount} more departure{todayHiddenCount !== 1 ? 's' : ''}
+                    </button>
+                  {:else if todayListExpanded && todayHiddenCount > 0}
+                    <button
+                      type="button"
+                      onclick={() => { todayListExpanded = false; }}
+                      class="text-sm underline text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)] px-2 py-1 text-left"
+                    >
+                      Show fewer
+                    </button>
+                  {/if}
                 {/if}
               </Stack>
             {/if}
@@ -682,6 +737,15 @@
     .md\:grid-cols-2 { grid-template-columns: 1fr 1fr; }
   }
 
+  /* Non-expandable "Departed" separator row in the Today list. Visually
+     mirrors the week-table .other/.past treatment: heavily muted so it
+     reads as background context rather than an actionable item. */
+  .departed-row {
+    opacity: 0.45;
+    pointer-events: none;
+    user-select: none;
+  }
+
   /* Weekly schedule matrix table. Rows are unique HH:MM values across
      all three day-columns; a missing cell shows an em-dash so the
      pattern reads at a glance. Today's column stays at full opacity
@@ -726,5 +790,9 @@
     text-decoration: line-through;
     text-decoration-color: color-mix(in srgb, var(--color-fg-muted) 50%, transparent);
     opacity: 0.7;
+  }
+  .week-table .week-expand-row td {
+    padding: 0;
+    border-bottom: 1px solid var(--color-border);
   }
 </style>

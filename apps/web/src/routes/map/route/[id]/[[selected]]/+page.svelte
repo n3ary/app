@@ -35,6 +35,7 @@
   import type { RouteMapView } from '$lib/data/gtfs/types';
   import {
     formatHHMM, isNightRoute, pickContrastingText, vehicleTypeLabel,
+    type Route,
   } from '$lib/domain/types';
   import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
   import {
@@ -60,6 +61,20 @@
   const routeId = $derived(parsed.routeId);
   const direction = $derived(parsed.direction);
   const selectedTripId = $derived(page.params.selected ?? null);
+
+  // Remember the original direction + trip so that swapping twice restores
+  // the highlight. Captured once on first arrival; swapping to the other
+  // direction and back re-selects the trip the user navigated here with.
+  let homeDirection = $state<0 | 1 | null>(null);
+  let homeSelectedTripId = $state<string | null>(null);
+  $effect(() => {
+    const dir = direction;
+    const sel = selectedTripId;
+    if (dir != null && homeDirection === null) {
+      homeDirection = dir;
+      homeSelectedTripId = sel;
+    }
+  });
 
   // ── Data ────────────────────────────────────────────────────────────
   let view = $state<RouteMapView | null>(null);
@@ -107,6 +122,21 @@
   const route = $derived(view?.route ?? null);
   const isFav = $derived(route ? favoritesStore.has(route.id) : false);
   const nightRoute = $derived(route ? isNightRoute(route) : false);
+
+  // Routes per stop — fetched once when the view payload arrives so
+  // the stop popup can show route badges without a per-click async call.
+  let stopRoutes = $state<Map<number, Route[]>>(new Map());
+  $effect(() => {
+    const stops = view?.stops;
+    if (!stops || stops.length === 0) return;
+    const repo = getGtfsRepo();
+    void (async () => {
+      const entries = await Promise.all(
+        stops.map(async (s) => [s.stopId, await repo.getRoutesForStop(s.stopId)] as const),
+      );
+      stopRoutes = new Map(entries);
+    })();
+  });
 
   // Pre-projected per-trip shape plans. Built once when the view
   // payload arrives and reused on every nowMin tick — the per-tick
@@ -240,10 +270,13 @@
   function swapDirection() {
     if (direction == null) return;
     const otherDir = direction === 0 ? 1 : 0;
-    // Selected vehicle isn't on the other direction — drop it.
-    // replaceState so BackButton skips the swap and returns to the
-    // surface the user came from (see BackButton.svelte).
-    goto(`/map/route/${routeId}_${otherDir}`, { replaceState: true });
+    // When swapping back to the original direction, restore the trip the user
+    // arrived with so the highlight isn't lost after a double-swap.
+    const restoreTrip = otherDir === homeDirection ? homeSelectedTripId : null;
+    const target = restoreTrip
+      ? `/map/route/${routeId}_${otherDir}/${restoreTrip}`
+      : `/map/route/${routeId}_${otherDir}`;
+    goto(target, { replaceState: true });
   }
 
   // Map control wrappers — thin closures over Leaflet's imperative
@@ -374,20 +407,25 @@
     mapInstance = null;
   });
 
-  // Re-paint the route shape + stops whenever the view-model changes.
-  // Leaflet layers are mutated in place; markers are recreated cheaply
-  // (a route has O(50) stops, an order of magnitude less than what
-  // Leaflet handles fluidly).
+  // Re-paint the route shape + stops whenever the view-model or stop
+  // routes change. Leaflet layers are mutated in place; markers are
+  // recreated cheaply (a route has O(50) stops, an order of magnitude
+  // less than what Leaflet handles fluidly).
   $effect(() => {
-    if (!L || !mapInstance || !view) return;
+    // Capture reactive state into local const so TypeScript narrowing
+    // holds inside forEach callbacks (rune getters don't narrow).
+    const Lref = L;
+    const currentView = view;
+    const currentRoutes = stopRoutes;
+    if (!Lref || !mapInstance || !currentView) return;
     if (shapeLayer) {
       shapeLayer.remove();
       shapeLayer = null;
     }
-    if (view.shape.length >= 2) {
-      const latlngs = view.shape.map((p) => [p.lat, p.lon] as [number, number]);
-      shapeLayer = L.polyline(latlngs, {
-        color: view.route.color,
+    if (currentView.shape.length >= 2) {
+      const latlngs = currentView.shape.map((p) => [p.lat, p.lon] as [number, number]);
+      shapeLayer = Lref.polyline(latlngs, {
+        color: currentView.route.color,
         weight: 5,
         opacity: 0.85,
       }).addTo(mapInstance);
@@ -404,9 +442,10 @@
       }
     }
     stopsLayer?.clearLayers();
-    if (stopsLayer) {
-      const lastIdx = view.stops.length - 1;
-      view.stops.forEach((s, i) => {
+    const sl = stopsLayer;
+    if (sl) {
+      const lastIdx = currentView.stops.length - 1;
+      currentView.stops.forEach((s, i) => {
         // Origin gets a play-triangle disc, terminus a square cap
         // — same convention RouteBadge uses for isStart/isEnd, so a
         // user who's seen the badge already reads these icons at a
@@ -415,29 +454,29 @@
         const isOrigin = i === 0;
         const isTerminus = i === lastIdx;
         const m = (isOrigin || isTerminus)
-          ? L.marker([s.lat, s.lon], {
-              icon: L.divIcon({
+          ? Lref.marker([s.lat, s.lon], {
+              icon: Lref.divIcon({
                 className: isOrigin ? 'neary-origin' : 'neary-terminus',
                 html: isOrigin
-                  ? endpointHtml(view.route.color, 'origin')
-                  : endpointHtml(view.route.color, 'terminus'),
+                  ? endpointHtml(currentView.route.color, 'origin')
+                  : endpointHtml(currentView.route.color, 'terminus'),
                 iconSize: [22, 22],
                 iconAnchor: [11, 11],
               }),
               keyboard: false,
               riseOnHover: true,
             })
-          : L.circleMarker([s.lat, s.lon], {
+          : Lref.circleMarker([s.lat, s.lon], {
               radius: 5,
               color: '#fff',
               weight: 1.5,
-              fillColor: view.route.color,
+              fillColor: currentView.route.color,
               fillOpacity: 1,
             });
-        m.bindPopup(stopPopupHtml(s.stopId, s.stopName, s.arrivalMin), {
+        m.bindPopup(stopPopupHtml(s.stopId, s.stopName, currentRoutes.get(s.stopId) ?? []), {
           closeButton: false,
         });
-        m.addTo(stopsLayer);
+        m.addTo(sl);
       });
     }
   });
@@ -589,15 +628,29 @@
       opacity:${opacity};${ring}
     ">${escapeHtml(shortName)}</div>`;
   }
-  function stopPopupHtml(stopId: number, name: string, arrivalMin: number): string {
+  function routeBadgeHtml(r: Route): string {
+    const fg = pickContrastingText(r.color);
+    return `<span style="
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:1px 5px;border-radius:4px;
+      background:${r.color};color:${fg};
+      font:600 10px/1.4 ui-sans-serif,system-ui;white-space:nowrap;
+    ">${escapeHtml(r.shortName)}</span>`;
+  }
+  function stopPopupHtml(stopId: number, name: string, routes: Route[]): string {
+    const externalLinkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
+    const badgesHtml = routes.length > 0
+      ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;">${routes.map(routeBadgeHtml).join('')}</div>`
+      : '';
     return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:160px;">
-      <div style="font-weight:600;margin-bottom:2px;">${escapeHtml(name)}</div>
-      <div style="color:#666;margin-bottom:6px;">First-trip arrival ${formatHHMM(arrivalMin)}</div>
-      <a href="/station/${stopId}" style="
-        display:inline-block;padding:4px 8px;border-radius:4px;
-        background:#1d4ed8;color:#fff;text-decoration:none;font-weight:500;">
-        Open station →
-      </a>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <span style="font-weight:600;flex:1;min-width:0;">${escapeHtml(name)}</span>
+        <a href="/station/${stopId}" title="Open station" aria-label="Open station ${escapeHtml(name)}" style="
+          display:inline-flex;align-items:center;justify-content:center;
+          color:#555;text-decoration:none;flex-shrink:0;">
+          ${externalLinkSvg}
+        </a>
+      </div>${badgesHtml}
     </div>`;
   }
   /** Origin / terminus marker glyph. Origin shows a white play
@@ -654,7 +707,7 @@
           <Stack direction="row" spacing={1.5} align="center" wrap>
             <BackButton />
             <RouteBadge route={view.route} size="large" isFavorite={isFav} />
-            <Stack spacing={0.25} class="flex-1 min-w-0">
+            <Stack spacing={0.5} class="flex-1 min-w-0">
               <Stack direction="row" spacing={1} align="center" wrap>
                 <Typography variant="h5" class="truncate">{headerTitle}</Typography>
                 {#if nightRoute}

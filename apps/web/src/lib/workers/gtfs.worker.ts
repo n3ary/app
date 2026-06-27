@@ -14,7 +14,7 @@
  */
 
 import * as Comlink from 'comlink';
-import sqlite3InitModule, { type Database, type Sqlite3Static } from '@sqlite.org/sqlite-wasm';
+import sqlite3InitModule, { type BindableValue, type Database, type Sqlite3Static } from '@sqlite.org/sqlite-wasm';
 
 import type { Feed } from '$lib/data/feeds';
 import type { Route, Station, Vehicle } from '$lib/domain/types';
@@ -67,7 +67,13 @@ let bootstrapping: Promise<Database> | null = null;
 async function getPool() {
   if (poolPromise) return poolPromise;
   poolPromise = (async () => {
-    const sqlite3: Sqlite3Static = await sqlite3InitModule({
+    // The published type signature omits the init-options object, but
+    // the runtime accepts it for redirecting SQLite's internal logging.
+    const initFn = sqlite3InitModule as unknown as (opts: {
+      print?: (msg: string) => void;
+      printErr?: (msg: string) => void;
+    }) => Promise<Sqlite3Static>;
+    const sqlite3 = await initFn({
       print: (m: string) => console.log('[gtfs.worker:sqlite]', m),
       printErr: (m: string) => console.error('[gtfs.worker:sqlite]', m),
     });
@@ -171,13 +177,13 @@ async function ensureDb(): Promise<Database> {
 // Cleaner than the resultRows-mutate-in-place pattern for our use case.
 // ---------------------------------------------------------------------------
 
-function selectAll<T>(db: Database, sql: string, bind?: unknown[]): T[] {
+function selectAll<T>(db: Database, sql: string, bind?: readonly BindableValue[]): T[] {
   return db.exec({
     sql,
-    bind,
+    bind: bind as BindableValue[],
     rowMode: 'object',
     returnValue: 'resultRows',
-  }) as T[];
+  }) as unknown as T[];
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +808,34 @@ const api: GtfsRepo = {
     const repStops = stopsByTrip.get(repTripId) ?? loadStopsForTrip(db, repTripId);
 
     return { route, shape, stops: repStops, trips };
+  },
+
+  async getRoutesForStop(stopId: number): Promise<Route[]> {
+    const db = await ensureDb();
+    type Row = {
+      route_id: string;
+      route_short_name: string;
+      route_color: string | null;
+      route_text_color: string | null;
+      route_type: number | null;
+    };
+    const rows = selectAll<Row>(
+      db,
+      `SELECT DISTINCT r.route_id, r.route_short_name, r.route_color, r.route_text_color, r.route_type
+       FROM stop_times st
+       JOIN trips t ON t.trip_id = st.trip_id
+       JOIN routes r ON r.route_id = t.route_id
+       WHERE st.stop_id = ?
+       ORDER BY CAST(r.route_short_name AS INTEGER), r.route_short_name;`,
+      [stopId],
+    );
+    return rows.map((r) => ({
+      id: r.route_id,
+      shortName: r.route_short_name,
+      color: r.route_color ? `#${r.route_color}` : '#666666',
+      textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
+      type: vehicleTypeFromGtfs(r.route_type),
+    }));
   },
 };
 

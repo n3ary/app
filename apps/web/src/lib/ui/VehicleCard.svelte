@@ -159,7 +159,7 @@
       href={mapHref}
       title="Open route map"
       aria-label={`Open ${vehicle.route.shortName} on the map`}
-      class="inline-flex items-center justify-center w-6 h-6 rounded-full text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)] hover:bg-[color:var(--color-border)]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] shrink-0"
+      class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--color-border)]/60 text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)] hover:bg-[color:var(--color-border)] hover:ring-2 hover:ring-[color:var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] shrink-0"
     >
       <MapIcon size={14} strokeWidth={2.25} />
     </a>

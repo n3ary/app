@@ -190,6 +190,14 @@ export interface GtfsRepo {
   ): Promise<RouteDirectionEndpoints | null>;
 
   /**
+   * All distinct routes that serve a given stop. Used by the map view
+   * to show route badges inside the stop popup. Ordered by route
+   * short_name (same sort as getRoutes). Empty array when the stop has
+   * no scheduled service.
+   */
+  getRoutesForStop(stopId: number): Promise<Route[]>;
+
+  /**
    * One round-trip payload for the route-map view: every trip
    * currently active on (routeId, directionId) plus a representative
    * shape polyline for the direction.

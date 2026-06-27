@@ -15,15 +15,7 @@
   import { RefreshCw } from 'lucide-svelte';
   import IconButton from './IconButton.svelte';
   import StatusDot from './StatusDot.svelte';
-
-  export type HealthState = 'ok' | 'stale' | 'error' | 'idle';
-
-  export interface HeaderHealth {
-    gps: { state: HealthState; tooltip?: string };
-    connection: { state: HealthState; tooltip?: string };
-    schedule: { state: HealthState; tooltip?: string };
-    live: { state: HealthState; tooltip?: string };
-  }
+  import type { HeaderHealth, HealthState } from './headerTypes';
 
   type Props = {
     title: string;

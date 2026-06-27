@@ -200,7 +200,7 @@ export function applyGpsEta(
  *  showcase) all read routes the same way — numeric short-names sort
  *  numerically, alpha after. */
 export function routesFromVehicles(vehicles: Vehicle[]): Route[] {
-  const map = new Map<number, Route>();
+  const map = new Map<string, Route>();
   for (const v of vehicles) map.set(v.route.id, v.route);
   return Array.from(map.values()).sort((a, b) => {
     const an = Number(a.shortName);

@@ -39,7 +39,7 @@ export { default as TypeBadge } from './TypeBadge.svelte';
 
 // App shell.
 export { default as Header } from './Header.svelte';
-export type { HeaderHealth, HealthState } from './Header.svelte';
+export type { HeaderHealth, HealthState } from './headerTypes';
 export { default as StatusDot } from './StatusDot.svelte';
 export { default as AppLayout } from './AppLayout.svelte';
 

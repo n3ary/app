@@ -22,6 +22,7 @@
     fullWidth = false,
     class: className,
     id,
+    value = $bindable<string | number | readonly string[] | null | undefined>(undefined),
     ...rest
   }: Props = $props();
 
@@ -38,6 +39,7 @@
   {/if}
   <input
     id={inputId}
+    {value}
     class={cn(
       'block w-full h-10 px-3 rounded-md border bg-[color:var(--color-surface)] text-[color:var(--color-fg)]',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
