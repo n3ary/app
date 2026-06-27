@@ -28,12 +28,19 @@ const PAST_STATION_MIN = -1;
  *  - the polyline has < 2 points (can't project)
  *  - the station doesn't lie on this trip's shape (low projection
  *    confidence → wrong trip for this station)
- *  - the bus has already passed the station on the shape */
+ *  - the bus has already passed the station on the shape
+ *
+ *  `headsign` is optional. GTFS-RT doesn't carry it for vehicle
+ *  positions, but callers usually have a sibling scheduled trip on
+ *  the same (route, direction) to copy from — trips on the same
+ *  route+direction share the same destination headsign in every
+ *  feed we've seen. */
 export function buildOrphanLiveVehicle(
   obs: LiveVehicleObservation,
   route: Route,
   shape: Polyline,
   stationPos: { lat: number; lon: number },
+  headsign?: string,
 ): Vehicle | null {
   if (shape.length < 2) return null;
 
@@ -55,6 +62,7 @@ export function buildOrphanLiveVehicle(
     id: `live:${obs.tripId}`,
     route,
     type: route.type ?? 'unknown',
+    headsign,
     confidence: 'medium',
     position: {
       lat: obs.lat,

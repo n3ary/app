@@ -124,6 +124,16 @@
       board.vehicles.map((v) => v.schedule?.tripId).filter(Boolean) as string[],
     );
     const routesById = new Map(board.vehicles.map((v) => [v.route.id, v.route]));
+    // GTFS-RT vehicle positions don't carry the headsign, so reuse
+    // any scheduled sibling's headsign on the same (route, direction).
+    // Trips on the same route+direction share the destination in
+    // every feed we've seen.
+    const headsignByKey = new Map<string, string>();
+    for (const v of board.vehicles) {
+      if (!v.headsign) continue;
+      const key = `${v.route.id}|${v.schedule?.directionId ?? 0}`;
+      if (!headsignByKey.has(key)) headsignByKey.set(key, v.headsign);
+    }
     const stationPos =
       typeof board.stop.lat === 'number' && typeof board.stop.lon === 'number'
         ? { lat: board.stop.lat, lon: board.stop.lon }
@@ -136,7 +146,8 @@
       if (!route) continue;
       const shape = shapes[o.tripId];
       if (!shape) continue;
-      const v = buildOrphanLiveVehicle(o, route, shape, stationPos);
+      const headsign = headsignByKey.get(`${o.routeId}|${o.directionId}`);
+      const v = buildOrphanLiveVehicle(o, route, shape, stationPos, headsign);
       if (v) out.push(v);
     }
     return out;

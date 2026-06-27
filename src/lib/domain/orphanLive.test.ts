@@ -99,4 +99,25 @@ describe('buildOrphanLiveVehicle', () => {
     );
     expect(v?.type).toBe('unknown');
   });
+
+  it('uses the provided headsign when given', () => {
+    const v = buildOrphanLiveVehicle(
+      obsAt(46.77, 23.605, 10),
+      ROUTE,
+      SHAPE,
+      { lat: 46.77, lon: 23.63 },
+      'Mănăștur',
+    );
+    expect(v?.headsign).toBe('Mănăștur');
+  });
+
+  it('leaves headsign undefined when none is provided', () => {
+    const v = buildOrphanLiveVehicle(
+      obsAt(46.77, 23.605, 10),
+      ROUTE,
+      SHAPE,
+      { lat: 46.77, lon: 23.63 },
+    );
+    expect(v?.headsign).toBeUndefined();
+  });
 });
