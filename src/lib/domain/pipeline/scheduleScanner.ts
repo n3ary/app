@@ -116,8 +116,8 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       headsign: r.trip_headsign ?? undefined,
       directionId: r.direction_id === 0 || r.direction_id === 1 ? r.direction_id : -1,
       tripStartMin: timeToMinutes(r.trip_start_time),
-      isAtTripStart: r.stop_sequence === r.first_seq,
-      isAtTripEnd: r.stop_sequence === r.last_seq || undefined,
+      isFirstStop: r.stop_sequence === r.first_seq,
+      isLastStop: r.stop_sequence === r.last_seq || undefined,
     };
     const dropOffOnly =
       Number(r.pickup_type) === 1 || r.stop_sequence === r.last_seq
@@ -132,7 +132,7 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
     //   inherently low-confidence: it's a wall-clock guess with no GPS
     //   to back it up.
     // Reconciler bumps matched rows to 'medium' / 'high' downstream.
-    const confidence = schedule.isAtTripStart ? 'medium' : 'low';
+    const confidence = schedule.isFirstStop ? 'medium' : 'low';
 
     out.push({
       kind: 'scheduled',
@@ -152,5 +152,55 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       },
     });
   }
+  assignTripPhases(out, nowMinSinceMidnight);
   return out;
+}
+
+/** Mark origin-stop rows (isFirstStop) with the trip's lifecycle phase
+ *  on its route relative to `now`. Mutates the rows in place because
+ *  `schedule` is the local object pushed onto each emitted vehicle.
+ *
+ *  Per route, among rows whose `isFirstStop` is true:
+ *    - exactly one `next`     → smallest `scheduledDeparture > now`
+ *    - at most one `last`     → largest `scheduledDeparture <= now`
+ *      (the trip is still running because the scanner already filtered
+ *      out past trips whose `tripEnd <= now`)
+ *    - `on-route`             → any earlier past departure still running
+ *    - `later`                → any future departure that is not `next`
+ *
+ *  Tie-break by `tripId` lexicographic order when two trips share a
+ *  scheduled departure time (rare but GTFS-legal). */
+function assignTripPhases(vehicles: Vehicle[], nowMin: number): void {
+  const byRoute = new Map<string, Vehicle[]>();
+  for (const v of vehicles) {
+    if (!v.schedule?.isFirstStop) continue;
+    const list = byRoute.get(v.route.id);
+    if (list) list.push(v);
+    else byRoute.set(v.route.id, [v]);
+  }
+  for (const list of byRoute.values()) {
+    list.sort((a, b) => {
+      const da = a.schedule!.scheduledDeparture;
+      const db = b.schedule!.scheduledDeparture;
+      if (da !== db) return da - db;
+      return a.schedule!.tripId.localeCompare(b.schedule!.tripId);
+    });
+    let lastIdx = -1;
+    let nextIdx = -1;
+    for (let i = 0; i < list.length; i += 1) {
+      const dep = list[i].schedule!.scheduledDeparture;
+      if (dep <= nowMin) lastIdx = i;
+      else {
+        nextIdx = i;
+        break;
+      }
+    }
+    for (let i = 0; i < list.length; i += 1) {
+      const schedule = list[i].schedule!;
+      if (i === nextIdx) schedule.tripPhase = 'next';
+      else if (i === lastIdx) schedule.tripPhase = 'last';
+      else if (lastIdx >= 0 && i < lastIdx) schedule.tripPhase = 'on-route';
+      else schedule.tripPhase = 'later';
+    }
+  }
 }

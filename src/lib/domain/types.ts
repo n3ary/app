@@ -97,18 +97,34 @@ export interface ScheduledRun {
   /** GTFS `trips.direction_id` (0 or 1). Used by the reconciler as part
    *  of the live-match key. -1 if the feed doesn't populate direction. */
   directionId?: 0 | 1 | -1;
-  /** True when this scheduled row represents the trip's origin stop
-   *  (stop_sequence === first_seq). UI uses this to keep the row at
-   *  full opacity even when there's no live match — at the origin the
-   *  schedule IS authoritative (the bus hasn't started moving yet, so
-   *  there can never be a GPS match before scheduled departure). At
-   *  intermediate stops a scheduled (no-GPS) row is faded. */
-  isAtTripStart?: boolean;
-  /** True when this stop is the trip's terminus (stop_sequence === last_seq).
-   *  Used to suppress the upcoming-stops expansion — there are no further
-   *  stops to show. Distinct from `dropOffOnly` which can also be true at
-   *  intermediate stops with pickup_type === 1. */
-  isAtTripEnd?: boolean;
+  /** True when this scheduled row represents the trip's FIRST stop
+   *  (stop_sequence === first_seq). Named from the row's POV: this
+   *  stop is the trip's origin — not "the vehicle is at the origin".
+   *  UI uses this to keep the row at full opacity even when there's
+   *  no live match — at the origin the schedule IS authoritative
+   *  (the bus hasn't started moving yet, so there can never be a
+   *  GPS match before scheduled departure). At intermediate stops a
+   *  scheduled (no-GPS) row is faded. */
+  isFirstStop?: boolean;
+  /** True when this stop is the trip's LAST stop (stop_sequence ===
+   *  last_seq). Named from the row's POV: this stop is the trip's
+   *  terminus — not "the vehicle is at the terminus". Used to
+   *  suppress the upcoming-stops expansion (there are no further
+   *  stops to show) and to treat the row as drop-off-only regardless
+   *  of `pickup_type`. */
+  isLastStop?: boolean;
+  /** When `isFirstStop === true`, classifies this trip's phase in
+   *  its daily lifecycle on the route, relative to `now`:
+   *   - 'next'     → the next departure that hasn't left
+   *   - 'last'     → the most recent departure that has left and is
+   *                  still running (trip not yet at terminus)
+   *   - 'on-route' → an earlier departure that has left and is still
+   *                  running (not the most recent)
+   *   - 'later'    → a future origin departure that is not the next
+   *
+   *  Undefined when `isFirstStop === false`. Recomputed on every
+   *  snapshot regeneration because the phase is a function of `now`. */
+  tripPhase?: 'next' | 'last' | 'on-route' | 'later';
   /** Minutes since local midnight at the trip's FIRST stop (origin
    *  departure time). Used by the reconciler to match live observations
    *  to scheduled trips by `(routeId, directionId, tripStartMin)` with

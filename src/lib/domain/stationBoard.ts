@@ -395,7 +395,7 @@ export interface ApplyGpsEtaContext {
  *       remaining ~23% with HHMM/run drift in Cluj).
  *
  *  Skipped at trip origin:
- *   - For reconciled rows: when `v.schedule.isAtTripStart === true`.
+ *   - For reconciled rows: when `v.schedule.isFirstStop === true`.
  *     The schedule scanner labels the origin stop; the predictor
  *     would just produce noise from a parked bus's near-zero speed.
  *   - For orphan kind:'live' rows: detected from the GPS projection
@@ -422,7 +422,7 @@ export function applyGpsEta(
   const todBucket = clockToBucket(minSinceMidnightInTz(ctx.nowMs, ctx.timezone), todProfile);
   return vehicles.map<Vehicle>((v) => {
     if (v.kind !== 'reconciled' && v.kind !== 'live') return v;
-    if (v.kind === 'reconciled' && v.schedule.isAtTripStart === true) return v;
+    if (v.kind === 'reconciled' && v.schedule.isFirstStop === true) return v;
     if (!v.position) return v;
     const polyline = pickShape(v, shapes, shapesByRouteDir);
     if (!polyline || polyline.length < 2) return v;

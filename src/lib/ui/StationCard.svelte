@@ -299,7 +299,7 @@
                   {@const stopsEligible = getUpcomingStops != null
                     && vehicle.schedule?.tripId != null
                     && mapEligibleIds.has(vehicle.id)
-                    && !vehicle.schedule.isAtTripEnd}
+                    && !vehicle.schedule.isLastStop}
                   <Box class="flex flex-col gap-1">
                     <VehicleCard
                       {vehicle}

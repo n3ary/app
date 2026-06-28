@@ -107,7 +107,7 @@ describe('applyGpsEta', () => {
     { lat: 46.770, lon: 23.6062 }, // ~2 km east
   ];
   const STOP = { lat: 46.770, lon: 23.6062 };
-  const reconciled = (opts: { tripId: string; isAtTripStart?: boolean }): Vehicle => ({
+  const reconciled = (opts: { tripId: string; isFirstStop?: boolean }): Vehicle => ({
     kind: 'reconciled',
     id: `trip:${opts.tripId}`,
     route: r24,
@@ -120,7 +120,7 @@ describe('applyGpsEta', () => {
       scheduledDeparture: 540,
       directionId: 0,
       tripStartMin: 530,
-      isAtTripStart: opts.isAtTripStart ?? false,
+      isFirstStop: opts.isFirstStop ?? false,
     },
     eta: { distanceMeters: 0, minutes: 99, confidence: 'low' }, // sentinel
     position: { lat: 46.770, lon: 23.580, source: 'gps', asOf: 0, speedMs: 5 },
@@ -141,7 +141,7 @@ describe('applyGpsEta', () => {
   });
 
   it('skips trip-origin rows (schedule wins at origin)', () => {
-    const v = reconciled({ tripId: 'T1', isAtTripStart: true });
+    const v = reconciled({ tripId: 'T1', isFirstStop: true });
     const out = applyGpsEta([v], { T1: POLY }, STOP);
     expect(out[0]).toBe(v); // unchanged
   });

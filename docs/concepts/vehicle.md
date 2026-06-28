@@ -29,4 +29,32 @@ Each entry also carries:
 
 - `confidence: 'high' | 'medium' | 'low'` → see [confidence.md](confidence.md).
 - `liveSources: LiveSource[]` (when the kind has live data) → records which feeds confirm it.
-- `schedule.isAtTripStart` → the bus is at its trip origin, so schedule is authoritative even without GPS.
+- `schedule.isFirstStop` → this row's target stop IS the trip's first stop (origin). Named from the row's POV, not the vehicle's: the row represents the origin, the bus itself may be anywhere. Schedule is authoritative when true (the bus hasn't started moving yet).
+- `schedule.isLastStop` → this row's target stop IS the trip's last stop (terminus). Suppresses the upcoming-stops expansion.
+- `schedule.tripPhase` → see "Trip phase" below.
+
+## Trip phase
+
+On rows where `isFirstStop === true`, `schedule.tripPhase` classifies
+how this origin departure relates to `now` on its route:
+
+| Value | Meaning |
+|---|---|
+| `next` | The next departure on this route that hasn't left yet |
+| `last` | The most recent departure that has left and is still running |
+| `on-route` | An earlier departure that has left and is still running (not the most recent) |
+| `later` | Any future origin departure that is not `next` |
+
+Exactly one `next` and at most one `last` per route. Tie-break on equal
+departure times by `tripId` lexicographic order. Undefined on non-origin
+rows.
+
+The role is recomputed on every snapshot regeneration because it is a
+function of `now`: at 14:59 a trip is `next`, at 15:00 (once its
+scheduled departure passes) it becomes `last`, the previous `last`
+demotes to `on-route`, and the next `later` row promotes to `next`.
+
+Orthogonal to `kind` and to [arrival-buckets](arrival-buckets.md). A
+`next` row can carry GPS (`kind: 'reconciled'`) when the bus is at
+the depot already broadcasting; `last` and `on-route` rows almost
+always do.

@@ -142,7 +142,7 @@ describe('scanSchedule', () => {
     expect(out[0].dropOffOnly).toBeUndefined();
   });
 
-  it('flags isAtTripStart when stop_sequence === first_seq', () => {
+  it('flags isFirstStop when stop_sequence === first_seq', () => {
     const out = scanSchedule({
       rows: [row({
         arrival_time: '09:10:00',
@@ -153,17 +153,173 @@ describe('scanSchedule', () => {
       nowMs,
       windowMinutes: 60,
     });
-    expect(out[0].schedule?.isAtTripStart).toBe(true);
+    expect(out[0].schedule?.isFirstStop).toBe(true);
   });
 
-  it('does NOT flag isAtTripStart at intermediate stops', () => {
+  it('does NOT flag isFirstStop at intermediate stops', () => {
     const out = scanSchedule({
       rows: [row({ arrival_time: '09:10:00', stop_sequence: 3, first_seq: 1 })],
       nowMinSinceMidnight: now,
       nowMs,
       windowMinutes: 60,
     });
-    expect(out[0].schedule?.isAtTripStart).toBe(false);
+    expect(out[0].schedule?.isFirstStop).toBe(false);
   });
 
+});
+
+describe('scanSchedule tripPhase', () => {
+  const now = 9 * 60; // 09:00
+  const nowMs = new Date(2026, 5, 26, 9, 0, 0).getTime();
+  const origin = (overrides: Partial<ScheduleRow>): ScheduleRow =>
+    row({ stop_sequence: 1, first_seq: 1, ...overrides });
+
+  it('marks the next future origin departure as `next`', () => {
+    const out = scanSchedule({
+      rows: [
+        origin({ trip_id: 'T1', arrival_time: '09:05:00', departure_time: '09:05:00' }),
+        origin({ trip_id: 'T2', arrival_time: '09:20:00', departure_time: '09:20:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    const t1 = out.find((v) => v.tripId === 'T1')!;
+    const t2 = out.find((v) => v.tripId === 'T2')!;
+    expect(t1.schedule?.tripPhase).toBe('next');
+    expect(t2.schedule?.tripPhase).toBe('later');
+  });
+
+  it('marks the most recent past origin departure as `last`', () => {
+    const out = scanSchedule({
+      rows: [
+        origin({
+          trip_id: 'T0',
+          arrival_time: '08:55:00',
+          departure_time: '08:55:00',
+          trip_end_time: '09:30:00',
+        }),
+        origin({ trip_id: 'T1', arrival_time: '09:05:00', departure_time: '09:05:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out.find((v) => v.tripId === 'T0')?.schedule?.tripPhase).toBe('last');
+    expect(out.find((v) => v.tripId === 'T1')?.schedule?.tripPhase).toBe('next');
+  });
+
+  it('does NOT mark tripPhase on non-origin rows', () => {
+    const out = scanSchedule({
+      rows: [
+        row({ trip_id: 'T1', arrival_time: '09:05:00', stop_sequence: 3, first_seq: 1 }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out[0].schedule?.tripPhase).toBeUndefined();
+  });
+
+  it('scopes next/last per route', () => {
+    const out = scanSchedule({
+      rows: [
+        origin({ trip_id: 'A1', route_id: 'A', route_short_name: 'A', arrival_time: '09:05:00', departure_time: '09:05:00' }),
+        origin({ trip_id: 'A2', route_id: 'A', route_short_name: 'A', arrival_time: '09:15:00', departure_time: '09:15:00' }),
+        origin({ trip_id: 'B1', route_id: 'B', route_short_name: 'B', arrival_time: '09:08:00', departure_time: '09:08:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out.find((v) => v.tripId === 'A1')?.schedule?.tripPhase).toBe('next');
+    expect(out.find((v) => v.tripId === 'A2')?.schedule?.tripPhase).toBe('later');
+    expect(out.find((v) => v.tripId === 'B1')?.schedule?.tripPhase).toBe('next');
+  });
+
+  it('tie-breaks equal departure times by tripId lexicographic order', () => {
+    const out = scanSchedule({
+      rows: [
+        origin({ trip_id: 'TB', arrival_time: '09:10:00', departure_time: '09:10:00' }),
+        origin({ trip_id: 'TA', arrival_time: '09:10:00', departure_time: '09:10:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    // TA sorts before TB → TA is `next`, TB is `later`.
+    expect(out.find((v) => v.tripId === 'TA')?.schedule?.tripPhase).toBe('next');
+    expect(out.find((v) => v.tripId === 'TB')?.schedule?.tripPhase).toBe('later');
+  });
+
+  it('marks `last` only when there is a past origin departure', () => {
+    // Only future origin rows: nobody is `last`.
+    const out = scanSchedule({
+      rows: [
+        origin({ trip_id: 'T1', arrival_time: '09:05:00', departure_time: '09:05:00' }),
+        origin({ trip_id: 'T2', arrival_time: '09:20:00', departure_time: '09:20:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out.find((v) => v.tripId === 'T1')?.schedule?.tripPhase).toBe('next');
+    expect(out.find((v) => v.tripId === 'T2')?.schedule?.tripPhase).toBe('later');
+    expect(out.some((v) => v.schedule?.tripPhase === 'last')).toBe(false);
+  });
+
+  it('marks `next` only when there is a future origin departure', () => {
+    // Only a past origin row still in transit: it's `last`, no `next`.
+    const out = scanSchedule({
+      rows: [
+        origin({
+          trip_id: 'T0',
+          arrival_time: '08:50:00',
+          departure_time: '08:50:00',
+          trip_end_time: '09:30:00',
+        }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out.find((v) => v.tripId === 'T0')?.schedule?.tripPhase).toBe('last');
+    expect(out.some((v) => v.schedule?.tripPhase === 'next')).toBe(false);
+  });
+
+  it('marks earlier past departures still running as `on-route`', () => {
+    // Three trips have already left; all three are still en route (trip_end
+    // in the future). Only the most-recent is `last`; the earlier two are
+    // `on-route`.
+    const out = scanSchedule({
+      rows: [
+        origin({
+          trip_id: 'P1',
+          arrival_time: '08:30:00',
+          departure_time: '08:30:00',
+          trip_end_time: '09:30:00',
+        }),
+        origin({
+          trip_id: 'P2',
+          arrival_time: '08:40:00',
+          departure_time: '08:40:00',
+          trip_end_time: '09:40:00',
+        }),
+        origin({
+          trip_id: 'P3',
+          arrival_time: '08:55:00',
+          departure_time: '08:55:00',
+          trip_end_time: '09:55:00',
+        }),
+        origin({ trip_id: 'F1', arrival_time: '09:10:00', departure_time: '09:10:00' }),
+      ],
+      nowMinSinceMidnight: now,
+      nowMs,
+      windowMinutes: 60,
+    });
+    expect(out.find((v) => v.tripId === 'P1')?.schedule?.tripPhase).toBe('on-route');
+    expect(out.find((v) => v.tripId === 'P2')?.schedule?.tripPhase).toBe('on-route');
+    expect(out.find((v) => v.tripId === 'P3')?.schedule?.tripPhase).toBe('last');
+    expect(out.find((v) => v.tripId === 'F1')?.schedule?.tripPhase).toBe('next');
+  });
 });

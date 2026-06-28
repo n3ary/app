@@ -54,9 +54,9 @@ export const BUCKET_LABEL: Record<ArrivalBucket, string> = {
 };
 
 /** Context-aware label for a bucket given the rows that fell into it.
- *  Origin-stop rows ('isAtTripStart') aren't really 'arriving from
- *  somewhere' — the bus is being prepared to start the trip — so we
- *  swap the verb to match what the rider sees on the curb:
+ *  Origin-stop rows (`schedule.isFirstStop`) aren't really 'arriving
+ *  from somewhere' — the bus is being prepared to start the trip — so
+ *  we swap the verb to match what the rider sees on the curb:
  *
  *    arriving:  all origin → 'Preparing'
  *               mixed      → 'Arriving & Preparing'
@@ -78,7 +78,7 @@ export function bucketLabel(
   let hasOrigin = false;
   let hasOther = false;
   for (const v of vehicles) {
-    if (v.schedule?.isAtTripStart) hasOrigin = true;
+    if (v.schedule?.isFirstStop) hasOrigin = true;
     else hasOther = true;
     if (hasOrigin && hasOther) break;
   }

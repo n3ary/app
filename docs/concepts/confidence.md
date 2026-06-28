@@ -14,7 +14,7 @@ Source: [src/lib/domain/types.ts](../../src/lib/domain/types.ts) is authoritativ
 
 ## Why one field instead of UI-side derivation
 
-The UI used to compute `dim = kind === 'scheduled' && !isAtTripStart`. Two
+The UI used to compute `dim = kind === 'scheduled' && !isFirstStop`. Two
 problems: it duplicated information the domain already had, and it would
 drift the moment a new kind needed a different rule. Consolidated into
 `confidence` set by `scheduleScanner` and `reconcile`. The card reads
@@ -22,7 +22,7 @@ one bit: `vehicle.confidence === 'low'`.
 
 ## Setting confidence
 
-- `scheduleScanner` sets `medium` at the trip origin (`isAtTripStart === true`),
+- `scheduleScanner` sets `medium` at the trip origin (`isFirstStop === true`),
   `low` at intermediate stops.
 - `reconcile` upgrades matched rows to `medium`.
 - Two-source corroboration would set `high` (only when Tranzy + GTFS-RT both run).
