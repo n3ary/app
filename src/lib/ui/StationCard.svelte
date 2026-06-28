@@ -162,11 +162,17 @@
   });
   const isEmpty = $derived(groups.length === 0);
 
-  // Map link eligibility: live/tracked vehicles always qualify (real position).
-  // Scheduled-only vehicles (no live match) only qualify if they're the first (next) for
-  // that route+direction — so the map icon links to the vehicle actually shown
-  // on the map, not a future trip with no position yet.
-  // Rows arrive domain-sorted (soonest first), so the first hit per key IS next.
+  // Map link eligibility: live-backed vehicles always qualify (real
+  // position). Schedule-only rows only qualify when they're the next
+  // departure for that route+direction — so the map icon links to the
+  // vehicle actually shown on the map, not a future trip with no
+  // position yet.
+  //
+  // We prefer the typed `tripPhase === 'next'` marker when present —
+  // it's set by the scanner on origin-stop rows and IS the canonical
+  // "next departure" anchor. At intermediate stops `tripPhase` is
+  // undefined; there we fall back to "first hit per (route, direction)"
+  // in the row stream (rows arrive domain-sorted, soonest first).
   const mapEligibleIds = $derived.by<Set<string>>(() => {
     const seen = new Set<string>();
     const eligible = new Set<string>();
@@ -176,7 +182,12 @@
         eligible.add(v.id);
         continue;
       }
-      // Predicted / scheduled: only the soonest per route+direction.
+      // Schedule-only: typed phase wins where it's set (origin rows).
+      if (v.schedule?.tripPhase === 'next') {
+        eligible.add(v.id);
+        continue;
+      }
+      // Intermediate stops: iteration-order fallback per (route, dir).
       const key = `${v.route.id}_${v.schedule?.directionId ?? 0}`;
       if (!seen.has(key)) {
         seen.add(key);
