@@ -698,7 +698,16 @@
       });
       // pane: 'nearyVehicles' (z=620) keeps vehicles above stop markers
       // (markerPane z=600) so they're never hidden behind station icons.
-      const marker = Lref.marker([m.lat, m.lon], { icon, pane: 'nearyVehicles' });
+      // zIndexOffset stacks vehicles within the pane so a schedule-only
+      // marker never covers a live (GPS-backed) marker, and the
+      // selected vehicle floats above both. Leaflet otherwise uses
+      // insertion order, which is non-deterministic across ticks.
+      const stackOffset = m.selected ? 1000 : m.scheduled ? -100 : 0;
+      const marker = Lref.marker([m.lat, m.lon], {
+        icon,
+        pane: 'nearyVehicles',
+        zIndexOffset: stackOffset,
+      });
       // offset: [0, -16] anchors the popup tail just above the badge
       // top edge so it floats above the vehicle rather than covering it.
       marker.bindPopup(vehiclePopupHtml(m, rid, dir, nowMinSnap), {
