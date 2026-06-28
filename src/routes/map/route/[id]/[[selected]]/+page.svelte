@@ -24,7 +24,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
+  import { ArrowRightLeft, Bus, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
     Stack, Typography,
@@ -58,6 +58,17 @@
   const routeId = $derived(parsed.routeId);
   const direction = $derived(parsed.direction);
   const selectedTripId = $derived(page.params.selected ?? null);
+  // Origin stop the user came from when they tapped 'map' on a station-card
+  // vehicle row. Painted in green on the route so the rider can recognise
+  // 'this is the stop I was at'. Null when the URL has no `?from` param
+  // (e.g. arriving via favorites, browser history, deep link). Parsed as
+  // a number because Station.id is numeric in our schema.
+  const fromStopId = $derived.by<number | null>(() => {
+    const v = page.url.searchParams.get('from');
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  });
 
   // Remember the original direction + trip so that swapping twice restores
   // the highlight. Captured once on first arrival; swapping to the other
@@ -201,6 +212,18 @@
     /** GTFS direction_id (0 / 1), or -1 when unknown. Joins `kind`
      *  on the debug line. */
     directionId: 0 | 1 | -1;
+    /** Unix ms of the last GPS observation backing this marker, or
+     *  null when there is no GPS (schedule-only). Surfaced as 'Xs
+     *  ago' on the debug overlay so the rider can see how stale
+     *  the underlying fix is relative to where dead-reckoning has
+     *  walked the marker. */
+    gpsAsOfMs: number | null;
+    /** True when `tripStartMin` is a real origin-departure time from
+     *  the schedule, false when it's a fallback (e.g. orphan whose
+     *  live observation didn't carry a parseable start). The popup
+     *  shows 'left at HH:MM' only when this is true — a 'left at'
+     *  rendered from `nowMin` is a lie. */
+    hasOriginTime: boolean;
   };
   const markers = $derived.by<VehicleMarker[]>(() => {
     if (!view) return [];
@@ -281,6 +304,8 @@
         gpsConfidence,
         kind: reconciled?.kind ?? 'scheduled',
         directionId: (reconciled?.directionId ?? (direction as 0 | 1)) as 0 | 1 | -1,
+        gpsAsOfMs: reconciled?.position?.asOf ?? null,
+        hasOriginTime: true,
       });
     }
 
@@ -315,6 +340,8 @@
           : 'very-stale',
         kind: v.kind,
         directionId: v.directionId ?? -1,
+        gpsAsOfMs: v.position.asOf,
+        hasOriginTime: v.schedule?.tripStartMin != null,
       });
     }
     return out;
@@ -374,6 +401,43 @@
       maxZoom: 15,
     });
   }
+  /** Pan + zoom the viewport onto the selected vehicle with the two
+   *  stops before and the two after, so the rider sees the bus
+   *  centred between its current segment's neighbours. Bails when
+   *  there's no selected trip OR the marker hasn't surfaced yet
+   *  (e.g. the vehicle dropped off the live feed). Wraps fitBounds
+   *  so the result remains pan-and-zoom-able afterwards — we never
+   *  lock the viewport. */
+  function focusOnVehicle() {
+    if (!mapInstance || !view || !L || !selectedTripId) return;
+    const sel = markers.find((m) => m.tripId === selectedTripId);
+    if (!sel) return;
+    const trip = view.trips.find((t) => t.tripId === selectedTripId);
+    if (!trip || trip.stops.length === 0) return;
+    const Lref = L;
+    const vehLL = Lref.latLng(sel.lat, sel.lon);
+    // Nearest stop index to the vehicle's current position. The trip
+    // shape is monotonic in stop_sequence, so [idx-2 .. idx+2] gives a
+    // five-stop window centred on where the bus is right now.
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    for (let i = 0; i < trip.stops.length; i += 1) {
+      const d = vehLL.distanceTo(Lref.latLng(trip.stops[i].lat, trip.stops[i].lon));
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+    const lo = Math.max(0, nearestIdx - 2);
+    const hi = Math.min(trip.stops.length - 1, nearestIdx + 2);
+    const bounds = Lref.latLngBounds([[sel.lat, sel.lon]]);
+    for (let i = lo; i <= hi; i += 1) {
+      bounds.extend([trip.stops[i].lat, trip.stops[i].lon]);
+    }
+    mapInstance.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
+  }
+  // Selected-vehicle focus is meaningful only when there IS a selected
+  // trip AND its marker is currently on the map.
+  const focusOnVehicleEnabled = $derived(
+    selectedTripId != null && markers.some((m) => m.tripId === selectedTripId),
+  );
 
   // ── Leaflet ────────────────────────────────────────────────────────
   // Leaflet is browser-only; init in onMount. The instance + per-layer
@@ -523,17 +587,64 @@
       // header already names origin + destination, and "next at
       // origin" surfaces via the scheduled vehicle bubble; a separate
       // play / square endpoint glyph was redundant.
+      //
+      // Exception: when the user navigated here from a station card
+      // (`?from=<stopId>` query param), that stop renders in the
+      // success-green colour so the rider can recognise where they
+      // were standing. Pure visual marker; no other behavioural
+      // change — the popup, hit target, and trip data are identical.
+      const originStopId = fromStopId;
       currentView.stops.forEach((s) => {
+        // Coerce both sides through Number(). The TypeScript types
+        // say `number === number`, but at runtime SQLite-wasm sometimes
+        // surfaces stop_id as a string (the JSON serialisation in the
+        // worker → main thread Comlink hop loses the original numeric
+        // typing for some columns). Number() handles both shapes
+        // uniformly without resorting to '==='. NaN guarded by the
+        // originStopId != null check above (fromStopId is already a
+        // parsed number).
+        const isOrigin = originStopId != null && Number(s.stopId) === originStopId;
         const m = Lref.circleMarker([s.lat, s.lon], {
-          radius: 5,
+          // Stops are already drawn ON TOP of the route polyline:
+          // both live in overlayPane, the polyline is added by this
+          // effect FIRST and the stops are appended AFTER, so SVG
+          // insertion order puts the stop circles above the line. No
+          // pane gymnastics needed — earlier attempts to hoist the
+          // origin into markerPane / a custom pane broke the marker
+          // entirely because Leaflet's SVG renderer isn't on
+          // markerPane by default.
+          radius: isOrigin ? 9 : 5,
           color: '#fff',
-          weight: 1.5,
-          fillColor: currentView.route.color,
+          weight: isOrigin ? 3 : 1.5,
+          // Hardcoded green hex (not var(--color-success)) because
+          // Leaflet's SVG renderer doesn't parse CSS custom properties
+          // or oklch() — keep parity with the GPS-good ring used in
+          // vehicleHtml below.
+          fillColor: isOrigin ? '#22c55e' : currentView.route.color,
           fillOpacity: 1,
         });
         m.bindPopup(stopPopupHtml(s.stopId, s.stopName, currentRoutes.get(s.stopId) ?? []), {
           closeButton: false,
         });
+        // Debug overlay: render the stop_id as a permanent tooltip
+        // next to each stop circle when `userPrefs.showDebugIds` is
+        // on. Lets the rider compare against the `?from=<id>` query
+        // param (and against the station-card stop they came from)
+        // when investigating why the from-stop highlight didn't
+        // appear. The origin stop gets a `★` prefix so we can also
+        // see whether the isOrigin check itself is firing — if the
+        // star appears but the dot is still route-coloured, the
+        // match works and it's a rendering bug; if no star appears
+        // on the stop you came from, the match itself is failing.
+        // Suppressed in production so the map stays readable.
+        if (userPrefs.showDebugIds) {
+          m.bindTooltip(`${isOrigin ? '★ ' : ''}${s.stopId}`, {
+            permanent: true,
+            direction: 'right',
+            offset: [4, 0],
+            className: 'neary-stop-id-label',
+          });
+        }
         m.addTo(sl);
       });
     }
@@ -554,6 +665,9 @@
     for (const m of markers) {
       const debugId = userPrefs.showDebugIds
         ? `${m.tripId} · ${m.kind[0]}${m.directionId === -1 ? '' : m.directionId}`
+          + (m.gpsAsOfMs != null
+            ? ` · ${Math.max(0, Math.round((nowTicker.ms - m.gpsAsOfMs) / 1000))}s ago`
+            : '')
         : '';
       const html = vehicleHtml(view.route.shortName, routeColor, labelFg, m.selected, m.opacity, m.scheduled, m.gpsConfidence, debugId);
       const icon = Lref.divIcon({
@@ -618,32 +732,48 @@
   // purely the Leaflet `divIcon` payload). ──────────────────────────
   function vehiclePopupHtml(m: VehicleMarker, rId: string, dir: 0 | 1, nowMinVal: number): string {
     // Source icons.
-    const calSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
-    const gpsSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><circle cx="12" cy="12" r="3"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg>`;
     const clockSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
     const schedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="14" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/><circle cx="8" cy="18" r="1" fill="currentColor"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>`;
-    // Headsign + schedule button on the same row.
+    // Kind dot beside the headsign, matching the VehicleCard one on
+    // the station view so the visual language stays consistent across
+    // surfaces. Green for any kind backed by GPS (tracked / verified /
+    // gps-only), grey for schedule-only. Replaces the dedicated
+    // "est." / "gps" info row that used to live below — same signal
+    // in less vertical space.
+    const dotColor = m.kind === 'scheduled' ? '#888' : '#22c55e';
+    const dotTitle = m.kind === 'scheduled' ? 'Scheduled'
+      : m.kind === 'tracked' ? 'Tracked'
+      : m.kind === 'verified' ? 'Verified'
+      : 'GPS only';
+    const dot = `<span title="${dotTitle}" aria-label="${dotTitle}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>`;
+    // Headsign + kind dot + schedule button on the same row.
     const headsignText = m.headsign
       ? `<span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.headsign)}</span>`
       : `<span style="flex:1;"></span>`;
-    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a></div>`;
-    // Info row: scheduled → green clock + countdown (outlined badge already signals waiting,
-    //           no need for "est." label); GPS → coloured gps label; otherwise → est.
-    let infoHtml: string;
-    if (m.scheduled) {
-      const minsUntil = m.tripStartMin - nowMinVal;
-      const relLabel = minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil);
-      infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:#16a34a;font-size:11px;">${clockSvg}<span style="margin-left:2px;">${relLabel}</span></span>`;
-    } else if (m.gpsConfidence) {
-      const c =
-        m.gpsConfidence === 'good' ? '#16a34a'
-        : m.gpsConfidence === 'stale' ? '#ca8a04'
-        : '#dc2626';
-      infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:${c};font-size:11px;opacity:0.85;">${gpsSvg}<span>gps</span></span>`;
-    } else {
-      infoHtml = `<span style="display:flex;align-items:center;gap:2px;color:#888;font-size:11px;opacity:0.85;">${calSvg}<span>est.</span></span>`;
-    }
-    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:150px;">${topRow}${infoHtml}</div>`;
+    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a></div>`;
+    // Countdown row, kept only for scheduled-at-origin / scheduled-
+    // before bubbles: green clock + "in X min". Tells the rider when
+    // the parked / not-yet-departed bus is expected to leave. On-route
+    // vehicles don't get this line — their dot already conveys "live".
+    const countdownHtml = m.scheduled
+      ? (() => {
+          const minsUntil = m.tripStartMin - nowMinVal;
+          const relLabel = minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil);
+          return `<span style="display:flex;align-items:center;gap:2px;color:#16a34a;font-size:11px;">${clockSvg}<span style="margin-left:2px;">${relLabel}</span></span>`;
+        })()
+      : '';
+    // For vehicles that have ALREADY departed origin (everything but
+    // the scheduled-at-origin / scheduled-before bubbles, which the
+    // 'in X min' label above already covers), append the wall-clock
+    // time the trip left its first stop. Lets a rider on the map
+    // map a moving bubble back to a specific scheduled departure
+    // without opening the schedule view. Suppressed for orphans whose
+    // tripStartMin is a fallback (hasOriginTime === false) — rendering
+    // 'left at <now>' there would be a lie.
+    const leftAtHtml = !m.scheduled && m.hasOriginTime
+      ? `<div style="display:flex;align-items:center;gap:2px;color:#888;font-size:11px;margin-top:3px;">${clockSvg}<span style="margin-left:2px;">left at ${formatHHMM(m.tripStartMin)}</span></div>`
+      : '';
+    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:150px;">${topRow}${countdownHtml}${leftAtHtml}</div>`;
   }
   function vehicleHtml(
     shortName: string,
@@ -677,11 +807,20 @@
     const colors = scheduled
       ? `background:rgba(255,255,255,0.92);color:${bg};border:1.5px solid ${bg};`
       : `background:${bg};color:${fg};`;
-    return `<div style="position:relative;"><div style="
+    // Pulsing CSS class for the selected badge — the keyframe lives
+    // in the page-level style block and animates an additional
+    // box-shadow on top of the static one above, so the dark outer
+    // ring breathes outward without the badge moving. The
+    // `--neary-inner` custom property carries the GPS-confidence
+    // ring colour into the animation so the inner ring stays at its
+    // semantic colour through the pulse.
+    const selectedClass = selected ? ' neary-vehicle-selected' : '';
+    const selectedVar = selected ? `--neary-inner:${inner};` : '';
+    return `<div style="position:relative;"><div class="neary-vehicle-badge${selectedClass}" style="
       display:inline-flex;align-items:center;justify-content:center;
       min-width:32px;height:22px;padding:0 6px;border-radius:6px;
       ${colors}font:600 12px/1 ui-sans-serif,system-ui;
-      opacity:${opacity};${ring}
+      opacity:${opacity};${ring}${selectedVar}
     ">${escapeHtml(shortName)}</div>${debugId ? `<div style="position:absolute;top:24px;left:50%;transform:translateX(-50%);white-space:nowrap;font:600 9px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#111;background:rgba(255,255,255,0.9);border-radius:3px;padding:1px 3px;pointer-events:none;">${escapeHtml(debugId)}</div>` : ''}</div>`;
   }
   function routeBadgeHtml(r: Route): string {
@@ -715,6 +854,27 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 </script>
+
+<!-- Map control button factory + per-control icon snippets. Defined
+     at the top of the template (NOT inside any component) so they
+     stay template-scoped rather than being interpreted as props on
+     whichever component happens to host them. -->
+{#snippet mapControl(label: string, iconSnippet: import('svelte').Snippet, onclick: () => void, disabled = false)}
+  <IconButton
+    size="small"
+    aria-label={label}
+    title={label}
+    {disabled}
+    class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
+    {onclick}
+  >
+    {@render iconSnippet()}
+  </IconButton>
+{/snippet}
+{#snippet plusIcon()}<Plus size={16} />{/snippet}
+{#snippet minusIcon()}<Minus size={16} />{/snippet}
+{#snippet fitIcon()}<Maximize2 size={16} />{/snippet}
+{#snippet busIcon()}<Bus size={16} />{/snippet}
 
 <div class="mx-auto max-w-5xl px-4 py-3">
   {#if userPrefs.feedId == null}
@@ -789,32 +949,16 @@
         <!-- Viewport controls overlaid on the map, top-right.
              Same IconButton styling the rest of the app uses, with a
              surface background + shadow so they read against any
-             map tile. Sits above Leaflet's panes via z-index. -->
+             map tile. Sits above Leaflet's panes via z-index. The
+             button class is identical for every control — factored
+             into the `mapControl` snippet (defined at the top of
+             this template, outside any Card) so adding a new
+             control is one line, not seven. -->
         <div class="neary-map-controls">
-          <IconButton
-            size="small"
-            aria-label="Zoom in"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={zoomIn}
-          >
-            <Plus size={16} />
-          </IconButton>
-          <IconButton
-            size="small"
-            aria-label="Zoom out"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={zoomOut}
-          >
-            <Minus size={16} />
-          </IconButton>
-          <IconButton
-            size="small"
-            aria-label="Fit route to view"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={fitToRoute}
-          >
-            <Maximize2 size={16} />
-          </IconButton>
+          {@render mapControl('Zoom in', plusIcon, zoomIn)}
+          {@render mapControl('Zoom out', minusIcon, zoomOut)}
+          {@render mapControl('Fit route to view', fitIcon, fitToRoute)}
+          {@render mapControl('Focus on tracked vehicle', busIcon, focusOnVehicle, !focusOnVehicleEnabled)}
         </div>
       </Card>
     </Stack>
@@ -880,5 +1024,30 @@
   @keyframes neary-user-pulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.35); opacity: 0.65; }
+  }
+
+  /* Selected vehicle marker: animate the dark outer ring outward in a
+     soft breathing pulse so it stands out among other markers without
+     redrawing the map. The inline box-shadow handles the static inner
+     coloured ring + 5px dark ring at the resting state; this keyframe
+     blends an extra 9px translucent ring at 50% so the dark ring
+     appears to expand and fade rhythmically. --neary-inner is set
+     inline per badge to preserve the GPS-confidence inner ring colour
+     through the animation. */
+  :global(.neary-vehicle-selected) {
+    animation: neary-vehicle-selected-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes neary-vehicle-selected-pulse {
+    0%, 100% {
+      box-shadow:
+        0 0 0 3px var(--neary-inner, #fff),
+        0 0 0 5px #111;
+    }
+    50% {
+      box-shadow:
+        0 0 0 3px var(--neary-inner, #fff),
+        0 0 0 5px #111,
+        0 0 0 9px rgba(17, 17, 17, 0.35);
+    }
   }
 </style>

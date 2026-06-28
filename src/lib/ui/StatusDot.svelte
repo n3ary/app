@@ -1,7 +1,8 @@
 <!--
   StatusDot — small colored circle used by the header to surface health
   (GPS / Connection / Schedule / Live). Each dot owns a Tooltip explaining
-  the source on hover/focus.
+  the source on hover/focus AND posts the same message as a transient
+  info entry to the StatusBar when tapped (touch surfaces can't hover).
 
   State colors are theme-token-backed so a high-contrast skin recolors them
   automatically:
@@ -13,6 +14,7 @@
 <script lang="ts">
   import Tooltip from './Tooltip.svelte';
   import { cn } from './cn';
+  import { statusBus } from '$lib/stores/statusBus.svelte';
 
   type State = 'ok' | 'stale' | 'error' | 'idle';
 
@@ -33,14 +35,37 @@
     error: 'bg-[color:var(--color-danger)]',
     idle: 'bg-[color:var(--color-fg-muted)]/40',
   };
+
+  // Tap = surface the same text the hover tooltip carries, but in the
+  // StatusBar so touch users get the info too. Severity tracks the dot
+  // state so a red dot's message reads as an error in the bar, not a
+  // neutral info. `id` is stable per label so re-tapping the same dot
+  // updates the existing entry instead of stacking.
+  const KIND: Record<State, 'success' | 'warning' | 'error' | 'info'> = {
+    ok: 'success',
+    stale: 'warning',
+    error: 'error',
+    idle: 'info',
+  };
+  function handleTap() {
+    statusBus.push({
+      id: `status-dot:${label}`,
+      kind: KIND[state],
+      message: tooltip ?? label,
+    });
+  }
 </script>
 
 <Tooltip title={tooltip ?? label} placement="bottom">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <span
-    role="status"
+    role="button"
+    tabindex={0}
     aria-label={`${label}: ${state}`}
+    onclick={handleTap}
+    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTap(); } }}
     class={cn(
-      'inline-block w-2.5 h-2.5 rounded-full transition-colors',
+      'inline-block w-2.5 h-2.5 rounded-full transition-colors cursor-pointer',
       COLOR[state],
       pulse && state === 'ok' && 'animate-pulse',
       className,

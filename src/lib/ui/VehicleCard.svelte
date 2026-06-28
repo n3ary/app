@@ -21,6 +21,7 @@
   import { urgencyClass } from './urgencyClass';
   import { cn } from './cn';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  import { statusBus } from '$lib/stores/statusBus.svelte';
 
   type Props = {
     vehicle: Vehicle;
@@ -206,13 +207,30 @@
         <!-- Kind/state dot inline at the end of the headsign — was a
              separate fixed slot in the icon group, moved here to free
              one of the row's right-hand slots. Hidden for `scheduled`
-             rows with `tripPhase: later` (see `showKindDot` above). -->
+             rows with `tripPhase: later` (see `showKindDot` above).
+             Tap surfaces the kind label as a transient info entry in
+             the global StatusBar — touch surfaces can't hover, so the
+             tooltip alone wouldn't be discoverable there. -->
         {#if showKindDot}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <span
+            role="button"
+            tabindex={0}
             title={KIND.label}
             aria-label={KIND.label}
+            onclick={(e) => {
+              e.stopPropagation();
+              statusBus.push({ id: `vehicle-dot:${vehicle.id}`, kind: 'info', message: KIND.label });
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                statusBus.push({ id: `vehicle-dot:${vehicle.id}`, kind: 'info', message: KIND.label });
+              }
+            }}
             class={cn(
-              'shrink-0 inline-block w-2 h-2 rounded-full ml-1',
+              'shrink-0 inline-block w-2 h-2 rounded-full ml-1 cursor-pointer',
               KIND.dotBg,
             )}
           ></span>

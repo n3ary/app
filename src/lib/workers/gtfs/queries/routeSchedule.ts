@@ -29,12 +29,15 @@ export function getRouteSchedule(
     trip_headsign: string | null;
     service_id: string;
     trip_start_time: string;
+    trip_end_time: string;
   };
   const rows = selectAll<Row>(
     db,
     `SELECT t.trip_id, t.trip_headsign, t.service_id,
             (SELECT departure_time FROM stop_times WHERE trip_id = t.trip_id
-             ORDER BY stop_sequence ASC LIMIT 1) AS trip_start_time
+             ORDER BY stop_sequence ASC LIMIT 1) AS trip_start_time,
+            (SELECT arrival_time   FROM stop_times WHERE trip_id = t.trip_id
+             ORDER BY stop_sequence DESC LIMIT 1) AS trip_end_time
      FROM trips t
      WHERE t.route_id = ?
        AND t.direction_id = ?
@@ -47,6 +50,7 @@ export function getRouteSchedule(
     .map((r) => ({
       tripId: r.trip_id,
       tripStartMin: timeToMinutes(r.trip_start_time),
+      tripEndMin: timeToMinutes(r.trip_end_time),
       headsign: r.trip_headsign,
       serviceId: r.service_id,
     }))

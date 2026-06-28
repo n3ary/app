@@ -8,7 +8,7 @@
   import '$lib/styles/app.css';
   import { goto } from '$app/navigation';
   import { page, updated } from '$app/state';
-  import { Heart, Home, MapPin, Settings } from 'lucide-svelte';
+  import { Heart, MapPin, Settings } from 'lucide-svelte';
   import { AppLayout, type HeaderHealth } from '$lib/ui';
   import { connectionStore } from '$lib/stores/connectionStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
@@ -118,19 +118,17 @@
       });
   });
 
-  type NavValue = '/' | '/favorites' | '/planner' | '/settings';
+  type NavValue = '/' | '/favorites' | '/settings';
 
   const NAV_ITEMS = [
     { value: '/', label: 'Stations', icon: stationsIcon },
     { value: '/favorites', label: 'Favorites', icon: favoritesIcon },
-    { value: '/planner', label: 'Planner', icon: plannerIcon },
     { value: '/settings', label: 'Settings', icon: settingsIcon },
   ] as const;
 
   const TITLES: Record<NavValue, string> = {
     '/': 'Stations',
     '/favorites': 'Favorites',
-    '/planner': 'Planner',
     '/settings': 'Settings',
   };
 
@@ -141,6 +139,74 @@
   );
 
   const title = $derived(TITLES[activeNav]);
+
+  // Refresh-button feedback. On press, capture the current lastFetchMs
+  // snapshot and push a loading entry into the StatusBar. A $effect
+  // watches the reconciled store; when either lastFetchMs advances
+  // past the snapshot OR error changes, we resolve the loading entry:
+  //   - error      → red error entry with the message
+  //   - success    → info entry with the new live-vehicle count
+  // A safety timeout (`REFRESH_TIMEOUT_MS`) covers the case where the
+  // worker never responds — the loading state would otherwise hang
+  // forever. Touch users can't read the dot tooltips, so this is how
+  // they know whether their refresh actually did anything.
+  const REFRESH_ID = 'refresh';
+  const REFRESH_TIMEOUT_MS = 8_000;
+  let pendingRefreshSinceMs = $state<number | null>(null);
+  let pendingRefreshSnapMs = $state<number | null>(null);
+  let pendingRefreshSnapError = $state<string | null>(null);
+  let pendingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearPendingRefresh() {
+    pendingRefreshSinceMs = null;
+    pendingRefreshSnapMs = null;
+    pendingRefreshSnapError = null;
+    if (pendingRefreshTimer) {
+      clearTimeout(pendingRefreshTimer);
+      pendingRefreshTimer = null;
+    }
+  }
+
+  function startRefresh() {
+    if (pendingRefreshSinceMs != null) return; // ignore re-taps while in flight
+    pendingRefreshSinceMs = Date.now();
+    pendingRefreshSnapMs = reconciledVehiclesStore.lastFetchMs;
+    pendingRefreshSnapError = reconciledVehiclesStore.error;
+    statusBus.push({ id: REFRESH_ID, kind: 'loading', message: 'Refreshing live data…' });
+    pendingRefreshTimer = setTimeout(() => {
+      if (pendingRefreshSinceMs == null) return;
+      clearPendingRefresh();
+      statusBus.push({
+        id: REFRESH_ID,
+        kind: 'warning',
+        message: 'No response — showing cached data',
+      });
+    }, REFRESH_TIMEOUT_MS);
+    refreshBus.fire();
+    reconciledVehiclesStore.refresh();
+    nowTicker.bump();
+  }
+
+  $effect(() => {
+    if (pendingRefreshSinceMs == null) return;
+    const nowFetch = reconciledVehiclesStore.lastFetchMs;
+    const nowError = reconciledVehiclesStore.error;
+    const fetchAdvanced = nowFetch != null && nowFetch !== pendingRefreshSnapMs;
+    const errorChanged = nowError !== pendingRefreshSnapError;
+    if (!fetchAdvanced && !errorChanged) return;
+    if (nowError && !fetchAdvanced) {
+      statusBus.push({ id: REFRESH_ID, kind: 'error', message: `Refresh failed: ${nowError}` });
+    } else {
+      const stats = reconciledVehiclesStore.stats;
+      const count = stats ? stats.matched + stats.live : 0;
+      statusBus.push({
+        id: REFRESH_ID,
+        kind: 'success',
+        message: count > 0 ? `Updated — ${count} live vehicles` : 'Updated — no live vehicles',
+      });
+    }
+    clearPendingRefresh();
+  });
 
   // Schedule and Live dots both reflect the single GTFS worker. Schedule
   // lights up when the worker has a feed bound; Live reflects the
@@ -189,7 +255,6 @@
 
 {#snippet stationsIcon()}<MapPin size={20} />{/snippet}
 {#snippet favoritesIcon()}<Heart size={20} />{/snippet}
-{#snippet plannerIcon()}<Home size={20} />{/snippet}
 {#snippet settingsIcon()}<Settings size={20} />{/snippet}
 
 <AppLayout
@@ -198,11 +263,7 @@
   navItems={NAV_ITEMS}
   {activeNav}
   onnav={(to) => goto(to)}
-  onrefresh={() => {
-    refreshBus.fire();
-    reconciledVehiclesStore.refresh();
-    nowTicker.bump();
-  }}
+  onrefresh={startRefresh}
 >
   {@render children()}
 </AppLayout>
