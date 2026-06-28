@@ -24,7 +24,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
+  import { ArrowRightLeft, Bus, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
     Stack, Typography,
@@ -401,6 +401,43 @@
       maxZoom: 15,
     });
   }
+  /** Pan + zoom the viewport onto the selected vehicle with the two
+   *  stops before and the two after, so the rider sees the bus
+   *  centred between its current segment's neighbours. Bails when
+   *  there's no selected trip OR the marker hasn't surfaced yet
+   *  (e.g. the vehicle dropped off the live feed). Wraps fitBounds
+   *  so the result remains pan-and-zoom-able afterwards — we never
+   *  lock the viewport. */
+  function focusOnVehicle() {
+    if (!mapInstance || !view || !L || !selectedTripId) return;
+    const sel = markers.find((m) => m.tripId === selectedTripId);
+    if (!sel) return;
+    const trip = view.trips.find((t) => t.tripId === selectedTripId);
+    if (!trip || trip.stops.length === 0) return;
+    const Lref = L;
+    const vehLL = Lref.latLng(sel.lat, sel.lon);
+    // Nearest stop index to the vehicle's current position. The trip
+    // shape is monotonic in stop_sequence, so [idx-2 .. idx+2] gives a
+    // five-stop window centred on where the bus is right now.
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    for (let i = 0; i < trip.stops.length; i += 1) {
+      const d = vehLL.distanceTo(Lref.latLng(trip.stops[i].lat, trip.stops[i].lon));
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+    const lo = Math.max(0, nearestIdx - 2);
+    const hi = Math.min(trip.stops.length - 1, nearestIdx + 2);
+    const bounds = Lref.latLngBounds([[sel.lat, sel.lon]]);
+    for (let i = lo; i <= hi; i += 1) {
+      bounds.extend([trip.stops[i].lat, trip.stops[i].lon]);
+    }
+    mapInstance.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
+  }
+  // Selected-vehicle focus is meaningful only when there IS a selected
+  // trip AND its marker is currently on the map.
+  const focusOnVehicleEnabled = $derived(
+    selectedTripId != null && markers.some((m) => m.tripId === selectedTripId),
+  );
 
   // ── Leaflet ────────────────────────────────────────────────────────
   // Leaflet is browser-only; init in onMount. The instance + per-layer
@@ -818,6 +855,27 @@
   }
 </script>
 
+<!-- Map control button factory + per-control icon snippets. Defined
+     at the top of the template (NOT inside any component) so they
+     stay template-scoped rather than being interpreted as props on
+     whichever component happens to host them. -->
+{#snippet mapControl(label: string, iconSnippet: import('svelte').Snippet, onclick: () => void, disabled = false)}
+  <IconButton
+    size="small"
+    aria-label={label}
+    title={label}
+    {disabled}
+    class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
+    {onclick}
+  >
+    {@render iconSnippet()}
+  </IconButton>
+{/snippet}
+{#snippet plusIcon()}<Plus size={16} />{/snippet}
+{#snippet minusIcon()}<Minus size={16} />{/snippet}
+{#snippet fitIcon()}<Maximize2 size={16} />{/snippet}
+{#snippet busIcon()}<Bus size={16} />{/snippet}
+
 <div class="mx-auto max-w-5xl px-4 py-3">
   {#if userPrefs.feedId == null}
     <NoFeedState message="Pick a feed in Settings to view the route map." />
@@ -891,32 +949,16 @@
         <!-- Viewport controls overlaid on the map, top-right.
              Same IconButton styling the rest of the app uses, with a
              surface background + shadow so they read against any
-             map tile. Sits above Leaflet's panes via z-index. -->
+             map tile. Sits above Leaflet's panes via z-index. The
+             button class is identical for every control — factored
+             into the `mapControl` snippet (defined at the top of
+             this template, outside any Card) so adding a new
+             control is one line, not seven. -->
         <div class="neary-map-controls">
-          <IconButton
-            size="small"
-            aria-label="Zoom in"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={zoomIn}
-          >
-            <Plus size={16} />
-          </IconButton>
-          <IconButton
-            size="small"
-            aria-label="Zoom out"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={zoomOut}
-          >
-            <Minus size={16} />
-          </IconButton>
-          <IconButton
-            size="small"
-            aria-label="Fit route to view"
-            class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-            onclick={fitToRoute}
-          >
-            <Maximize2 size={16} />
-          </IconButton>
+          {@render mapControl('Zoom in', plusIcon, zoomIn)}
+          {@render mapControl('Zoom out', minusIcon, zoomOut)}
+          {@render mapControl('Fit route to view', fitIcon, fitToRoute)}
+          {@render mapControl('Focus on tracked vehicle', busIcon, focusOnVehicle, !focusOnVehicleEnabled)}
         </div>
       </Card>
     </Stack>
