@@ -8,8 +8,8 @@ Source: [src/lib/domain/types.ts](../../src/lib/domain/types.ts) is authoritativ
 
 | Tier | Meaning | UI |
 |---|---|---|
-| `high` | Two live sources agree (`corroborated`) | Full opacity, check-circle pip |
-| `medium` | One live source matched to schedule (`reconciled`), or schedule at trip origin where the bus is parked | Full opacity |
+| `high` | Two live sources agree (`verified`) | Full opacity, check-circle pip |
+| `medium` | One live source matched to schedule (`tracked`), or schedule at trip origin where the bus is parked | Full opacity |
 | `low` | Schedule-only at an intermediate stop (no GPS to corroborate) | `opacity-60` (dimmed) |
 
 ## Why one field instead of UI-side derivation
@@ -24,5 +24,6 @@ one bit: `vehicle.confidence === 'low'`.
 
 - `scheduleScanner` sets `medium` at the trip origin (`isFirstStop === true`),
   `low` at intermediate stops.
-- `reconcile` upgrades matched rows to `medium`.
-- Two-source corroboration would set `high` (only when Tranzy + GTFS-RT both run).
+- `reconcile` upgrades matched rows to `medium` (becoming `tracked`).
+- Two-source agreement sets `high` (becoming `verified`; only when
+  Tranzy + GTFS-RT both run).

@@ -9,13 +9,25 @@ Source: [src/lib/domain/types.ts](../../src/lib/domain/types.ts) is authoritativ
 
 | Kind | Meaning |
 |---|---|
-| `scheduled` | In the schedule; not yet active or no live match |
-| `predicted` | Schedule says it should be running, no live source reports it (older design — see notes) |
-| `live` | Live GPS, no schedule match |
-| `reconciled` | One live source matched to a scheduled trip |
-| `corroborated` | Two live sources agree on this trip (only when Tranzy key is set) |
+| `scheduled` | In the schedule. May carry an interpolated position (`source: 'predicted-from-schedule'`) when the trip is currently running per `schedule.tripPhase` (`last` / `on-route`) but no live source has matched it. |
+| `gps-only` | Live GPS, no schedule match (rare — typical when the live feed's `trip_id` doesn't resolve in the static schedule). |
+| `tracked` | Schedule + 1 live source matched. |
+| `verified` | Schedule + 2+ live sources agree (only when Tranzy key is set). |
+
+Reads as a ladder of certainty: `scheduled < gps-only < tracked < verified`.
 
 The visual taxonomy and bucket interaction live in [specs/vehicles-and-views.md](../specs/vehicles-and-views.md).
+
+## Two axes
+
+The `kind` discriminator answers **where our position information comes
+from**. It is orthogonal to `schedule.tripPhase` (Axis A, see "Trip
+phase" below), which answers **where the trip sits on its route's
+daily timetable relative to `now`**. "Should this trip be running
+right now?" is a phase question (`tripPhase === 'last' || 'on-route'`),
+not a `kind` question — the same trip can be `scheduled` (no live
+match yet, interpolated position) or `tracked`/`verified` (live match)
+while in either phase.
 
 ## Why a discriminated union
 
@@ -55,6 +67,6 @@ scheduled departure passes) it becomes `last`, the previous `last`
 demotes to `on-route`, and the next `later` row promotes to `next`.
 
 Orthogonal to `kind` and to [arrival-buckets](arrival-buckets.md). A
-`next` row can carry GPS (`kind: 'reconciled'`) when the bus is at
+`next` row can carry GPS (`kind: 'tracked'`) when the bus is at
 the depot already broadcasting; `last` and `on-route` rows almost
 always do.

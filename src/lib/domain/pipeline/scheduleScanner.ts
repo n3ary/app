@@ -6,14 +6,13 @@
  *
  * EVERY row emitted here is `kind: 'scheduled'`. That's intentional:
  * 'scheduled' just means "this trip exists in the schedule", which is
- * the only thing we know in a schedule-only pipeline. The `'predicted'`
- * kind is reserved for the live reconciler: it emits a `predicted`
- * vehicle when we've polled live sources, found none reporting the
- * trip, and chose to *estimate* its position from the schedule.
- * That choice doesn't exist at this layer.
+ * the only thing we know in a schedule-only pipeline. The live
+ * reconciler upgrades matched rows to `tracked` / `verified` downstream.
  *
  * Map view position interpolation along the route shape is a separate
- * rendering concern and doesn't change the kind.
+ * rendering concern and doesn't change the kind — a scheduled row
+ * whose `schedule.tripPhase` is `last` or `on-route` can carry an
+ * interpolated position with `source: 'predicted-from-schedule'`.
  */
 
 import type {

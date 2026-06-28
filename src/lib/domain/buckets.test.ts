@@ -19,16 +19,15 @@ function inputs(o: Partial<Parameters<typeof bucketOf>[1]> & { nowMin: number })
 
 // Minimal Vehicle factories for the comparator test.
 const route = { id: '1', shortName: '24', color: '#ff0000' };
-function v(id: string, _kind: Vehicle['kind'] = 'predicted'): Vehicle {
+function v(id: string, _kind: Vehicle['kind'] = 'scheduled'): Vehicle {
   return {
-    kind: 'predicted',
+    kind: 'scheduled',
     id,
     route,
     type: 'bus',
     confidence: 'low',
     schedule: { tripId: `t-${id}`, scheduledDeparture: 540 },
     position: { lat: 0, lon: 0, source: 'predicted-from-schedule', asOf: 0 },
-    checkedSources: [],
   } as Vehicle;
 }
 
@@ -36,26 +35,26 @@ describe('bucketOf', () => {
   const now = 9 * 60; // 09:00
 
   it('returns incoming when far in the future', () => {
-    expect(bucketOf('predicted', inputs({ nowMin: now, etaMinutes: 10 }))).toBe('incoming');
+    expect(bucketOf('scheduled', inputs({ nowMin: now, etaMinutes: 10 }))).toBe('incoming');
   });
 
   it('returns arriving when within 2 min', () => {
-    expect(bucketOf('predicted', inputs({ nowMin: now, etaMinutes: 2 }))).toBe('arriving');
-    expect(bucketOf('predicted', inputs({ nowMin: now, etaMinutes: 1 }))).toBe('arriving');
+    expect(bucketOf('scheduled', inputs({ nowMin: now, etaMinutes: 2 }))).toBe('arriving');
+    expect(bucketOf('scheduled', inputs({ nowMin: now, etaMinutes: 1 }))).toBe('arriving');
   });
 
   it('returns departed when in the past (scanner gates trip-end)', () => {
     // Bucketer now trusts the scheduleScanner to drop trips whose terminus
     // has already passed; anything past that reaches the bucketer is still
     // en route and belongs in 'departed', no recency cap.
-    expect(bucketOf('predicted', inputs({ nowMin: now, etaMinutes: -3 }))).toBe('departed');
-    expect(bucketOf('predicted', inputs({ nowMin: now, etaMinutes: -30 }))).toBe('departed');
+    expect(bucketOf('scheduled', inputs({ nowMin: now, etaMinutes: -3 }))).toBe('departed');
+    expect(bucketOf('scheduled', inputs({ nowMin: now, etaMinutes: -30 }))).toBe('departed');
   });
 
   it('off-route for live vehicles far from stop and off shape', () => {
     expect(
       bucketOf(
-        'live',
+        'gps-only',
         inputs({
           nowMin: now,
           etaMinutes: 5,
@@ -69,7 +68,7 @@ describe('bucketOf', () => {
   it('at-station when physically at stop and stopped (live)', () => {
     expect(
       bucketOf(
-        'live',
+        'gps-only',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -85,7 +84,7 @@ describe('bucketOf', () => {
   it('departing when live vehicle picks up speed at stop', () => {
     expect(
       bucketOf(
-        'live',
+        'gps-only',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -98,10 +97,10 @@ describe('bucketOf', () => {
     ).toBe('departing');
   });
 
-  it('departing in last minute of scheduled dwell (predicted vehicle)', () => {
+  it('departing in last minute of scheduled dwell (scheduled vehicle)', () => {
     expect(
       bucketOf(
-        'predicted',
+        'scheduled',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -113,10 +112,10 @@ describe('bucketOf', () => {
     ).toBe('departing');
   });
 
-  it('arriving in first minute of scheduled dwell (predicted vehicle)', () => {
+  it('arriving in first minute of scheduled dwell (scheduled vehicle)', () => {
     expect(
       bucketOf(
-        'predicted',
+        'scheduled',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -131,7 +130,7 @@ describe('bucketOf', () => {
   it('arriving on short dwell (gap < 1 min) treated as just passing', () => {
     expect(
       bucketOf(
-        'predicted',
+        'scheduled',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -149,7 +148,7 @@ describe('bucketOf', () => {
     // 'arriving'. Covers the start-station dwell case.
     expect(
       bucketOf(
-        'reconciled',
+        'tracked',
         inputs({
           nowMin: now,
           etaMinutes: 4,
@@ -164,7 +163,7 @@ describe('bucketOf', () => {
   it('live vehicle physically at stop near scheduled departure → departing', () => {
     expect(
       bucketOf(
-        'reconciled',
+        'tracked',
         inputs({
           nowMin: now,
           etaMinutes: 0,
@@ -238,7 +237,7 @@ describe('bucketCounts', () => {
 });
 
 describe('filterForStationView', () => {
-  const base = (b: ArrivalBucket, dropOffOnly = false, kind: Vehicle['kind'] = 'predicted') => ({
+  const base = (b: ArrivalBucket, dropOffOnly = false, kind: Vehicle['kind'] = 'scheduled') => ({
     vehicle: { ...v('x', kind), dropOffOnly, kind } as Vehicle,
     bucket: b,
   });

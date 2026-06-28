@@ -26,8 +26,8 @@ deduplicated set.
 Station views still keep their per-stop `getStationBoard` fetch (the
 worker doesn't know the consumer's stop) and join the global reconciled
 set by `tripId` via `mergeReconciledIntoStationBoard` — promoting
-matched rows to `kind: 'reconciled'` and appending route-relevant
-`kind: 'live'` orphans with a sibling-derived ETA seed.
+matched rows to `kind: 'tracked'` and appending route-relevant
+`kind: 'gps-only'` orphans with a sibling-derived ETA seed.
 
 ## Source priority
 
@@ -99,7 +99,7 @@ Per [reconcile.ts](../../src/lib/domain/reconcile.ts):
 3. Sort all candidate pairs by ascending `|delta|`.
 4. Greedy-assign: bipartite matching where each live obs and each
    scheduled row participates in at most one pairing.
-5. **Emit `kind: 'live'` for unmatched live observations** whose
+5. **Emit `kind: 'gps-only'` for unmatched live observations** whose
    `(routeId, directionId)` shows up on the caller's board (i.e.
    the route serves this station/view). Headsign + route info are
    copied from a representative scheduled sibling on the same
@@ -110,10 +110,11 @@ let a high-delta match claim a slot before a perfect-delta match got
 a chance. Bipartite greedy guarantees perfect matches always win.
 
 **Why orphan emission lives in the reconciler**: the page used to
-synthesize `kind: 'live'` rows from sibling lookups (PR #69, #72).
+synthesize `kind: 'gps-only'` rows from sibling lookups (PR #69, #72).
 That duplicated reconciliation state across the page-domain boundary
 and put inclusion gating + headsign hydration on the wrong side.
-The reconciler already has both `live` and `scheduled` in hand —
+The reconciler already has both the live observations and the scheduled
+rows in hand —
 emitting orphans there keeps the boundary clean. The station-side
 `mergeReconciledIntoStationBoard` only **re-seeds** the orphan ETA
 using a per-stop sibling's travel-time-from-origin (the global

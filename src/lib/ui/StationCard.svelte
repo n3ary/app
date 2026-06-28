@@ -163,7 +163,7 @@
   const isEmpty = $derived(groups.length === 0);
 
   // Map link eligibility: live/tracked vehicles always qualify (real position).
-  // Scheduled/predicted vehicles only qualify if they're the first (next) for
+  // Scheduled-only vehicles (no live match) only qualify if they're the first (next) for
   // that route+direction — so the map icon links to the vehicle actually shown
   // on the map, not a future trip with no position yet.
   // Rows arrive domain-sorted (soonest first), so the first hit per key IS next.
@@ -172,7 +172,7 @@
     const eligible = new Set<string>();
     for (const row of rows) {
       const v = row.vehicle;
-      if (v.kind === 'live' || v.kind === 'corroborated' || v.kind === 'reconciled') {
+      if (v.kind === 'gps-only' || v.kind === 'verified' || v.kind === 'tracked') {
         eligible.add(v.id);
         continue;
       }

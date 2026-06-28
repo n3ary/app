@@ -53,23 +53,23 @@
     class: className,
   }: Props = $props();
 
-  // Per-kind state dot. Two colors only: green = GPS-backed (live /
-  // reconciled / corroborated), grey = schedule-derived (scheduled /
-  // predicted). Tooltip carries the specific kind. A darker-green
-  // variant for `corroborated` is planned but not yet differentiated.
+  // Per-kind state dot. Two colors only: green = GPS-backed
+  // (`gps-only` / `tracked` / `verified`), grey = schedule-derived
+  // (`scheduled`). Tooltip carries the specific kind. A darker-green
+  // variant for `verified` (multi-source agreement) is planned but
+  // not yet differentiated.
   const KIND = $derived({
-    corroborated: { label: 'Corroborated', dotBg: 'bg-[color:var(--color-success)]' },
-    reconciled:   { label: 'Reconciled',   dotBg: 'bg-[color:var(--color-success)]' },
-    live:         { label: 'Live',         dotBg: 'bg-[color:var(--color-success)]' },
-    predicted:    { label: 'Predicted',    dotBg: 'bg-[color:var(--color-fg-muted)]' },
-    scheduled:    { label: 'Scheduled',    dotBg: 'bg-[color:var(--color-fg-muted)]' },
+    verified:    { label: 'Verified',  dotBg: 'bg-[color:var(--color-success)]' },
+    tracked:     { label: 'Tracked',   dotBg: 'bg-[color:var(--color-success)]' },
+    'gps-only':  { label: 'GPS only',  dotBg: 'bg-[color:var(--color-success)]' },
+    scheduled:   { label: 'Scheduled', dotBg: 'bg-[color:var(--color-fg-muted)]' },
   }[vehicle.kind]);
 
   // ETA / scheduled-time secondary line.
   const secondaryLine = $derived.by(() => {
     if (vehicle.eta) return formatRelativeMin(vehicle.eta.minutes, vehicle.schedule?.scheduledDeparture);
     if (vehicle.schedule) return `Scheduled ${formatHHMM(vehicle.schedule.scheduledDeparture)}`;
-    // kind:'live' orphans have a GPS position but no schedule/ETA — the bus
+    // kind:'gps-only' orphans have a GPS position but no schedule/ETA — the bus
     // exists right now even though we don't have a precise per-stop timing
     // for it. 'En route' wrongly implies "departed on schedule, GPS unknown".
     if (vehicle.position) return 'Live';
@@ -105,10 +105,10 @@
   // + reconciler); the UI just reads `vehicle.confidence`. By convention:
   //   'low'    schedule-only row at an intermediate stop — no GPS, no
   //            origin anchor; fade.
-  //   'medium' reconciled (GPS-matched) OR scheduled at the trip’s origin
+  //   'medium' tracked (GPS-matched) OR scheduled at the trip's origin
   //            (schedule authoritative); full opacity.
-  //   'high'   corroborated (≥2 live sources agree); full opacity.
-  // See spec §2 “Card border, opacity, and anomaly indicator”.
+  //   'high'   verified (≥2 live sources agree); full opacity.
+  // See spec §2 "Card border, opacity, and anomaly indicator".
   const dim = $derived(vehicle.confidence === 'low');
 </script>
 

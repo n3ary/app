@@ -126,7 +126,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
     );
     // headway 8 min → tol 4 → only the 14:21 candidate is within ±4 of 14:23
     expect(stats.matched).toBe(1);
-    expect(vehicles[0].kind).toBe('reconciled');
+    expect(vehicles[0].kind).toBe('tracked');
     expect(vehicles[1].kind).toBe('scheduled');
   });
 
@@ -144,7 +144,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
     );
     expect(stats.matched).toBe(1);
     // 14:21 and 14:23 are both delta=1 — earlier index wins; either is fine.
-    const reconciled = vehicles.find((v) => v.kind === 'reconciled');
+    const reconciled = vehicles.find((v) => v.kind === 'tracked');
     expect(reconciled).toBeTruthy();
   });
 
@@ -198,7 +198,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
       { nowMs: epochAt(14 * 60 + 25 ), timezone: 'UTC'},
     );
     expect(stats.matched).toBe(1);
-    if (vehicles[0].kind === 'reconciled') {
+    if (vehicles[0].kind === 'tracked') {
       expect(vehicles[0].position.lat).toBeCloseTo(46.77);
     }
   });
@@ -211,7 +211,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
       { nowMs: epochAt(14 * 60 + 25 ), timezone: 'UTC'},
     );
     expect(stats.matched).toBe(1);
-    expect(vehicles[0].kind).toBe('reconciled');
+    expect(vehicles[0].kind).toBe('tracked');
   });
 
   it('preserves headsign / route / eta / dropOffOnly across upgrade', () => {
@@ -225,7 +225,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
       [obs({ tripId: 'live', startTime: '14:21:00' })],
       { nowMs: epochAt(14 * 60 + 25 ), timezone: 'UTC'},
     );
-    if (vehicles[0].kind === 'reconciled') {
+    if (vehicles[0].kind === 'tracked') {
       expect(vehicles[0].headsign).toBe('Mănăștur');
       expect(vehicles[0].dropOffOnly).toBe(true);
       expect(vehicles[0].eta?.minutes).toBe(3);
@@ -237,7 +237,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
 
   it('is idempotent for already-promoted kinds', () => {
     const input: Vehicle[] = [{
-      kind: 'reconciled',
+      kind: 'tracked',
       id: 'trip:t-1',
       route: r14,
       type: 'bus',
@@ -265,7 +265,7 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
       { nowMs: epochAt(14 * 60 + 25 ), timezone: 'UTC'},
     );
     const after = Date.now();
-    if (vehicles[0].kind === 'reconciled') {
+    if (vehicles[0].kind === 'tracked') {
       expect(vehicles[0].position.asOf).toBeGreaterThanOrEqual(before);
       expect(vehicles[0].position.asOf).toBeLessThanOrEqual(after);
     }
@@ -294,9 +294,9 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
     );
     expect(stats.matched).toBe(0);
     expect(stats.live).toBe(1);
-    const live = vehicles.find((v) => v.kind === 'live');
+    const live = vehicles.find((v) => v.kind === 'gps-only');
     expect(live).toBeDefined();
-    if (!live || live.kind !== 'live') throw new Error('expected kind=live');
+    if (!live || live.kind !== 'gps-only') throw new Error('expected kind=live');
     expect(live.id).toBe('live:t-other');
     expect(live.route.id).toBe('14');
     expect(live.position.lat).toBeCloseTo(46.77);
@@ -311,7 +311,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
       { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
     );
     expect(stats.live).toBe(0);
-    expect(vehicles.every((v) => v.kind !== 'live')).toBe(true);
+    expect(vehicles.every((v) => v.kind !== 'gps-only')).toBe(true);
   });
 
   it('does NOT emit kind:live for the same (route, dir) but the wrong direction', () => {
@@ -337,7 +337,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
     );
     expect(stats.matched).toBe(1);
     expect(stats.live).toBe(0);
-    expect(vehicles.every((v) => v.kind !== 'live')).toBe(true);
+    expect(vehicles.every((v) => v.kind !== 'gps-only')).toBe(true);
   });
 
   it('copies headsign from a representative sibling on the same (route, dir)', () => {
@@ -351,7 +351,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
       [obs({ tripId: 'orphan', startTime: '18:00:00' })],
       { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
     );
-    const live = vehicles.find((x) => x.kind === 'live');
+    const live = vehicles.find((x) => x.kind === 'gps-only');
     expect(live?.headsign).toBe('Centru');
   });
 
@@ -366,7 +366,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
       [obs({ tripId: 'orphan', startTime: '18:00:00' })],
       { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
     );
-    const live = vehicles.find((v) => v.kind === 'live');
+    const live = vehicles.find((v) => v.kind === 'gps-only');
     expect(live?.eta?.minutes).toBe(219);
     expect(live?.eta?.confidence).toBe('low');
   });
@@ -382,7 +382,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
     // so we have nothing to seed the ETA from. The orphan should
     // not be emitted in this case (gated by tripId presence too —
     // it's tripId='opaque-orphan' which has no HHMM tail).
-    const live = vehicles.find((v) => v.kind === 'live');
+    const live = vehicles.find((v) => v.kind === 'gps-only');
     // Either dropped or emitted without eta — both acceptable; just
     // assert we don't fabricate an eta when we lack inputs.
     if (live) expect(live.eta).toBeUndefined();
@@ -415,7 +415,7 @@ describe('reconcileWithLive (kind:live emission for unmatched obs)', () => {
       [obs({ tripId: 'orphan', startTime: '18:00:00' })],
       { nowMs: epochAt(14 * 60 + 25), timezone: 'UTC' },
     );
-    const live = vehicles.find((v) => v.kind === 'live');
+    const live = vehicles.find((v) => v.kind === 'gps-only');
     expect(live?.eta).toBeUndefined();
   });
 });
@@ -471,7 +471,7 @@ describe('reconcileWithLive (route-order pairing with shape)', () => {
     });
     expect(stats.matched).toBe(1);
     // Route-order pairs A (earliest start) with the obs (only obs).
-    const matched = vehicles.find((v) => v.kind === 'reconciled');
+    const matched = vehicles.find((v) => v.kind === 'tracked');
     expect(matched?.tripId).toBe('A');
   });
 
@@ -511,7 +511,7 @@ describe('reconcileWithLive (route-order pairing with shape)', () => {
       timezone: 'UTC',
       shapesByCohort: shapesFor('14|1'),
     });
-    const matched = vehicles.filter((v) => v.kind === 'reconciled');
+    const matched = vehicles.filter((v) => v.kind === 'tracked');
     expect(matched).toHaveLength(2);
     const aMatch = matched.find((v) => v.tripId === 'A');
     const bMatch = matched.find((v) => v.tripId === 'B');
@@ -549,8 +549,8 @@ describe('reconcileWithLive (route-order pairing with shape)', () => {
       timezone: 'UTC',
       shapesByCohort: shapesFor('14|1'),
     });
-    const aMatch = vehicles.find((v) => v.tripId === 'A' && v.kind === 'reconciled');
-    const bMatch = vehicles.find((v) => v.tripId === 'B' && v.kind === 'reconciled');
+    const aMatch = vehicles.find((v) => v.tripId === 'A' && v.kind === 'tracked');
+    const bMatch = vehicles.find((v) => v.tripId === 'B' && v.kind === 'tracked');
     // Fallback to greedy: A=obs2 (start 14:00), B=obs1 (start 14:10).
     expect(aMatch?.position?.lon).toBeCloseTo(lonAt(100), 4);
     expect(bMatch?.position?.lon).toBeCloseTo(lonAt(9900), 4);

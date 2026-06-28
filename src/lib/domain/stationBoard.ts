@@ -117,11 +117,11 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
       if (r.bucket === 'drop-off') {
         const v = r.vehicle;
         dropOffGuaranteedIsLive =
-          v.kind === 'live' || v.kind === 'reconciled' || v.kind === 'corroborated';
+          v.kind === 'gps-only' || v.kind === 'tracked' || v.kind === 'verified';
       }
     } else if (r.bucket === 'drop-off') {
       const v = r.vehicle;
-      const isLive = v.kind === 'live' || v.kind === 'reconciled' || v.kind === 'corroborated';
+      const isLive = v.kind === 'gps-only' || v.kind === 'tracked' || v.kind === 'verified';
       if (isLive) {
         extraDropOff.push(r);
       } else if (!firstScheduledDropOff) {
@@ -155,9 +155,9 @@ export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_RO
  *      so the rest of the pipeline operates on the right subset.
  *   2. Reconciled-vehicle merge — join per-stop scheduled rows with
  *      the worker's global reconciled set by `tripId`. Matched rows
- *      become `kind: 'reconciled'` (GPS-bearing); orphan live obs
+ *      become `kind: 'tracked'` (GPS-bearing); orphan live obs
  *      whose (route, dir) the station serves are appended as
- *      `kind: 'live'` rows with a sibling-derived ETA seed.
+ *      `kind: 'gps-only'` rows with a sibling-derived ETA seed.
  *   3. GPS-derived ETA (multi-tier speed cascade) on reconciled rows
  *      at intermediate stops. Origin rows keep the scheduled departure
  *      as their ETA because the bus isn't moving yet.
@@ -172,8 +172,8 @@ export interface AssembleLiveBoardInputs {
   stop: { lat?: number; lon?: number };
   /** Globally-reconciled vehicles from the worker's reconciliation
    *  broadcast (`reconciledVehiclesStore.vehicles`). A mix of
-   *  `kind: 'scheduled' | 'reconciled' | 'live'`. The merge joins
-   *  these into the per-stop board by `tripId`. */
+   *  `kind: 'scheduled' | 'tracked' | 'verified' | 'gps-only'`. The
+   *  merge joins these into the per-stop board by `tripId`. */
   reconciledVehicles: Vehicle[];
   /** Route shapes keyed by trip_id, from the worker (cached).
    *  Trips without a shape entry just keep their scheduled ETA.
@@ -208,11 +208,11 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
   // so any scheduled sibling's polyline projects an orphan onto the
   // correct route geometry.
   const shapesByRouteDir = buildShapesByRouteDir(scoped, input.shapes);
-  const predicted = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
+  const withGpsEta = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
     nowMs: input.nowMs,
     timezone: input.timezone,
   });
-  return assembleStationBoard(predicted, input.stop, input.prefs, input.nowMs, input.timezone);
+  return assembleStationBoard(withGpsEta, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -224,10 +224,10 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
  * arrival times at this specific stop. This helper joins them:
  *
  *   - Matched (`tripId` present in both): promote the per-stop row
- *     to `kind: 'reconciled'`, keeping its per-stop schedule and
+ *     to `kind: 'tracked'`, keeping its per-stop schedule and
  *     copying the GPS position + freshness from the worker.
- *   - Orphans (worker `kind: 'live'` rows whose (route, dir) is on
- *     the per-stop board): emit as `kind: 'live'` rows on the
+ *   - Orphans (worker `kind: 'gps-only'` rows whose (route, dir) is on
+ *     the per-stop board): emit as `kind: 'gps-only'` rows on the
  *     station's board, with an ETA seed computed from a per-stop
  *     sibling's travel-time-from-origin (so a bus parked at the
  *     trip origin gets a sensible "arrives in N min" instead of
@@ -246,10 +246,10 @@ export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Veh
   const { perStopVehicles, reconciledVehicles, nowMin } = inputs;
 
   // Index reconciled (GPS-matched) rows by tripId for O(1) promotion.
-  // We keep ONLY `kind: 'reconciled'` here; orphans are handled below.
+  // We keep ONLY `kind: 'tracked'` here; orphans are handled below.
   const reconciledByTripId = new Map<string, Vehicle>();
   for (const v of reconciledVehicles) {
-    if (v.kind !== 'reconciled') continue;
+    if (v.kind !== 'tracked') continue;
     if (!v.tripId) continue;
     reconciledByTripId.set(v.tripId, v);
   }
@@ -286,7 +286,7 @@ export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Veh
     }
   }
 
-  // Promote matched per-stop scheduled rows to `kind: 'reconciled'`.
+  // Promote matched per-stop scheduled rows to `kind: 'tracked'`.
   // Keep the per-stop schedule (arrival times at THIS stop) — we just
   // attach the GPS position and confidence from the worker's row.
   const promoted: Vehicle[] = perStopVehicles.map((v) => {
@@ -296,7 +296,7 @@ export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Veh
     const reconciled = reconciledByTripId.get(tid);
     if (!reconciled || !reconciled.position) return v;
     return {
-      kind: 'reconciled',
+      kind: 'tracked',
       id: v.id,
       route: v.route,
       type: v.type,
@@ -312,17 +312,17 @@ export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Veh
     };
   });
 
-  // Emit orphan kind:'live' rows for live obs the worker couldn't
+  // Emit orphan kind:'gps-only' rows for live obs the worker couldn't
   // match to any active trip but whose (route, dir) this station
   // serves. Two gates:
   //   1) (route, dir) appears in `repByKey` — station-side scope.
   //      The worker already gated against the global active-trip
   //      set, so this is a per-station tightening.
   //   2) The reconciled row has a position (always true for
-  //      kind:'live' per the type union).
+  //      kind:'gps-only' per the type union).
   const orphans: Vehicle[] = [];
   for (const v of reconciledVehicles) {
-    if (v.kind !== 'live') continue;
+    if (v.kind !== 'gps-only') continue;
     const dir = v.directionId;
     if (dir !== 0 && dir !== 1) continue;
     const key = `${v.route.id}|${dir}`;
@@ -383,7 +383,7 @@ export interface ApplyGpsEtaContext {
 }
 
 /** Replace the schedule-based ETA on rows with a live position
- *  (`kind: 'reconciled'` and `kind: 'live'` orphans) with a GPS-
+ *  (`kind: 'tracked'` and `kind: 'gps-only'` orphans) with a GPS-
  *  derived one via the multi-tier speed cascade, where possible.
  *
  *  Shape lookup is two-step:
@@ -398,7 +398,7 @@ export interface ApplyGpsEtaContext {
  *   - For reconciled rows: when `v.schedule.isFirstStop === true`.
  *     The schedule scanner labels the origin stop; the predictor
  *     would just produce noise from a parked bus's near-zero speed.
- *   - For orphan kind:'live' rows: detected from the GPS projection
+ *   - For orphan kind:'gps-only' rows: detected from the GPS projection
  *     itself — bus's `distAlong` on the shape is < AT_ORIGIN_DIST_M
  *     AND its speed is < AT_ORIGIN_SPEED_MS (or unknown). When the
  *     bus is detected at origin we keep the reconciler's sibling-
@@ -421,15 +421,15 @@ export function applyGpsEta(
   const todProfile = ctx.todProfile ?? DEFAULT_TOD_PROFILE;
   const todBucket = clockToBucket(minSinceMidnightInTz(ctx.nowMs, ctx.timezone), todProfile);
   return vehicles.map<Vehicle>((v) => {
-    if (v.kind !== 'reconciled' && v.kind !== 'live') return v;
-    if (v.kind === 'reconciled' && v.schedule.isFirstStop === true) return v;
+    if (v.kind !== 'tracked' && v.kind !== 'gps-only') return v;
+    if (v.kind === 'tracked' && v.schedule.isFirstStop === true) return v;
     if (!v.position) return v;
     const polyline = pickShape(v, shapes, shapesByRouteDir);
     if (!polyline || polyline.length < 2) return v;
     // For live orphans: detect "parked at origin" — keep the
     // sibling-derived ETA seed the reconciler attached, don't
     // overwrite with a fallback-driven estimate.
-    if (v.kind === 'live') {
+    if (v.kind === 'gps-only') {
       const proj = projectOnPolyline(
         { lat: v.position.lat, lon: v.position.lon },
         polyline,

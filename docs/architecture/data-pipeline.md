@@ -54,7 +54,7 @@ PWA boot
           │
           ▼
       Per-view tripId merge → Vehicle[] mix of
-      kind="scheduled" / "reconciled" / "live"
+      kind="scheduled" / "tracked" / "gps-only" / "verified"
 ```
 
 Lifecycle details (eviction, pinning, offline behavior) live in

@@ -33,8 +33,8 @@ export interface UpcomingDeparture {
  *  thread; consumed by `reconciledVehiclesStore`.
  *
  *  `vehicles` holds the global reconciled set — a mix of `kind:
- *  'scheduled'` (active trips with no live match), `kind: 'reconciled'`
- *  (matched), and `kind: 'live'` (orphan live observations on a
+ *  'scheduled'` (active trips with no live match), `kind: 'tracked'`
+ *  (matched), and `kind: 'gps-only'` (orphan live observations on a
  *  (route, dir) the feed knows about). ETA fields are origin-relative;
  *  station views recompute per-stop ETA locally. */
 export interface ReconciledSnapshot {
@@ -93,9 +93,8 @@ export interface GtfsRepo {
 
   /**
    * Domain-shaped arrivals at a stop, ready for bucketing + rendering.
-   * Schedule-only today: every entry is `kind: 'scheduled'` or
-   * `kind: 'predicted'` (no live data wired yet). The live pipeline
-   * stages will plug in downstream of the scheduleScanner.
+   * Schedule-only today: every entry is `kind: 'scheduled'` (the live
+   * pipeline upgrades some to `tracked` / `verified` downstream).
    *
    *   nowMs           Unix ms — the moment this query represents
    *   windowMinutes   How many minutes into the future to include

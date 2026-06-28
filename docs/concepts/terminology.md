@@ -30,6 +30,6 @@ Canonical names. Use these in code and docs.
 
 ## Anti-vocabulary (do not introduce)
 
-- "ghost" — replaced by `kind: "scheduled"` / `kind: "predicted"`, see [vehicle.md](vehicle.md).
+- "ghost" — replaced by `kind: "scheduled"` (with `schedule.tripPhase` for the running-but-no-live case), see [vehicle.md](vehicle.md).
 - "agency picker" — say "feed picker".
 - "API key required" — Tranzy is optional, never required.

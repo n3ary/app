@@ -108,7 +108,7 @@ describe('applyGpsEta', () => {
   ];
   const STOP = { lat: 46.770, lon: 23.6062 };
   const reconciled = (opts: { tripId: string; isFirstStop?: boolean }): Vehicle => ({
-    kind: 'reconciled',
+    kind: 'tracked',
     id: `trip:${opts.tripId}`,
     route: r24,
     type: 'bus',
@@ -133,7 +133,7 @@ describe('applyGpsEta', () => {
       { T1: POLY },
       STOP,
     );
-    expect(out[0].kind).toBe('reconciled');
+    expect(out[0].kind).toBe('tracked');
     // 2 km @ 5 m/s = 400 s = ~7 min, rounded
     expect(out[0].eta?.minutes).toBeGreaterThan(5);
     expect(out[0].eta?.minutes).toBeLessThan(10);
@@ -164,10 +164,10 @@ describe('applyGpsEta', () => {
     expect(out[0]).toBe(v);
   });
 
-  // ── kind:'live' orphan ETAs ────────────────────────────────────────
+  // ── kind:'gps-only' orphan ETAs ────────────────────────────────────────
 
   const orphan = (opts: { tripId: string; directionId?: 0 | 1 }): Vehicle => ({
-    kind: 'live',
+    kind: 'gps-only',
     id: `live:${opts.tripId}`,
     route: r24,
     type: 'bus',
@@ -181,7 +181,7 @@ describe('applyGpsEta', () => {
   it('computes ETA for kind:live orphans using their own trip shape', () => {
     const v = orphan({ tripId: 'orphan-T2' });
     const out = applyGpsEta([v], { 'orphan-T2': POLY }, STOP);
-    if (out[0].kind !== 'live') throw new Error('expected kind=live');
+    if (out[0].kind !== 'gps-only') throw new Error('expected kind=live');
     // 2 km @ 5 m/s = 400 s ≈ 7 min
     expect(out[0].eta?.minutes).toBeGreaterThan(5);
     expect(out[0].eta?.minutes).toBeLessThan(10);
@@ -199,7 +199,7 @@ describe('applyGpsEta', () => {
       STOP,
       { [`${r24.id}|0`]: POLY },                     // sibling-shape fallback
     );
-    if (out[0].kind !== 'live') throw new Error('expected kind=live');
+    if (out[0].kind !== 'gps-only') throw new Error('expected kind=live');
     expect(out[0].eta?.minutes).toBeGreaterThan(5);
     expect(out[0].eta?.minutes).toBeLessThan(10);
   });
@@ -221,7 +221,7 @@ describe('applyGpsEta', () => {
   //    or its projection has advanced past origin.
 
   const orphanAtOrigin = (opts: { speedMs: number | null; seededEtaMin: number }): Vehicle => ({
-    kind: 'live',
+    kind: 'gps-only',
     id: 'live:T-parked',
     route: r24,
     type: 'bus',
@@ -364,7 +364,7 @@ describe('mergeReconciledIntoStationBoard', () => {
     asOf: number,
   ): Vehicle {
     return {
-      kind: 'reconciled',
+      kind: 'tracked',
       id: `trip:${tripId}`,
       route,
       type: 'bus',
@@ -386,7 +386,7 @@ describe('mergeReconciledIntoStationBoard', () => {
     lon: number,
   ): Vehicle {
     return {
-      kind: 'live',
+      kind: 'gps-only',
       id: `live:${obsTripId}`,
       route,
       type: 'bus',
@@ -409,7 +409,7 @@ describe('mergeReconciledIntoStationBoard', () => {
     });
     expect(out).toHaveLength(1);
     const v = out[0];
-    expect(v.kind).toBe('reconciled');
+    expect(v.kind).toBe('tracked');
     expect(v.tripId).toBe('T1');
     // Per-stop schedule is preserved (scheduledArrival at this stop).
     expect(v.schedule?.scheduledArrival).toBe(540);
@@ -446,7 +446,7 @@ describe('mergeReconciledIntoStationBoard', () => {
     });
     // 2 promoted (no live match in reconciled though) + 1 orphan.
     expect(out).toHaveLength(3);
-    const orphan = out.find((v) => v.kind === 'live');
+    const orphan = out.find((v) => v.kind === 'gps-only');
     expect(orphan?.tripId).toBe('LIVE-1');
     expect(orphan?.headsign).toBe('North'); // copied from sibling rep
     // ETA seed = obsStartMin + travelTime - nowMin
@@ -481,7 +481,7 @@ describe('mergeReconciledIntoStationBoard', () => {
       reconciledVehicles: reconciled,
       nowMin: 555,
     });
-    const orphan = out.find((v) => v.kind === 'live');
+    const orphan = out.find((v) => v.kind === 'gps-only');
     expect(orphan).toBeTruthy();
     // 520 + 0 − 555 = -35 (bus's scheduled origin departure was 35 min ago).
     expect(orphan?.eta?.minutes).toBe(-35);

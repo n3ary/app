@@ -5,7 +5,7 @@
  *   1. Fetches GTFS-RT vehicle positions via the same-origin proxy.
  *   2. Queries `getActiveTrips` against the open feed DB.
  *   3. Runs `reconcileWithLive` to produce a global Vehicle[] mix of
- *      `kind: 'scheduled' | 'reconciled' | 'live'`.
+ *      `kind: 'scheduled' | 'tracked' | 'verified' | 'gps-only'`.
  *   4. Broadcasts the snapshot to every subscriber on main.
  *
  * Subscribers are kept across feed switches (they belong to the
