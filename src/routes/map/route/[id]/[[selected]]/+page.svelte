@@ -779,12 +779,23 @@
     scheduled: boolean,
     gpsConfidence: 'good' | 'stale' | 'very-stale' | null,
   ): string {
+    // Inner ring colour reflects GPS data source so the same green /
+    // yellow / red signal a rider reads from any vehicle stays
+    // visible when the vehicle is selected. When unselected this is
+    // the only ring; selection adds a dark outer ring around it as
+    // the "you tapped this one" highlight.
+    //   good        → green   stale       → yellow   very-stale → red
+    //   null (schedule-only): white.
+    const inner =
+      gpsConfidence === 'good' ? '#22c55e' :
+      gpsConfidence === 'stale' ? '#eab308' :
+      gpsConfidence === 'very-stale' ? '#ef4444' :
+      '#fff';
     const ring = selected
-      ? 'box-shadow:0 0 0 3px #fff, 0 0 0 5px #111;'
-      : gpsConfidence === 'good'       ? 'box-shadow:0 0 0 2.5px #22c55e;'
-      : gpsConfidence === 'stale'      ? 'box-shadow:0 0 0 2.5px #eab308;'
-      : gpsConfidence === 'very-stale' ? 'box-shadow:0 0 0 2.5px #ef4444;'
-      :                                  'box-shadow:0 0 0 2px #fff;';
+      ? `box-shadow:0 0 0 3px ${inner}, 0 0 0 5px #111;`
+      : gpsConfidence != null
+        ? `box-shadow:0 0 0 2.5px ${inner};`
+        : 'box-shadow:0 0 0 2px #fff;';
     // Scheduled vehicles (at-origin / next 'before'): outlined badge so
     // the user can distinguish "waiting to depart" from "en route".
     const colors = scheduled
