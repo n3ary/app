@@ -162,41 +162,6 @@
   });
   const isEmpty = $derived(groups.length === 0);
 
-  // Map link eligibility: live-backed vehicles always qualify (real
-  // position). Schedule-only rows only qualify when they're the next
-  // departure for that route+direction — so the map icon links to the
-  // vehicle actually shown on the map, not a future trip with no
-  // position yet.
-  //
-  // We prefer the typed `tripPhase === 'next'` marker when present —
-  // it's set by the scanner on origin-stop rows and IS the canonical
-  // "next departure" anchor. At intermediate stops `tripPhase` is
-  // undefined; there we fall back to "first hit per (route, direction)"
-  // in the row stream (rows arrive domain-sorted, soonest first).
-  const mapEligibleIds = $derived.by<Set<string>>(() => {
-    const seen = new Set<string>();
-    const eligible = new Set<string>();
-    for (const row of rows) {
-      const v = row.vehicle;
-      if (v.kind === 'gps-only' || v.kind === 'verified' || v.kind === 'tracked') {
-        eligible.add(v.id);
-        continue;
-      }
-      // Schedule-only: typed phase wins where it's set (origin rows).
-      if (v.schedule?.tripPhase === 'next') {
-        eligible.add(v.id);
-        continue;
-      }
-      // Intermediate stops: iteration-order fallback per (route, dir).
-      const key = `${v.route.id}_${v.schedule?.directionId ?? 0}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        eligible.add(v.id);
-      }
-    }
-    return eligible;
-  });
-
   // Per-bucket section header styling. The icon mirrors the bucket
   // verb (incoming → clock, departing → outbound arrow, etc.) and
   // the accent color matches the urgency band the VehicleCards in
@@ -301,16 +266,15 @@
               </Stack>
               <Stack spacing={0.5} class="pt-1">
                 {#each group.vehicles as vehicle (vehicle.id)}
+                  {@const hasTripId = vehicle.schedule?.tripId != null}
                   {@const stopsEligible = getUpcomingStops != null
-                    && vehicle.schedule?.tripId != null
-                    && mapEligibleIds.has(vehicle.id)
-                    && !vehicle.schedule.isLastStop}
-                  {@const isMapEligible = mapEligibleIds.has(vehicle.id)}
+                    && hasTripId
+                    && !vehicle.schedule?.isLastStop}
                   {@const phase = vehicle.schedule?.tripPhase}
                   {@const scheduleAction =
-                    isMapEligible && (phase == null || phase === 'next' || phase === 'later')}
+                    hasTripId && (phase == null || phase === 'next' || phase === 'later')}
                   {@const mapAction =
-                    isMapEligible && (phase == null || phase === 'last' || phase === 'on-route')}
+                    hasTripId && (phase == null || phase === 'last' || phase === 'on-route')}
                   <Box class="flex flex-col gap-1">
                     <VehicleCard
                       {vehicle}
