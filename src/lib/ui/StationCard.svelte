@@ -274,7 +274,7 @@
                   {@const scheduleAction =
                     hasTripId && (phase == null || phase === 'next' || phase === 'later')}
                   {@const mapAction =
-                    hasTripId && (phase == null || phase === 'last' || phase === 'on-route')}
+                    hasTripId && (phase == null || phase === 'next' || phase === 'last' || phase === 'on-route')}
                   <Box class="flex flex-col gap-1">
                     <VehicleCard
                       {vehicle}
