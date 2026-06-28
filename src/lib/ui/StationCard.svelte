@@ -267,10 +267,11 @@
               <Stack spacing={0.5} class="pt-1">
                 {#each group.vehicles as vehicle (vehicle.id)}
                   {@const hasTripId = vehicle.schedule?.tripId != null}
+                  {@const phase = vehicle.schedule?.tripPhase}
                   {@const stopsEligible = getUpcomingStops != null
                     && hasTripId
-                    && !vehicle.schedule?.isLastStop}
-                  {@const phase = vehicle.schedule?.tripPhase}
+                    && !vehicle.schedule?.isLastStop
+                    && phase !== 'later'}
                   {@const scheduleAction = hasTripId && phase !== 'later'}
                   {@const mapAction = hasTripId && phase !== 'later'}
                   <Box class="flex flex-col gap-1">

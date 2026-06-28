@@ -87,3 +87,9 @@ rider doesn't already know from the row being on the schedule.
 `next` / `last` / `on-route` rows keep the dot because the data-source
 distinction (parked-and-on-schedule vs running-without-GPS) is
 informative there.
+
+The **upcoming-stops expansion** is also hidden on `later` rows. A
+`later` row always sits below a `next` row of the same route on the
+station board, and the `next` row already exposes the same stop list
+(the trip's path is identical). Showing the chevron on every `later`
+row duplicates an affordance the rider already has one row up.
