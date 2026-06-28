@@ -828,16 +828,26 @@
       ? `<span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.headsign)}</span>`
       : `<span style="flex:1;"></span>`;
     const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a></div>`;
+    // Shared row template for every line below `topRow`. Three callers:
+    // countdown (scheduled-at-origin "in X min"), leftAt (departed
+    // bus's wall-clock origin time), arrivingIn (ETA to the rider's
+    // ?from-stop). Same flex / icon / coloured-label layout, just
+    // different colour + label. Factor here so adding a fourth info
+    // line is one line of code.
+    const popupRow = (color: string, label: string): string =>
+      `<div style="display:flex;align-items:center;gap:2px;color:${color};font-size:11px;margin-top:3px;">${clockSvg}<span style="margin-left:2px;">${label}</span></div>`;
     // Countdown row, kept only for scheduled-at-origin / scheduled-
     // before bubbles: green clock + "in X min". Tells the rider when
     // the parked / not-yet-departed bus is expected to leave. On-route
     // vehicles don't get this line — their dot already conveys "live".
     const countdownHtml = m.scheduled
-      ? (() => {
-          const minsUntil = m.tripStartMin - nowMinVal;
-          const relLabel = minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil);
-          return `<span style="display:flex;align-items:center;gap:2px;color:#16a34a;font-size:11px;">${clockSvg}<span style="margin-left:2px;">${relLabel}</span></span>`;
-        })()
+      ? popupRow(
+          '#16a34a',
+          (() => {
+            const minsUntil = m.tripStartMin - nowMinVal;
+            return minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil);
+          })(),
+        )
       : '';
     // For vehicles that have ALREADY departed origin (everything but
     // the scheduled-at-origin / scheduled-before bubbles, which the
@@ -848,7 +858,7 @@
     // tripStartMin is a fallback (hasOriginTime === false) — rendering
     // 'left at <now>' there would be a lie.
     const leftAtHtml = !m.scheduled && m.hasOriginTime
-      ? `<div style="display:flex;align-items:center;gap:2px;color:#888;font-size:11px;margin-top:3px;">${clockSvg}<span style="margin-left:2px;">left at ${formatHHMM(m.tripStartMin)}</span></div>`
+      ? popupRow('#888', `left at ${formatHHMM(m.tripStartMin)}`)
       : '';
     // 'arriving in N min' line, surfaced only when the URL carries a
     // `?from=<stopId>` (green-painted target station) AND the vehicle
@@ -859,7 +869,7 @@
     // string is empty for everything that's no longer 'incoming' to
     // the rider's origin. Green to match the green stop highlight.
     const arrivingHtml = m.arrivingInMin != null
-      ? `<div style="display:flex;align-items:center;gap:2px;color:#16a34a;font-size:11px;margin-top:3px;">${clockSvg}<span style="margin-left:2px;">arriving in ${m.arrivingInMin} min</span></div>`
+      ? popupRow('#16a34a', `arriving in ${m.arrivingInMin} min`)
       : '';
     return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:150px;">${topRow}${countdownHtml}${leftAtHtml}${arrivingHtml}</div>`;
   }
