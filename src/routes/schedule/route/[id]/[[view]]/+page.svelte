@@ -598,7 +598,7 @@
                         Departed{userPrefs.showDebugIds ? ` · ${lastDepartedTrip.tripId}` : ''}
                       </span>
                     </div>
-                    {#if direction != null}
+                    {#if direction != null && lastDepartedTrip.tripEndMin > nowMin}
                       <a
                         href={`/map/route/${routeId}_${direction}/${encodeURIComponent(lastDepartedTrip.tripId)}`}
                         aria-label="View on map"

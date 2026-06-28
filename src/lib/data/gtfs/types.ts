@@ -299,6 +299,11 @@ export interface ScheduleTrip {
   tripId: string;
   /** Minutes since local midnight at the trip's first stop. */
   tripStartMin: number;
+  /** Minutes since local midnight at the trip's last stop (terminus
+   *  arrival). Lets the UI tell whether a past trip is still en
+   *  route (`tripEndMin > nowMin`) and therefore still trackable on
+   *  the map, or has finished its run. */
+  tripEndMin: number;
   /** Headsign as published in trips.txt (operator-controlled). */
   headsign: string | null;
   /** GTFS service_id — exposed so the UI can spot
