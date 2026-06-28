@@ -42,10 +42,6 @@
     buildTripShapePlan, predictPosition, predictPositionOnShape, predictPositionFromGps,
     type TripShapePlan,
   } from '$lib/domain/predictPosition';
-  import {
-    measurePolyline, pointAtDistance,
-    type MeasuredPolyline,
-  } from '$lib/domain/shapeProjection';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
@@ -151,14 +147,6 @@
       map.set(t.tripId, buildTripShapePlan(t.stops, view.shape));
     }
     return map;
-  });
-
-  // Measured route polyline (cumulative distances) for the direction
-  // arrows. One pass per page mount; the arrow positions / bearings
-  // below all read from it.
-  const measuredShape = $derived.by<MeasuredPolyline | null>(() => {
-    if (!view || view.shape.length < 2) return null;
-    return measurePolyline(view.shape);
   });
 
   // Live observations on (routeId, direction) whose trip didn't
@@ -321,44 +309,6 @@
     return out;
   });
 
-  /** Active stop-to-stop segments per vehicle: the leg between the
-   *  stop a vehicle just passed and the one it's heading to next.
-   *  The traveling-dots animation rides these segments so the flow
-   *  hints at where each vehicle is currently going \u2014 instead of an
-   *  ambient pulse along the whole route that's unrelated to live
-   *  positions. Only shape-aware (planned) trips contribute; the
-   *  no-shape fallback skips the trail since we can't translate
-   *  stops to polyline distances without a projection. */
-  type VehicleTrail = { fromDistM: number; toDistM: number };
-  const vehicleTrails = $derived.by<VehicleTrail[]>(() => {
-    if (!view || !measuredShape) return [];
-    void nowMin; // declare dependency so trails refresh per tick
-    const trails: VehicleTrail[] = [];
-    for (const t of view.trips) {
-      const plan = tripPlans.get(t.tripId);
-      if (!plan) continue;
-      const { legs } = plan;
-      if (legs.length < 2) continue;
-      // Skip not-yet-started and finished trips \u2014 no active leg.
-      if (nowMin < legs[0].arrivalMin) continue;
-      if (nowMin >= legs[legs.length - 1].arrivalMin) continue;
-      for (let i = 0; i < legs.length - 1; i++) {
-        if (nowMin >= legs[i].arrivalMin && nowMin <= legs[i + 1].arrivalMin) {
-          const fromDistM = legs[i].distAlongM;
-          const toDistM = legs[i + 1].distAlongM;
-          // Drop segments that are degenerate on the shape (out-and-
-          // back projections or near-coincident stops) \u2014 a dot
-          // hovering in place reads as a glitch.
-          if (Math.abs(toDistM - fromDistM) >= 20) {
-            trails.push({ fromDistM, toDistM });
-          }
-          break;
-        }
-      }
-    }
-    return trails;
-  });
-
   // ── Title / subtitle ───────────────────────────────────────────────
   // Mirrors the schedule view: title is the origin station name
   // (i.e. 'departures from here'), subtitle is the headsign —
@@ -433,7 +383,6 @@
   let mapInstance = $state<import('leaflet').Map | null>(null);
   let shapeLayer: import('leaflet').Polyline | null = null;
   let stopsLayer: import('leaflet').LayerGroup | null = null;
-  let arrowsLayer: import('leaflet').LayerGroup | null = null;
   let vehiclesLayer: import('leaflet').LayerGroup | null = null;
   let userMarker: import('leaflet').Marker | null = null;
   let hasFitOnce = false;
@@ -477,18 +426,7 @@
           attribution: '© OpenStreetMap contributors',
         }).addTo(mapInstance);
         stopsLayer = Lref.layerGroup().addTo(mapInstance);
-        arrowsLayer = Lref.layerGroup().addTo(mapInstance);
         vehiclesLayer = Lref.layerGroup().addTo(mapInstance);
-        // Dedicated pane for the traveling-dots flow animation,
-        // sitting above overlayPane (400) so the dots paint over
-        // the route polyline + stop circles, but below markerPane
-        // (600) so vehicle badges stay on top. Without this the
-        // dots are drawn underneath the 5px route line and read as
-        // invisible. pointerEvents:none keeps them from stealing
-        // hover / click from the markers below.
-        const dotsPane = mapInstance.createPane('nearyDots');
-        dotsPane.style.zIndex = '450';
-        dotsPane.style.pointerEvents = 'none';
         // Vehicles pane sits above markerPane (600) so vehicle badges
         // always paint over stop circles, but below tooltipPane (650).
         const vehiclesPane = mapInstance.createPane('nearyVehicles');
@@ -588,76 +526,6 @@
         m.addTo(sl);
       });
     }
-  });
-
-  // Traveling dots, scoped per-vehicle: each active stop-to-stop
-  // segment gets one dot that slides from the previous station to
-  // the next, fades in / out across the cycle, then loops. So the
-  // dots actually mean something live — they trace where buses are
-  // moving right now — instead of a generic ambient pulse along
-  // the full route. Quiet by design: 1 dot per vehicle, small,
-  // peak opacity ~0.4. Cleanup cancels the RAF and clears the
-  // layer; the effect re-runs whenever vehicleTrails changes
-  // (i.e. when a vehicle advances to the next stop).
-  const DOTS_PER_TRAIL = 3;
-  const DOT_CYCLE_MS = 3000;
-  const DOT_PEAK_OPACITY = 0.45;
-  $effect(() => {
-    if (!L || !mapInstance || !arrowsLayer) return;
-    arrowsLayer.clearLayers();
-    if (!measuredShape || vehicleTrails.length === 0) return;
-    const Lref = L;
-    const layer = arrowsLayer;
-    const measured = measuredShape;
-    const trails = vehicleTrails;
-    const renderer = Lref.svg({ pane: 'nearyDots' });
-    type Dot = {
-      marker: import('leaflet').CircleMarker;
-      fromDistM: number;
-      toDistM: number;
-      phaseOffset: number;
-    };
-    const dots: Dot[] = [];
-    for (const trail of trails) {
-      for (let i = 0; i < DOTS_PER_TRAIL; i++) {
-        const marker = Lref.circleMarker(
-          [measured.points[0].lat, measured.points[0].lon],
-          {
-            renderer,
-            radius: 2.5,
-            stroke: false,
-            fillColor: '#fff',
-            fillOpacity: 0,
-            interactive: false,
-          },
-        ).addTo(layer);
-        dots.push({
-          marker,
-          fromDistM: trail.fromDistM,
-          toDistM: trail.toDistM,
-          phaseOffset: i / DOTS_PER_TRAIL,
-        });
-      }
-    }
-    const start = performance.now();
-    let rafId = 0;
-    const tick = (t: number) => {
-      const elapsed = (t - start) / DOT_CYCLE_MS;
-      for (const d of dots) {
-        const p = (elapsed + d.phaseOffset) % 1;
-        const dist = d.fromDistM + p * (d.toDistM - d.fromDistM);
-        const opacity = Math.sin(p * Math.PI) * DOT_PEAK_OPACITY;
-        const pt = pointAtDistance(measured, dist);
-        d.marker.setLatLng([pt.lat, pt.lon]);
-        d.marker.setStyle({ fillOpacity: opacity });
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(rafId);
-      layer.clearLayers();
-    };
   });
 
   // Re-paint vehicles every nowMin tick.
