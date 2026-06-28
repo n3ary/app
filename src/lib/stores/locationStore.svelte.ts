@@ -117,6 +117,14 @@ class LocationStore {
     this.lastUpdated = null;
   }
 
+  /** True iff a navigator.geolocation watch is currently active. The
+   *  tooltip getter uses this to distinguish 'view never asked for
+   *  GPS' (idle, no message) from 'view asked, still waiting for the
+   *  first fix' (the legitimate 'waiting' state). */
+  get isWatching(): boolean {
+    return this.watchId !== null;
+  }
+
   /**
    * Header-dot state. Buckets:
    *   - permission denied: error (red)
@@ -140,7 +148,11 @@ class LocationStore {
   get tooltip(): string {
     if (this.permission === 'denied') return 'Location permission denied';
     if (this.error && !this.position) return `GPS error: ${this.error.message}`;
-    if (!this.lastUpdated) return 'Waiting for first GPS fix…';
+    if (!this.lastUpdated) {
+      return this.isWatching
+        ? 'Waiting for first GPS fix…'
+        : 'GPS not requested by this view';
+    }
     const ageSec = Math.round((this.now - this.lastUpdated) / 1000);
     if (ageSec < 60) return `GPS fresh (${ageSec}s ago)`;
     return `GPS last fix ${Math.round(ageSec / 60)} min ago`;

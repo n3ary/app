@@ -201,6 +201,12 @@
     /** GTFS direction_id (0 / 1), or -1 when unknown. Joins `kind`
      *  on the debug line. */
     directionId: 0 | 1 | -1;
+    /** Unix ms of the last GPS observation backing this marker, or
+     *  null when there is no GPS (schedule-only). Surfaced as 'Xs
+     *  ago' on the debug overlay so the rider can see how stale
+     *  the underlying fix is relative to where dead-reckoning has
+     *  walked the marker. */
+    gpsAsOfMs: number | null;
   };
   const markers = $derived.by<VehicleMarker[]>(() => {
     if (!view) return [];
@@ -281,6 +287,7 @@
         gpsConfidence,
         kind: reconciled?.kind ?? 'scheduled',
         directionId: (reconciled?.directionId ?? (direction as 0 | 1)) as 0 | 1 | -1,
+        gpsAsOfMs: reconciled?.position?.asOf ?? null,
       });
     }
 
@@ -315,6 +322,7 @@
           : 'very-stale',
         kind: v.kind,
         directionId: v.directionId ?? -1,
+        gpsAsOfMs: v.position.asOf,
       });
     }
     return out;
@@ -554,6 +562,9 @@
     for (const m of markers) {
       const debugId = userPrefs.showDebugIds
         ? `${m.tripId} · ${m.kind[0]}${m.directionId === -1 ? '' : m.directionId}`
+          + (m.gpsAsOfMs != null
+            ? ` · ${Math.max(0, Math.round((nowTicker.ms - m.gpsAsOfMs) / 1000))}s ago`
+            : '')
         : '';
       const html = vehicleHtml(view.route.shortName, routeColor, labelFg, m.selected, m.opacity, m.scheduled, m.gpsConfidence, debugId);
       const icon = Lref.divIcon({
