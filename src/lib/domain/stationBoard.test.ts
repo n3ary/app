@@ -61,7 +61,7 @@ describe('assembleStationBoard', () => {
   it('single-route board skips dedup (cap still applies)', () => {
     // Same route+direction everywhere: dedup is a no-op (the board
     // already represents the rider's chosen view). 1 at-station +
-    // 1 arriving + 4 incoming = 6 rows; default context cap is 5.
+    // 1 arriving uncapped + 4 incoming capped at the default of 3 = 5 rows.
     const vehicles: Vehicle[] = [
       scheduled('arr', r24, 1),
       {
@@ -80,9 +80,9 @@ describe('assembleStationBoard', () => {
       scheduled('i4', r24, 10),
     ];
     const board = assembleStationBoard(vehicles, { lat: 46.7712, lon: 23.6236 }, allowAll, nowMs, 'UTC');
-    expect(board).toHaveLength(6);
+    expect(board).toHaveLength(5);
     expect(board.map((r) => r.bucket)).toEqual([
-      'at-station', 'arriving', 'incoming', 'incoming', 'incoming', 'incoming',
+      'at-station', 'arriving', 'incoming', 'incoming', 'incoming',
     ]);
   });
 
@@ -314,14 +314,16 @@ describe('capStationBoard', () => {
     // Real-world Cluj case: a mid-line stop serves the same route in
     // both directions. The board is still "one route" from the
     // rider's POV, so dedup must NOT collapse the two directions.
+    // Pass an explicit maxRows large enough that the cap doesn't
+    // confound the dedup-skip assertion.
     const rows: BoardRow[] = [
       { vehicle: scheduled('north-1', r24, 3, 0), bucket: 'incoming', etaMinutes: 3 },
       { vehicle: scheduled('north-2', r24, 8, 0), bucket: 'incoming', etaMinutes: 8 },
       { vehicle: scheduled('south-1', r24, 5, 1), bucket: 'incoming', etaMinutes: 5 },
       { vehicle: scheduled('south-2', r24, 11, 1), bucket: 'incoming', etaMinutes: 11 },
     ];
-    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
-    // Single route → dedup skipped → all 4 rows visible (cap is 5).
+    const out = capStationBoard(rows, 10);
+    // Single route → dedup skipped → all 4 rows visible.
     expect(out).toHaveLength(4);
   });
 
@@ -566,5 +568,27 @@ describe('mergeReconciledIntoStationBoard', () => {
     expect(orphan).toBeTruthy();
     // 520 + 0 − 555 = -35 (bus's scheduled origin departure was 35 min ago).
     expect(orphan?.eta?.minutes).toBe(-35);
+  });
+
+  it('propagates dropOffOnly from per-stop siblings to orphan rows', () => {
+    // At a terminus / drop-off-only stop, every per-stop scheduled
+    // row has dropOffOnly=true. A live orphan emitted into the same
+    // station context must inherit the flag so it routes to the
+    // `drop-off` bucket downstream instead of leaking into the now-
+    // group buckets.
+    const perStop: Vehicle[] = [
+      {
+        ...perStopScheduled('T1', r24, 0, 500, 540, 'Centru'),
+        dropOffOnly: true,
+      } as Vehicle,
+    ];
+    const reconciled = [liveOrphan('LIVE-1', r24, 0, 520, 46.79, 23.60)];
+    const out = mergeReconciledIntoStationBoard({
+      perStopVehicles: perStop,
+      reconciledVehicles: reconciled,
+      nowMin: 555,
+    });
+    const orphan = out.find((v) => v.kind === 'gps-only');
+    expect(orphan?.dropOffOnly).toBe(true);
   });
 });
