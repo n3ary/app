@@ -188,13 +188,13 @@
 
         <Stack direction="row" align="center" justify="between">
           <Box class="flex-1 min-w-0">
-            <Typography variant="body2">Show off-route vehicles</Typography>
-            <Typography variant="caption">Diagnostic: vehicles too far from the route shape to match a trip.</Typography>
+            <Typography variant="body2">Enable Debug</Typography>
+            <Typography variant="caption">Diagnostic overlays for troubleshooting. Off unless asked.</Typography>
           </Box>
           <Switch
-            checked={userPrefs.showOffRouteVehicles}
-            onchange={(v) => (userPrefs.showOffRouteVehicles = v)}
-            aria-label="Show off-route vehicles"
+            checked={userPrefs.showDebugIds}
+            onchange={(v) => (userPrefs.showDebugIds = v)}
+            aria-label="Enable Debug"
           />
         </Stack>
 

@@ -23,11 +23,22 @@ class UserPrefs {
    *  window) on station boards. Map view always shows them. Defaults off:
    *  most users only care about what's still coming. */
   showDepartedVehicles = $state(false);
-  /** Advanced — show vehicles the reconciler couldn't pin to the route
-   *  shape (off-route bucket). Diagnostic; default off. Only live
-   *  vehicles can land in this bucket, so it's a no-op until live
-   *  tracking is wired — the toggle reserves the contract. */
-  showOffRouteVehicles = $state(false);
+  /** Diagnostic master switch. When on:
+   *   - `tripId · kind · dir` rendered on every vehicle card +
+   *     map marker (so cross-view screenshots can be correlated).
+   *   - `showOffRouteVehicles` reads true (off-route bucket surfaces
+   *     on station boards — vehicles too far from the route shape to
+   *     match a trip). Same toggle drives both because they're both
+   *     "give me everything to debug a divergence". Default off;
+   *     persisted. */
+  showDebugIds = $state(false);
+
+  /** Back-compat alias for the previous `showOffRouteVehicles` toggle.
+   *  Now folded into `showDebugIds` — callers passing `userPrefs` as
+   *  `BoardPrefs` (structurally typed) keep working without churn. */
+  get showOffRouteVehicles(): boolean {
+    return this.showDebugIds;
+  }
   /** Per-context-bucket cap on the station board. Applies to the
    *  `incoming` / `drop-off` / `departed` sections; the now-group
    *  (`departing` / `at-station` / `arriving`) and `off-route`
@@ -47,6 +58,7 @@ class UserPrefs {
         showDropOffOnly: boolean;
         showDepartedVehicles: boolean;
         showOffRouteVehicles: boolean;
+        showDebugIds: boolean;
         apiKey: string | null;
         stationBoardMaxRows: number;
       }>;
@@ -54,7 +66,8 @@ class UserPrefs {
       if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
       if (typeof o.showDropOffOnly === 'boolean') this.showDropOffOnly = o.showDropOffOnly;
       if (typeof o.showDepartedVehicles === 'boolean') this.showDepartedVehicles = o.showDepartedVehicles;
-      if (typeof o.showOffRouteVehicles === 'boolean') this.showOffRouteVehicles = o.showOffRouteVehicles;
+      if (typeof o.showOffRouteVehicles === 'boolean' && o.showOffRouteVehicles) this.showDebugIds = true;
+      if (typeof o.showDebugIds === 'boolean') this.showDebugIds = o.showDebugIds;
       if (typeof o.apiKey === 'string' || o.apiKey === null) this.apiKey = o.apiKey;
       if (typeof o.stationBoardMaxRows === 'number' && o.stationBoardMaxRows > 0) this.stationBoardMaxRows = o.stationBoardMaxRows;
     } catch {
@@ -69,7 +82,8 @@ class UserPrefs {
       feedId: this.feedId,
       showDropOffOnly: this.showDropOffOnly,
       showDepartedVehicles: this.showDepartedVehicles,
-      showOffRouteVehicles: this.showOffRouteVehicles,
+      showOffRouteVehicles: this.showDebugIds,
+      showDebugIds: this.showDebugIds,
       apiKey: this.apiKey,
       stationBoardMaxRows: this.stationBoardMaxRows,
     };

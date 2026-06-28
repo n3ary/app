@@ -13,13 +13,14 @@
   union; this component reads it.
 -->
 <script lang="ts">
-  import { ArrowDownLeft, ArrowRight, Calendar, ChevronDown, Map as MapIcon } from 'lucide-svelte';
+  import { ArrowRight, Calendar, ChevronDown, Map as MapIcon } from 'lucide-svelte';
   import type { Vehicle } from '$lib/domain/types';
   import { formatHHMM, formatRelativeMin } from '$lib/domain/types';
   import type { Urgency } from '$lib/domain/buckets';
   import RouteBadge from './RouteBadge.svelte';
   import { urgencyClass } from './urgencyClass';
   import { cn } from './cn';
+  import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
   type Props = {
     vehicle: Vehicle;
@@ -202,31 +203,47 @@
           class="shrink-0 text-[color:var(--color-fg-muted)]"
         />
         <span class="truncate">{headsign}</span>
+        <!-- Kind/state dot inline at the end of the headsign — was a
+             separate fixed slot in the icon group, moved here to free
+             one of the row's right-hand slots. Hidden for `scheduled`
+             rows with `tripPhase: later` (see `showKindDot` above). -->
+        {#if showKindDot}
+          <span
+            title={KIND.label}
+            aria-label={KIND.label}
+            class={cn(
+              'shrink-0 inline-block w-2 h-2 rounded-full ml-1',
+              KIND.dotBg,
+            )}
+          ></span>
+        {/if}
       </div>
       <div class={cn('text-xs truncate', etaClass)}>{secondaryLine}</div>
+      {#if userPrefs.showDebugIds}
+        <!-- Diagnostic id line. Surfaces the trip identity so a
+             screenshot of the station card can be matched against
+             a screenshot of the same vehicle's map marker, which
+             renders the same string. Off by default; toggled in
+             Settings > Advanced > 'Show debug ids'. -->
+        <div class="text-[10px] font-mono text-[color:var(--color-fg-muted)] truncate">
+          {vehicle.tripId ?? vehicle.id} · {vehicle.kind[0]}{vehicle.directionId == null || vehicle.directionId === -1 ? '' : vehicle.directionId}
+        </div>
+      {/if}
     </div>
 
     <!--
-      Action + state column. Each slot reserves a fixed width so icons
-      sit in column-aligned positions even when one is hidden; adding
-      a new affordance later (debug toggles, anomaly indicators, …)
-      just plugs another fixed slot in. Order left → right:
+      Action column. Each slot reserves a fixed width so icons sit in
+      column-aligned positions even when one is hidden; adding a new
+      affordance later (debug toggles, anomaly indicators, …) just
+      plugs another fixed slot in. Order left → right:
 
-         drop-off (13px) · schedule (24px) · map (24px)
-         · expand-stops (24px) · state dot (13px)
+         schedule (24px) · map (24px) · expand-stops (24px)
+
+      Drop-off-only is signalled by the section header ("Drop off only")
+      so a per-row icon was duplicate. State dot moved inline beside
+      the headsign above so we only carry the 3 action buttons here.
     -->
     <div class="flex items-center shrink-0">
-
-  <!-- Drop-off slot — surfaced for vehicles the rider can't board here. -->
-  <span class="shrink-0 w-[13px] flex items-center justify-center">
-    {#if vehicle.dropOffOnly}
-      <ArrowDownLeft
-        size={13}
-        aria-label="Drop off only — cannot board here"
-        class="text-[color:var(--color-danger)]"
-      />
-    {/if}
-  </span>
 
   <!-- Schedule button slot. -->
   <span class="shrink-0 w-6 flex items-center justify-center">
@@ -286,22 +303,6 @@
       >
         <ChevronDown size={14} strokeWidth={2.25} />
       </button>
-    {/if}
-  </span>
-
-  <!-- State dot slot: non-interactive. Color = GPS health.
-       Hidden for `scheduled` rows with `tripPhase: later` (future
-       non-next origin rows) — see `showKindDot` above. -->
-  <span class="shrink-0 w-[13px] flex items-center justify-center">
-    {#if showKindDot}
-      <span
-        title={KIND.label}
-        aria-label={KIND.label}
-        class={cn(
-          'inline-block w-2.5 h-2.5 rounded-full',
-          KIND.dotBg,
-        )}
-      ></span>
     {/if}
   </span>
     </div>
