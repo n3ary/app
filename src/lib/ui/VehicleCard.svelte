@@ -137,14 +137,31 @@
 >
   <!-- Fixed-width badge so a row of vehicles in different routes
        (3-char '32B', 1-char '9', 4-char '102L') reads as a single
-       column. Badge is identity-only — every action (schedule, map,
-       stops expansion) lives in its own dedicated icon slot to the
-       right so users learn one affordance per destination. -->
-  <RouteBadge
-    route={vehicle.route}
-    size="medium"
-    class="min-w-14"
-  />
+       column. When the row has a `mapHref` (actionable trip), the
+       badge becomes an extra tap target for the map — same destination
+       as the dedicated map icon to the right, just a larger easier-to-
+       hit surface for the most common action. Stops the click from
+       bubbling to the card's onclick so tapping the badge never also
+       fires the row selection. -->
+  {#snippet routeBadge()}
+    <RouteBadge
+      route={vehicle.route}
+      size="medium"
+      class="min-w-14"
+    />
+  {/snippet}
+  {#if mapHref}
+    <a
+      href={mapHref}
+      onclick={(e) => e.stopPropagation()}
+      aria-label={`Open ${vehicle.route.shortName} on the map`}
+      class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
+    >
+      {@render routeBadge()}
+    </a>
+  {:else}
+    {@render routeBadge()}
+  {/if}
 
   <div class="flex-1 min-w-0">
     <div class="text-sm font-medium truncate flex items-center gap-1">
