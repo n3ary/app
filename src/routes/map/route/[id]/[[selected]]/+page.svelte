@@ -163,7 +163,7 @@
 
   // Live observations on (routeId, direction) whose trip didn't
   // surface in view.trips. Sourced from the worker's reconciliation
-  // broadcast — these are the kind:'live' rows: the worker matched
+  // broadcast — these are the kind:'gps-only' rows: the worker matched
   // every scheduled trip it could via (route, dir, tripStartMin)
   // tolerance, and anything left over on this (route, dir) is a
   // genuine orphan. We render them at raw GPS (no shape projection
@@ -174,7 +174,7 @@
     if (!view) return [];
     return reconciledVehiclesStore.vehicles.filter(
       (v) =>
-        v.kind === 'live' &&
+        v.kind === 'gps-only' &&
         v.route.id === routeId &&
         v.directionId === direction &&
         v.position != null,
@@ -240,7 +240,7 @@
       const reconciled = reconciledByTripId.get(t.tripId);
       let p: ReturnType<typeof predictPositionOnShape> | null = null;
       let gpsConfidence: 'good' | 'stale' | 'very-stale' | null = null;
-      if (plan && reconciled?.kind === 'reconciled' && reconciled.position) {
+      if (plan && reconciled?.kind === 'tracked' && reconciled.position) {
         const pos = reconciled.position;
         const gps = predictPositionFromGps(
           plan,

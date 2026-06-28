@@ -10,15 +10,16 @@ The empirical case for keeping Tranzy optional (rather than primary) is in
 ## What it buys
 
 - **Corroboration.** Vehicles confirmed by both sources are stamped
-  `kind: 'corroborated'` with `confidence: 'high'` — see
+  `kind: 'verified'` with `confidence: 'high'` — see
   [../concepts/vehicle.md](../concepts/vehicle.md). UI shows a small "2/2"
   pip.
 - **Fresher position.** Tranzy timestamps run ~60 s ahead of GTFS-RT on
   Cluj. The reconciler trusts the fresher source for the displayed
   position when both agree on the trip.
-- **Confirmed-predicted classification.** A scheduled trip missing from
-  RT *might* be RT lag. If Tranzy also doesn't see it, the row becomes a
-  confirmed `predicted` (vs probable) — UI can render with stronger styling.
+- **Confirmed schedule-only classification.** A scheduled trip missing from
+  RT *might* be RT lag. If Tranzy also doesn't see it, the row stays
+  `kind: 'scheduled'` with confirmed "no live data" — UI can render
+  with stronger styling.
 
 ## Out of scope
 
@@ -50,11 +51,11 @@ on a non-Tranzy feed, the stage is absent from `composePipeline` output.
 - New `multiSourceCorroborator` stage runs after `rtScheduleReconciler`.
 - Match key across channels: **license plate** (Tranzy `label` ≡
   GTFS-RT `entity.id`).
-- Two sources point at the same trip → `kind: 'corroborated'`, `confidence: 'high'`, `liveSources` is the union.
-- Existing single-source matches stay as `reconciled`.
+- Two sources point at the same trip → `kind: 'verified'`, `confidence: 'high'`, `liveSources` is the union.
+- Existing single-source matches stay as `tracked`.
 
 Acceptance: in dev with both feeds running, at least some Cluj vehicles
-land as `corroborated`; UI shows the high-confidence pip.
+land as `verified`; UI shows the high-confidence pip.
 
 ### T3 — Settings UI
 
@@ -84,6 +85,6 @@ clear the key without disrupting the rest of the app.
 
 - The default zero-config experience.
 - `vehicle.kind` set for vehicles when only RT is available (still
-  `reconciled` / `live` / `predicted`).
+  `tracked` / `gps-only` / `scheduled`).
 - `feeds.json` schema — `tranzy.agency_id` is already an optional field
   per [../specs/feeds-json.md](../specs/feeds-json.md).

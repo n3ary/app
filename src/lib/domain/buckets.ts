@@ -54,9 +54,9 @@ export const BUCKET_LABEL: Record<ArrivalBucket, string> = {
 };
 
 /** Context-aware label for a bucket given the rows that fell into it.
- *  Origin-stop rows ('isAtTripStart') aren't really 'arriving from
- *  somewhere' — the bus is being prepared to start the trip — so we
- *  swap the verb to match what the rider sees on the curb:
+ *  Origin-stop rows (`schedule.isFirstStop`) aren't really 'arriving
+ *  from somewhere' — the bus is being prepared to start the trip — so
+ *  we swap the verb to match what the rider sees on the curb:
  *
  *    arriving:  all origin → 'Preparing'
  *               mixed      → 'Arriving & Preparing'
@@ -78,7 +78,7 @@ export function bucketLabel(
   let hasOrigin = false;
   let hasOther = false;
   for (const v of vehicles) {
-    if (v.schedule?.isAtTripStart) hasOrigin = true;
+    if (v.schedule?.isFirstStop) hasOrigin = true;
     else hasOther = true;
     if (hasOrigin && hasOther) break;
   }
@@ -154,7 +154,7 @@ export interface BucketInputs {
   etaMinutes: number;
   /** Always positive. */
   distanceToStopMeters: number;
-  /** km/h. Undefined for `scheduled` / `predicted` kinds. */
+  /** km/h. Undefined for `scheduled` kind (no live position). */
   vehicleSpeedKmh?: number;
   /** Minutes since local midnight at the target stop. */
   scheduledArrivalMin?: number;
@@ -171,7 +171,7 @@ export interface BucketInputs {
  * Pure function — only reads inputs, no side effects.
  *
  * The `kind` is taken from the vehicle so we can decide whether speed-based
- * heuristics apply (they do for live*, not for scheduled/predicted).
+ * heuristics apply (they do for live-backed kinds, not for scheduled).
  */
 export function bucketOf(
   kind: Vehicle['kind'],
@@ -187,7 +187,7 @@ export function bucketOf(
     onRouteShape = true,
   } = inputs;
 
-  const isLive = kind === 'live' || kind === 'reconciled' || kind === 'corroborated';
+  const isLive = kind === 'gps-only' || kind === 'tracked' || kind === 'verified';
 
   // 1. Off-route hard fail — only for vehicles we have live GPS for.
   if (isLive && distanceToStopMeters > OFF_ROUTE_DISTANCE_M && !onRouteShape) {
@@ -195,7 +195,7 @@ export function bucketOf(
   }
 
   // 2. At station — physical proximity is only meaningful for live vehicles
-  //    (we trust GPS). For predicted/scheduled we instead use the schedule's
+  //    (we trust GPS). For schedule-only rows we instead use the schedule's
   //    own arrival ≤ now ≤ departure window. Otherwise a scheduled future
   //    arrival with no real distance (we pass 0 by default) would always
   //    fall into the at-stop branch.
@@ -300,7 +300,7 @@ export function bucketCounts(buckets: ArrivalBucket[]): Record<ArrivalBucket, nu
  *                               buckets (departed bucket ignores this)
  *   showOffRouteVehicles=false  drops `off-route` rows (advanced diagnostic)
  *
- *  Schedule-only kinds (`scheduled` / `predicted`) are always shown —
+ *  Schedule-only rows (`scheduled` with no live match) are always shown —
  *  they're the whole point when no live source is wired.
  *
  *  `dropOffOnly` does NOT apply to the `departed` bucket. That flag is

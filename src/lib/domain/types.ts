@@ -3,15 +3,19 @@
  * (RouteBadge, VehicleCard, StationCard) and by the upcoming domain layer
  * (prediction, reconciler, buckets).
  *
- * Vehicle model follows docs/specs/vehicles-and-views.md. Five kinds
- * describing the *source of position knowledge*:
+ * Vehicle model: four kinds describing the *source of position knowledge*:
  *
- *   scheduled     trip in schedule, not yet active, no position yet
- *   predicted     trip should be running per schedule, no live GPS — position
- *                 is interpolated from schedule
- *   live          live GPS, no schedule trip matched
- *   reconciled    live GPS + matched scheduled trip (1 live source)
- *   corroborated  live GPS + matched scheduled trip + ≥2 live sources agree
+ *   scheduled  in the schedule. Position is either absent (trip not yet
+ *              active or no interpolation) or interpolated from the
+ *              schedule (when the trip is currently running per
+ *              schedule.tripPhase but no live source has matched it).
+ *   gps-only   live GPS, no schedule trip matched
+ *   tracked    live GPS + matched scheduled trip (1 live source)
+ *   verified   live GPS + matched scheduled trip + ≥2 live sources agree
+ *
+ * Whether the trip "should be running" is encoded on Axis A via
+ * `schedule.tripPhase` (`next` / `last` / `on-route` / `later`), not
+ * on `kind`. See docs/concepts/vehicle.md.
  */
 
 /** A single transit route as the UI sees it. */
@@ -60,7 +64,6 @@ export type LiveSource = 'gtfs-rt' | 'tranzy';
 /** Confidence in the vehicle's stated position / match. Derived strictly
  *  from kind + liveSources by the reconciler. */
 export type Confidence = 'high' | 'medium' | 'low';
-
 /** Vehicle position with provenance, so the UI can choose how much to
  *  trust it without re-deriving from kind. */
 export interface VehiclePosition {
@@ -97,18 +100,34 @@ export interface ScheduledRun {
   /** GTFS `trips.direction_id` (0 or 1). Used by the reconciler as part
    *  of the live-match key. -1 if the feed doesn't populate direction. */
   directionId?: 0 | 1 | -1;
-  /** True when this scheduled row represents the trip's origin stop
-   *  (stop_sequence === first_seq). UI uses this to keep the row at
-   *  full opacity even when there's no live match — at the origin the
-   *  schedule IS authoritative (the bus hasn't started moving yet, so
-   *  there can never be a GPS match before scheduled departure). At
-   *  intermediate stops a scheduled (no-GPS) row is faded. */
-  isAtTripStart?: boolean;
-  /** True when this stop is the trip's terminus (stop_sequence === last_seq).
-   *  Used to suppress the upcoming-stops expansion — there are no further
-   *  stops to show. Distinct from `dropOffOnly` which can also be true at
-   *  intermediate stops with pickup_type === 1. */
-  isAtTripEnd?: boolean;
+  /** True when this scheduled row represents the trip's FIRST stop
+   *  (stop_sequence === first_seq). Named from the row's POV: this
+   *  stop is the trip's origin — not "the vehicle is at the origin".
+   *  UI uses this to keep the row at full opacity even when there's
+   *  no live match — at the origin the schedule IS authoritative
+   *  (the bus hasn't started moving yet, so there can never be a
+   *  GPS match before scheduled departure). At intermediate stops a
+   *  scheduled (no-GPS) row is faded. */
+  isFirstStop?: boolean;
+  /** True when this stop is the trip's LAST stop (stop_sequence ===
+   *  last_seq). Named from the row's POV: this stop is the trip's
+   *  terminus — not "the vehicle is at the terminus". Used to
+   *  suppress the upcoming-stops expansion (there are no further
+   *  stops to show) and to treat the row as drop-off-only regardless
+   *  of `pickup_type`. */
+  isLastStop?: boolean;
+  /** When `isFirstStop === true`, classifies this trip's phase in
+   *  its daily lifecycle on the route, relative to `now`:
+   *   - 'next'     → the next departure that hasn't left
+   *   - 'last'     → the most recent departure that has left and is
+   *                  still running (trip not yet at terminus)
+   *   - 'on-route' → an earlier departure that has left and is still
+   *                  running (not the most recent)
+   *   - 'later'    → a future origin departure that is not the next
+   *
+   *  Undefined when `isFirstStop === false`. Recomputed on every
+   *  snapshot regeneration because the phase is a function of `now`. */
+  tripPhase?: 'next' | 'last' | 'on-route' | 'later';
   /** Minutes since local midnight at the trip's FIRST stop (origin
    *  departure time). Used by the reconciler to match live observations
    *  to scheduled trips by `(routeId, directionId, tripStartMin)` with
@@ -205,8 +224,8 @@ interface VehicleBase {
   /** Mode of transport. Set by the pipeline from the route's GTFS route_type. */
   type: VehicleType;
   /** GTFS trip_id this Vehicle represents. Present for every kind
-   *  that has trip-level identity (scheduled, predicted, reconciled,
-   *  corroborated set it from the static schedule; live orphans set
+   *  that has trip-level identity (scheduled, tracked, verified) set
+   *  it from the static schedule; gps-only orphans set
    *  it from the live observation). Used by `applyGpsEta` for shape
    *  lookup so we don't have to reach into `schedule.tripId`
    *  (which orphans don't have). */
@@ -231,21 +250,17 @@ export type Vehicle =
   | (VehicleBase & {
       kind: 'scheduled';
       schedule: ScheduledRun;
-      /** Scheduled vehicles have no position until they go predicted/live. */
-      position?: undefined;
+      /** Optional interpolated position. Present when the trip is
+       *  currently running per `schedule.tripPhase` (`last` /
+       *  `on-route`) but no live source has matched it; the position
+       *  is derived from the schedule along the route shape and its
+       *  `source` is `'predicted-from-schedule'`. Absent for trips
+       *  that haven't started yet (`next` / `later`). */
+      position?: VehiclePosition;
       liveSources?: never;
     })
   | (VehicleBase & {
-      kind: 'predicted';
-      schedule: ScheduledRun;
-      /** Always present and always `predicted-from-schedule`. */
-      position: VehiclePosition;
-      liveSources?: never;
-      /** Which live sources were polled and did NOT see this trip. */
-      checkedSources: LiveSource[];
-    })
-  | (VehicleBase & {
-      kind: 'live';
+      kind: 'gps-only';
       /** Always present and always `gps`. */
       position: VehiclePosition;
       /** Pure live vehicles have no schedule match yet. */
@@ -254,14 +269,14 @@ export type Vehicle =
       liveSources: LiveSource[];
     })
   | (VehicleBase & {
-      kind: 'reconciled';
+      kind: 'tracked';
       position: VehiclePosition;
       schedule: ScheduledRun;
       /** Exactly one source. */
       liveSources: LiveSource[];
     })
   | (VehicleBase & {
-      kind: 'corroborated';
+      kind: 'verified';
       position: VehiclePosition;
       schedule: ScheduledRun;
       /** Two or more sources, all agreeing on the matched trip. */

@@ -56,16 +56,22 @@ discriminated union where `kind` encodes **how we know where the vehicle is**:
 
 | Kind | Position source |
 |---|---|
-| `scheduled` | Trip exists in the schedule, no live match (or live not polled) |
-| `predicted` | Schedule says it should be running; live sources polled, none reported it |
-| `live` | Live GPS, no schedule trip matched |
-| `reconciled` | Live GPS + matched scheduled trip (one live source) |
-| `corroborated` | Live GPS + matched scheduled trip + two or more live sources agree |
+| `scheduled` | Trip exists in the schedule, no live match. May carry an interpolated position when `schedule.tripPhase` says the trip should be running (`last` / `on-route`). |
+| `gps-only` | Live GPS, no schedule trip matched |
+| `tracked` | Live GPS + matched scheduled trip (one live source) |
+| `verified` | Live GPS + matched scheduled trip + two or more live sources agree |
+
+Reads as a ladder of certainty:
+`scheduled < gps-only < tracked < verified`.
 
 Two metadata fields complete the row:
 
 - `confidence: 'high' | 'medium' | 'low'` — see [../concepts/confidence.md](../concepts/confidence.md).
-- `liveSources: LiveSource[]` — empty for schedule-only kinds; populated for live*.
+- `liveSources: LiveSource[]` — empty for `scheduled`; populated for the GPS-backed kinds.
+
+Whether the trip "should be running right now" is on a separate axis,
+`schedule.tripPhase` (`next` / `last` / `on-route` / `later`). See
+[../concepts/vehicle.md](../concepts/vehicle.md).
 
 ### Why a discriminated union
 
@@ -164,9 +170,10 @@ visible. The user sees no bus arriving when one is right around the corner.
 
 **Rule.** When the reconciler matches a live vehicle to a finished trip,
 the schedule scanner must still emit the unmatched on-time slot as
-`predicted`. Net result: two rows — the live late one with its real ETA,
-and the on-time predicted one labelled "no live tracking" — so the user
-sees both possibilities.
+`scheduled` (with `tripPhase: 'last'` so the map can render its
+interpolated position). Net result: two rows — the live late one with
+its real ETA, and the on-time scheduled one labelled "no live tracking"
+— so the user sees both possibilities.
 
 ### 5.2 Start-station / terminus binding
 
@@ -190,8 +197,8 @@ two scheduled trips may both fall inside the timing tolerance — typically
 the on-time and a late one. Picking only the smaller delta hides the other
 from the user.
 
-**Rule.** Emit the picked candidate as `reconciled` with a `tentative`
-flag, and keep the rejected candidate as a `predicted` row. The next poll
+**Rule.** Emit the picked candidate as `tracked` with a `tentative`
+flag, and keep the rejected candidate as a `scheduled` row. The next poll
 either confirms the pick (drop the flag) or flips the binding.
 
 This only applies to the Tranzy path. The GTFS-RT path has trip_id and
@@ -200,7 +207,7 @@ never goes tentative.
 ### 5.4 High-frequency routes — require persistence
 
 For routes with median headway ≤ 10 min, a single timing-based observation
-isn't enough signal to promote `live` → `reconciled`. Require two
+isn't enough signal to promote `gps-only` → `tracked`. Require two
 consecutive consistent polls. Implementation: small per-vehicle
 observation history in the reconciler.
 
@@ -229,9 +236,10 @@ re-litigate them.
 
 ## 7. Schedule-only kinds and the map
 
-`scheduled` and `predicted` are list-row kinds for the station and
-schedule views — the discriminated union encodes how we know what we
-know about the vehicle.
+The `scheduled` kind covers both list-row "not yet started" trips and
+running-but-unmatched trips (the latter via `schedule.tripPhase: 'last' | 'on-route'`).
+The discriminated union encodes how we know what we know about the
+vehicle.
 
 The **map** doesn't consume the full union; it has its own simpler 2-state
 model (see §4). What matters at the spec level:
@@ -244,9 +252,9 @@ model (see §4). What matters at the spec level:
   schedule interpolation along the shape.
 - Finished trips (past terminus) are dropped.
 
-The richer 5-kind taxonomy (`corroborated` / `reconciled` / `live` /
-`predicted` / `scheduled`) is consumed by the **list** views (Stations,
-Schedule) where the kind drives row dimming and confidence pips. The
-map deliberately doesn't try to encode all five at once — the badge
+The richer 4-kind taxonomy (`verified` / `tracked` / `gps-only` /
+`scheduled`) is consumed by the **list** views (Stations, Schedule)
+where the kind drives row dimming and confidence pips. The map
+deliberately doesn't try to encode all four at once — the badge
 space is too small and the rider only needs to know "waiting at origin"
 vs "already moving".

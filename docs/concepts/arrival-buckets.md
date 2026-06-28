@@ -40,6 +40,12 @@ The section header changes when all rows in a bucket are at their trip origin
 | `arriving` | Preparing | Arriving & Preparing |
 | `incoming` | Scheduled | Incoming & Scheduled |
 
+Origin-stop detection uses `schedule.isFirstStop`. Independent of
+`schedule.tripPhase` (`next` / `last` / `on-route` / `later`), which is a per-route
+positional anchor and is orthogonal to bucket placement — a `next` row
+can land in `arriving` or `incoming` depending on how close `now` is to
+its scheduled departure. See [vehicle.md](vehicle.md#trip-phase).
+
 ## Thresholds
 
 All magic numbers live in [`DEFAULT_CONFIG`](../../src/lib/domain/config.ts).

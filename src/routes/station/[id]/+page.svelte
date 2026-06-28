@@ -81,8 +81,8 @@
   });
 
   // Top up `shapes` with any live-observation trip_ids that aren't
-  // already covered. Reconciler emits kind:'live' orphans for live
-  // Fetch shapes for orphan kind:'live' rows the worker emitted whose
+  // already covered. Reconciler emits kind:'gps-only' orphans for live
+  // Fetch shapes for orphan kind:'gps-only' rows the worker emitted whose
   // route appears on this station's board, so applyGpsEta can project
   // them onto the right polyline.
   $effect(() => {
@@ -93,7 +93,7 @@
       new Set(
         reconciledVehiclesStore.vehicles
           .filter((v) =>
-            v.kind === 'live' &&
+            v.kind === 'gps-only' &&
             v.tripId != null &&
             visibleRouteIds.has(v.route.id) &&
             !(v.tripId in shapes),

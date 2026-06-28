@@ -6,14 +6,13 @@
  *
  * EVERY row emitted here is `kind: 'scheduled'`. That's intentional:
  * 'scheduled' just means "this trip exists in the schedule", which is
- * the only thing we know in a schedule-only pipeline. The `'predicted'`
- * kind is reserved for the live reconciler: it emits a `predicted`
- * vehicle when we've polled live sources, found none reporting the
- * trip, and chose to *estimate* its position from the schedule.
- * That choice doesn't exist at this layer.
+ * the only thing we know in a schedule-only pipeline. The live
+ * reconciler upgrades matched rows to `tracked` / `verified` downstream.
  *
  * Map view position interpolation along the route shape is a separate
- * rendering concern and doesn't change the kind.
+ * rendering concern and doesn't change the kind — a scheduled row
+ * whose `schedule.tripPhase` is `last` or `on-route` can carry an
+ * interpolated position with `source: 'predicted-from-schedule'`.
  */
 
 import type {
@@ -116,23 +115,24 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       headsign: r.trip_headsign ?? undefined,
       directionId: r.direction_id === 0 || r.direction_id === 1 ? r.direction_id : -1,
       tripStartMin: timeToMinutes(r.trip_start_time),
-      isAtTripStart: r.stop_sequence === r.first_seq,
-      isAtTripEnd: r.stop_sequence === r.last_seq || undefined,
+      isFirstStop: r.stop_sequence === r.first_seq,
+      isLastStop: r.stop_sequence === r.last_seq || undefined,
     };
     const dropOffOnly =
       Number(r.pickup_type) === 1 || r.stop_sequence === r.last_seq
         ? true
         : undefined;
     const etaMinutes = arrivalMin - nowMinSinceMidnight;
-    // Confidence rule:
+    // Confidence rule (initial — `assignTripPhases` upgrades `next`
+    // rows to `high` once the phase is known):
     //   At the trip's origin the schedule IS authoritative — the bus is
-    //   parked, no GPS-based ETA is possible before departure. Score
-    //   that as 'medium' so the UI doesn't fade it.
+    //   parked, no GPS-based ETA is possible before departure. Default
+    //   to `medium` so the UI doesn't fade it.
     //   At intermediate stops a schedule-only row (no live match) is
     //   inherently low-confidence: it's a wall-clock guess with no GPS
     //   to back it up.
     // Reconciler bumps matched rows to 'medium' / 'high' downstream.
-    const confidence = schedule.isAtTripStart ? 'medium' : 'low';
+    const confidence = schedule.isFirstStop ? 'medium' : 'low';
 
     out.push({
       kind: 'scheduled',
@@ -152,5 +152,69 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       },
     });
   }
+  assignTripPhases(out, nowMinSinceMidnight);
   return out;
+}
+
+/** Mark origin-stop rows (isFirstStop) with the trip's lifecycle phase
+ *  on its route relative to `now`. Mutates the rows in place because
+ *  `schedule` is the local object pushed onto each emitted vehicle.
+ *
+ *  Per route, among rows whose `isFirstStop` is true:
+ *    - exactly one `next`     → smallest `scheduledDeparture > now`
+ *    - at most one `last`     → largest `scheduledDeparture <= now`
+ *      (the trip is still running because the scanner already filtered
+ *      out past trips whose `tripEnd <= now`)
+ *    - `on-route`             → any earlier past departure still running
+ *    - `later`                → any future departure that is not `next`
+ *
+ *  Also bumps the row's confidence to `high` for the `next` phase: at
+ *  the origin, the imminent departure is the most reliable thing we
+ *  can show — schedule IS authoritative for a parked bus and the rider
+ *  is acting on that information now. `last` / `on-route` / `later`
+ *  rows keep their default `medium` confidence.
+ *
+ *  Tie-break by `tripId` lexicographic order when two trips share a
+ *  scheduled departure time (rare but GTFS-legal). */
+function assignTripPhases(vehicles: Vehicle[], nowMin: number): void {
+  const byRoute = new Map<string, Vehicle[]>();
+  for (const v of vehicles) {
+    if (!v.schedule?.isFirstStop) continue;
+    const list = byRoute.get(v.route.id);
+    if (list) list.push(v);
+    else byRoute.set(v.route.id, [v]);
+  }
+  for (const list of byRoute.values()) {
+    list.sort((a, b) => {
+      const da = a.schedule!.scheduledDeparture;
+      const db = b.schedule!.scheduledDeparture;
+      if (da !== db) return da - db;
+      return a.schedule!.tripId.localeCompare(b.schedule!.tripId);
+    });
+    let lastIdx = -1;
+    let nextIdx = -1;
+    for (let i = 0; i < list.length; i += 1) {
+      const dep = list[i].schedule!.scheduledDeparture;
+      if (dep <= nowMin) lastIdx = i;
+      else {
+        nextIdx = i;
+        break;
+      }
+    }
+    for (let i = 0; i < list.length; i += 1) {
+      const v = list[i];
+      const schedule = v.schedule!;
+      if (i === nextIdx) {
+        schedule.tripPhase = 'next';
+        v.confidence = 'high';
+        if (v.eta) v.eta.confidence = 'high';
+      } else if (i === lastIdx) {
+        schedule.tripPhase = 'last';
+      } else if (lastIdx >= 0 && i < lastIdx) {
+        schedule.tripPhase = 'on-route';
+      } else {
+        schedule.tripPhase = 'later';
+      }
+    }
+  }
 }

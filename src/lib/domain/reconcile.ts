@@ -20,9 +20,9 @@
  * widen progressively (±4h → full day) until we have enough.
  *
  * Output is a uniform Vehicle[]: matched scheduled rows are upgraded
- * to `kind: 'reconciled'`; unmatched scheduled rows stay `kind:
+ * to `kind: 'tracked'`; unmatched scheduled rows stay `kind:
  * 'scheduled'`; AND unmatched live observations are emitted as
- * `kind: 'live'` rows when their (routeId, directionId) has a
+ * `kind: 'gps-only'` rows when their (routeId, directionId) has a
  * representative scheduled sibling on the input (so we know the
  * route+direction is relevant to whatever view called us, and we
  * have a sibling headsign to copy onto the orphan). True orphans
@@ -55,7 +55,7 @@ const MIN_HEADWAY_SAMPLES = 2;
 const ROUTE_ORDER_IMPLAUSIBLE_M = 2_000;
 
 export interface ReconcileStats {
-  /** Scheduled rows upgraded to `kind: 'reconciled'`. */
+  /** Scheduled rows upgraded to `kind: 'tracked'`. */
   matched: number;
   /** Scheduled rows left as `kind: 'scheduled'` (no live candidate). */
   unmatched: number;
@@ -63,7 +63,7 @@ export interface ReconcileStats {
    *  (multiple scheduled trips within tolerance, all tied for closest).
    *  Reserved for future telemetry; today the closest still wins. */
   ambiguous: number;
-  /** Live observations emitted as `kind: 'live'` orphan rows because
+  /** Live observations emitted as `kind: 'gps-only'` orphan rows because
    *  no scheduled row was a match but their (route, direction) is on
    *  the input. */
   live: number;
@@ -176,7 +176,7 @@ export function reconcileWithLive(
     }
     matched += 1;
     return {
-      kind: 'reconciled',
+      kind: 'tracked',
       id: v.id,
       route: v.route,
       type: v.type,
@@ -198,7 +198,7 @@ export function reconcileWithLive(
     };
   });
 
-  // Emit kind: 'live' rows for live observations that didn't match any
+  // Emit kind: 'gps-only' rows for live observations that didn't match any
   // scheduled row. Two gates:
   //   1) The (routeId, directionId) must appear on the input — we copy
   //      a representative sibling's route + headsign onto the orphan
@@ -206,7 +206,7 @@ export function reconcileWithLive(
   //   2) The observation must carry a usable directionId (0 | 1).
   // The Vehicle the reconciler emits is uniform with the rest of the
   // pipeline (downstream applyGpsEta / assembleStationBoard treat
-  // kind: 'live' alongside kind: 'reconciled' for bucketing).
+  // kind: 'gps-only' alongside kind: 'tracked' for bucketing).
   //
   // ETA seed for parked-at-origin orphans:
   //   We also record the sibling's TRAVEL TIME from origin to this
@@ -274,7 +274,7 @@ export function reconcileWithLive(
       };
     }
     vehicles.push({
-      kind: 'live',
+      kind: 'gps-only',
       id: `live:${obs.tripId}`,
       route: rep.route,
       type: rep.route.type ?? 'unknown',
