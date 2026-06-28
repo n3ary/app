@@ -140,9 +140,12 @@
        column. When the row has a `mapHref` (actionable trip), the
        badge becomes an extra tap target for the map — same destination
        as the dedicated map icon to the right, just a larger easier-to-
-       hit surface for the most common action. Stops the click from
-       bubbling to the card's onclick so tapping the badge never also
-       fires the row selection. -->
+       hit surface for the most common action. NB: deliberately no
+       `e.stopPropagation` on the anchor — SvelteKit's client router
+       intercepts link clicks during bubble at the document level, so
+       stopping propagation forces a full page reload. The card's
+       `handleCardClick` already bails for clicks coming from any
+       inner anchor, so the row's onclick won't fire either. -->
   {#snippet routeBadge()}
     <RouteBadge
       route={vehicle.route}
@@ -153,7 +156,6 @@
   {#if mapHref}
     <a
       href={mapHref}
-      onclick={(e) => e.stopPropagation()}
       aria-label={`Open ${vehicle.route.shortName} on the map`}
       class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
     >
