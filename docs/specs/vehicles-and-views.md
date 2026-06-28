@@ -89,7 +89,7 @@ The board is a sorted, capped, filtered list of `Vehicle`s for one stop.
 | Classify each vehicle into a bucket | `bucketOf()` in [buckets.ts](../../src/lib/domain/buckets.ts) |
 | Sort by bucket, then ETA | `compareForBoard()` in the same file |
 | Apply user-pref filters | `filterForStationView()` |
-| Cap to 5 rows (1 per bucket, then fill from `incoming`) | `capStationBoard()` in [stationBoard.ts](../../src/lib/domain/stationBoard.ts) |
+| Cap rows: now-group and `off-route` uncapped; context buckets (`incoming` / `drop-off` / `departed`) capped at `stationBoardMaxRows`; per-`(route, direction)` dedup when the board spans multiple cohorts | `capStationBoard()` in [stationBoard.ts](../../src/lib/domain/stationBoard.ts) |
 
 Buckets, ordering and urgency colors are documented in
 [../concepts/arrival-buckets.md](../concepts/arrival-buckets.md).

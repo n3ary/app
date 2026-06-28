@@ -53,8 +53,8 @@
 
         <Stack spacing={1}>
           <Box>
-            <Typography variant="body2">Vehicles per station card</Typography>
-            <Typography variant="caption">Maximum number of vehicle rows shown on each station card.</Typography>
+            <Typography variant="body2">Vehicles per section</Typography>
+            <Typography variant="caption">Cap applied to the Incoming, Drop off and Departed sections. The action sections (Departing, At station, Arriving) are always uncapped so you never miss an imminent boarding option.</Typography>
           </Box>
           <ToggleGroup
             size="small"

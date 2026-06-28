@@ -28,7 +28,10 @@ class UserPrefs {
    *  vehicles can land in this bucket, so it's a no-op until live
    *  tracking is wired — the toggle reserves the contract. */
   showOffRouteVehicles = $state(false);
-  /** Maximum number of vehicle rows shown per station card. */
+  /** Per-context-bucket cap on the station board. Applies to the
+   *  `incoming` / `drop-off` / `departed` sections; the now-group
+   *  (`departing` / `at-station` / `arriving`) and `off-route`
+   *  diagnostic are always uncapped. See `capStationBoard`. */
   stationBoardMaxRows = $state(5);
   /** User's optional Tranzy API key — when set, live data layer activates. */
   apiKey = $state<string | null>(null);

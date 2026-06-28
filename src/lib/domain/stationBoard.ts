@@ -43,13 +43,17 @@ export interface BoardPrefs {
   showDropOffOnly: boolean;
   /** Advanced: include vehicles bucketed as `off-route` in the board. */
   showOffRouteVehicles: boolean;
-  /** Maximum vehicle rows per station card. Defaults to STATION_BOARD_MAX_ROWS. */
+  /** Per-context-bucket cap (applied to `incoming` / `drop-off` /
+   *  `departed`). Defaults to `DEFAULT_CONTEXT_BUCKET_CAP`. The
+   *  now-group (`departing` / `at-station` / `arriving`) and
+   *  `off-route` are always uncapped. */
   stationBoardMaxRows?: number;
 }
 
 /** Assemble the bucketed, filtered, sorted board for one station's
- *  worth of vehicles. Pure. The result is capped at 5 rows (see
- *  `capStationBoard` for the picking rule) so the card stays scannable.
+ *  worth of vehicles. Pure. The result obeys the per-bucket cap rule
+ *  in `capStationBoard` (now-group + off-route uncapped; context
+ *  buckets capped at `stationBoardMaxRows`).
  *
  *  `stop` supplies the coordinates we need to measure how far each live
  *  vehicle actually is from the stop — the bucketer's at-station check
@@ -86,58 +90,97 @@ export function assembleStationBoard(
     return { vehicle: v, bucket, etaMinutes: v.eta?.minutes ?? 0 };
   });
   const sorted = filterForStationView(rows, prefs).sort(compareForBoard);
-  return capStationBoard(sorted, prefs.stationBoardMaxRows ?? STATION_BOARD_MAX_ROWS);
+  return capStationBoard(sorted, prefs.stationBoardMaxRows ?? DEFAULT_CONTEXT_BUCKET_CAP);
 }
 
-/** Max rows shown on a single StationCard. Held here (not in NearyConfig)
- *  because it's a UX layout decision, not a transit-logic one. */
-export const STATION_BOARD_MAX_ROWS = 5;
+/** Default cap applied to context buckets (`incoming` / `drop-off` /
+ *  `departed`) when the user hasn't picked a value. Now-group buckets
+ *  (`departing` / `at-station` / `arriving`) and the diagnostic
+ *  `off-route` bucket are always uncapped. */
+export const DEFAULT_CONTEXT_BUCKET_CAP = 5;
 
-/** Cap the board to STATION_BOARD_MAX_ROWS using this rule:
- *   1. Take the first row of each bucket (1 max per bucket).
- *   2. If we still have slack, fill it with extra `incoming` rows (the
- *      bucket users most want to see more of — "how many buses are
- *      coming?").
- *  Output is re-sorted with compareForBoard so the on-screen order
- *  matches the spec regardless of where extras got appended. Pure. */
-export function capStationBoard(rows: BoardRow[], maxRows = STATION_BOARD_MAX_ROWS): BoardRow[] {
-  const seen = new Set<ArrivalBucket>();
-  const firsts: BoardRow[] = [];
-  const extraDropOff: BoardRow[] = [];
-  const extraIncoming: BoardRow[] = [];
-  // Whether the guaranteed drop-off slot was filled by a live vehicle.
-  // If so, we also want the first scheduled drop-off (next in line).
-  let dropOffGuaranteedIsLive = false;
-  let firstScheduledDropOff: BoardRow | null = null;
+/** Per-bucket cap. Returns `null` for buckets the rider should always
+ *  see in full:
+ *
+ *    - Now-group: `departing` / `at-station` / `arriving` — the
+ *      actionable set, never hidden.
+ *    - `off-route`: diagnostic, opt-in via Advanced settings; if the
+ *      user has enabled it, show all of them.
+ *
+ *  Context buckets (`incoming` / `drop-off` / `departed`) share the
+ *  setting-driven cap. */
+function bucketCap(bucket: ArrivalBucket, maxRows: number): number | null {
+  if (
+    bucket === 'departing' ||
+    bucket === 'at-station' ||
+    bucket === 'arriving' ||
+    bucket === 'off-route'
+  ) {
+    return null;
+  }
+  return maxRows;
+}
 
+/** Cohort key for the per-`(route, direction)` dedup pass. Treats
+ *  undefined and -1 direction as the same value so feeds without
+ *  `direction_id` don't fragment their routes. */
+function dedupKey(row: BoardRow): string {
+  return `${row.vehicle.route.id}_${row.vehicle.directionId ?? -1}`;
+}
+
+/** Trim the bucketed row set to what the StationCard will render.
+ *
+ *  Algorithm:
+ *    1. Detect single-route board: if every row belongs to the same
+ *       `routeId` the board already represents the rider's chosen
+ *       view (single-route stop, or filtered via route badge — both
+ *       directions of the route still survive). Dedup is skipped;
+ *       per-bucket caps still apply.
+ *    2. Group rows by bucket, preserving the input order (rows arrive
+ *       pre-sorted by `compareForBoard`).
+ *    3. Per-`(route, direction)` dedup inside each bucket — keep the
+ *       soonest row per pair. Active only when step 1 said so.
+ *    4. Per-bucket cap (`bucketCap`). Now-group and `off-route`
+ *       buckets are uncapped; context buckets use `maxRows`.
+ *    5. Re-sort with `compareForBoard` so the on-screen order matches
+ *       the spec regardless of bucket-traversal order.
+ *
+ *  Pure. */
+export function capStationBoard(rows: BoardRow[], maxRows = DEFAULT_CONTEXT_BUCKET_CAP): BoardRow[] {
+  if (rows.length === 0) return rows;
+
+  const routes = new Set<string>();
+  for (const r of rows) routes.add(r.vehicle.route.id);
+  const dedupActive = routes.size > 1;
+
+  const byBucket = new Map<ArrivalBucket, BoardRow[]>();
   for (const r of rows) {
-    if (!seen.has(r.bucket)) {
-      seen.add(r.bucket);
-      firsts.push(r);
-      if (r.bucket === 'drop-off') {
-        const v = r.vehicle;
-        dropOffGuaranteedIsLive =
-          v.kind === 'gps-only' || v.kind === 'tracked' || v.kind === 'verified';
+    const list = byBucket.get(r.bucket);
+    if (list) list.push(r);
+    else byBucket.set(r.bucket, [r]);
+  }
+
+  const out: BoardRow[] = [];
+  for (const [bucket, bucketRows] of byBucket) {
+    let kept: BoardRow[];
+    if (dedupActive) {
+      const seen = new Set<string>();
+      kept = [];
+      for (const r of bucketRows) {
+        const k = dedupKey(r);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        kept.push(r);
       }
-    } else if (r.bucket === 'drop-off') {
-      const v = r.vehicle;
-      const isLive = v.kind === 'gps-only' || v.kind === 'tracked' || v.kind === 'verified';
-      if (isLive) {
-        extraDropOff.push(r);
-      } else if (!firstScheduledDropOff) {
-        firstScheduledDropOff = r;
-      }
-    } else if (r.bucket === 'incoming') {
-      extraIncoming.push(r);
+    } else {
+      kept = bucketRows;
     }
+    const cap = bucketCap(bucket, maxRows);
+    if (cap != null) kept = kept.slice(0, cap);
+    out.push(...kept);
   }
-  // When the guaranteed slot is live, also surface the soonest scheduled
-  // drop-off so riders see what's coming next in the queue.
-  if (firstScheduledDropOff && dropOffGuaranteedIsLive) {
-    extraDropOff.push(firstScheduledDropOff);
-  }
-  const slots = Math.max(0, maxRows - firsts.length);
-  return [...firsts, ...extraDropOff, ...extraIncoming].slice(0, firsts.length + slots).sort(compareForBoard);
+
+  return out.sort(compareForBoard);
 }
 
 /* ---------------------------------------------------------------------- *

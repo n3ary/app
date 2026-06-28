@@ -61,3 +61,22 @@ The station view applies user preference filters to the bucketed list:
 
 Drop-off-only does NOT apply to the `departed` bucket — boardability is
 moot for a vehicle that already left.
+
+## Capping rule
+
+The board's cap policy splits buckets into three groups:
+
+| Group | Buckets | Cap |
+|---|---|---|
+| **Actionable now** | `departing`, `at-station`, `arriving` | Uncapped — the rider must never miss an imminent boarding option. |
+| **Context** | `incoming`, `drop-off`, `departed` | Each capped at `userPrefs.stationBoardMaxRows` (3 / 5 / 8 / 10, default 5). |
+| **Diagnostic** | `off-route` | Uncapped when opted-in — the rider explicitly enabled it. |
+
+Dedup mechanic: within each bucket, rows sharing a `(routeId, directionId)`
+cohort collapse to the soonest one. Dedup is **skipped entirely** when
+the whole board is already a single `route` (single-route stop, or
+filtered via the route badge — both directions of that route are
+preserved) — in that case the rider has already chosen their view,
+and per-bucket caps do the trimming.
+
+Implementation: [`capStationBoard`](../../src/lib/domain/stationBoard.ts).

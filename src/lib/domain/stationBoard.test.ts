@@ -3,8 +3,8 @@ import {
   applyGpsEta,
   assembleStationBoard,
   capStationBoard,
+  DEFAULT_CONTEXT_BUCKET_CAP,
   mergeReconciledIntoStationBoard,
-  STATION_BOARD_MAX_ROWS,
 } from './stationBoard';
 import type { BoardRow } from './stationBoard';
 import type { Route, Vehicle } from './types';
@@ -13,14 +13,15 @@ const r24: Route = { id: '24', shortName: '24', color: '#ff0000' };
 const r35: Route = { id: '35', shortName: '35', color: '#00ff00' };
 const r9: Route = { id: '9', shortName: '9', color: '#0000ff' };
 
-function scheduled(tripId: string, route: Route, etaMinutes: number): Vehicle {
+function scheduled(tripId: string, route: Route, etaMinutes: number, directionId: 0 | 1 | -1 = 0): Vehicle {
   return {
     kind: 'scheduled',
     id: `trip:${tripId}`,
     route,
     type: 'bus',
+    directionId,
     confidence: 'low',
-    schedule: { tripId, scheduledDeparture: 540 + etaMinutes },
+    schedule: { tripId, scheduledDeparture: 540 + etaMinutes, directionId },
     eta: { distanceMeters: 0, minutes: etaMinutes, confidence: 'low' },
   } as Vehicle;
 }
@@ -38,7 +39,9 @@ const allowAll = {
 const nowMs = Date.UTC(2026, 5, 26, 9, 0, 0);
 
 describe('assembleStationBoard', () => {
-  it('caps at 5 rows with 1 per bucket, expanding incoming to fill', () => {
+  it('per-(route, direction) dedup keeps one incoming row per route', () => {
+    // Multi-route board: r24 has 3 incoming, r35 has 2, r9 has 1.
+    // Post-dedup: 1 per route in incoming + 1 departed = 4 rows.
     const vehicles = [
       scheduled('a', r24, 3),
       scheduled('b', r24, 6),
@@ -49,28 +52,26 @@ describe('assembleStationBoard', () => {
       scheduled('g', r9, -2), // departed
     ];
     const board = assembleStationBoard(vehicles, { lat: 46.7712, lon: 23.6236 }, allowAll, nowMs, 'UTC');
-    expect(board).toHaveLength(5);
-    const buckets = board.map((r) => r.bucket);
-    expect(buckets.filter((b) => b === 'incoming')).toHaveLength(4);
-    expect(buckets.filter((b) => b === 'departed')).toHaveLength(1);
-    // Incoming sorted by eta ASC, then departed.
-    expect(board.slice(0, 4).map((r) => r.vehicle.schedule?.tripId)).toEqual([
-      'a', 'c', 'b', 'd',
-    ]);
-    expect(board[4].vehicle.schedule?.tripId).toBe('g');
+    expect(board).toHaveLength(4);
+    const incoming = board.filter((r) => r.bucket === 'incoming');
+    expect(incoming.map((r) => r.vehicle.schedule?.tripId)).toEqual(['a', 'c', 'f']);
+    expect(board.at(-1)?.vehicle.schedule?.tripId).toBe('g');
   });
 
-  it('keeps 1 of each represented bucket then fills with incoming', () => {
-    // 1 at-station (mid-dwell) + 1 arriving + many incoming.
+  it('single-route board skips dedup (cap still applies)', () => {
+    // Same route+direction everywhere: dedup is a no-op (the board
+    // already represents the rider's chosen view). 1 at-station +
+    // 1 arriving + 4 incoming = 6 rows; default context cap is 5.
     const vehicles: Vehicle[] = [
       scheduled('arr', r24, 1),
       {
         kind: 'scheduled',
         id: 'trip:atst',
-        route: r35,
+        route: r24,
         type: 'bus',
+        directionId: 0,
         confidence: 'low',
-        schedule: { tripId: 'atst', scheduledArrival: 538, scheduledDeparture: 542 },
+        schedule: { tripId: 'atst', scheduledArrival: 538, scheduledDeparture: 542, directionId: 0 },
         eta: { distanceMeters: 0, minutes: 0, confidence: 'low' },
       } as Vehicle,
       scheduled('i1', r24, 4),
@@ -79,9 +80,9 @@ describe('assembleStationBoard', () => {
       scheduled('i4', r24, 10),
     ];
     const board = assembleStationBoard(vehicles, { lat: 46.7712, lon: 23.6236 }, allowAll, nowMs, 'UTC');
-    expect(board).toHaveLength(5);
+    expect(board).toHaveLength(6);
     expect(board.map((r) => r.bucket)).toEqual([
-      'at-station', 'arriving', 'incoming', 'incoming', 'incoming',
+      'at-station', 'arriving', 'incoming', 'incoming', 'incoming', 'incoming',
     ]);
   });
 
@@ -259,64 +260,144 @@ describe('applyGpsEta', () => {
 });
 
 describe('capStationBoard', () => {
-  it('takes one of each bucket — no expansion needed when all 5 are represented', () => {
-    const rows: BoardRow[] = [
-      { vehicle: scheduled('dep', r24, 0), bucket: 'departing', etaMinutes: 0 },
-      { vehicle: scheduled('at', r35, 0), bucket: 'at-station', etaMinutes: 0 },
-      { vehicle: scheduled('arr', r9, 1), bucket: 'arriving', etaMinutes: 1 },
-      { vehicle: scheduled('i1', r24, 3), bucket: 'incoming', etaMinutes: 3 },
-      { vehicle: scheduled('i2', r24, 5), bucket: 'incoming', etaMinutes: 5 },
-      { vehicle: scheduled('i3', r35, 8), bucket: 'incoming', etaMinutes: 8 },
-      { vehicle: scheduled('d1', r9, -2), bucket: 'departed', etaMinutes: -2 },
-    ];
-    const out = capStationBoard(rows);
-    expect(out).toHaveLength(5);
-    // 1 of each bucket; the extra incoming rows drop off.
-    expect(out.map((r) => r.bucket)).toEqual([
-      'departing', 'at-station', 'arriving', 'incoming', 'departed',
-    ]);
+  it('returns empty for an empty input', () => {
+    expect(capStationBoard([])).toEqual([]);
   });
 
-  it('fills empty bucket slots with extra incoming up to max', () => {
-    // No departing / at-station / arriving / departed. Just incoming.
-    // Expansion should fill all 5 slots from the incoming pool.
+  it('now-group is uncapped — every (route, dir) survives in arriving/at-station/departing', () => {
+    // 5 different routes, each with one arriving row. All must survive.
+    const rows: BoardRow[] = [
+      { vehicle: scheduled('a1', r24, 1), bucket: 'arriving', etaMinutes: 1 },
+      { vehicle: scheduled('a2', r35, 1), bucket: 'arriving', etaMinutes: 1 },
+      { vehicle: scheduled('a3', r9, 2), bucket: 'arriving', etaMinutes: 2 },
+      { vehicle: scheduled('d1', r24, 0), bucket: 'departing', etaMinutes: 0 },
+      { vehicle: scheduled('s1', r35, 0), bucket: 'at-station', etaMinutes: 0 },
+    ];
+    const out = capStationBoard(rows, 3);
+    expect(out).toHaveLength(5);
+  });
+
+  it('per-(route, direction) dedup inside each bucket', () => {
+    // r24 has 3 incoming rows; keep only the soonest.
+    const rows: BoardRow[] = [
+      { vehicle: scheduled('a', r24, 3), bucket: 'incoming', etaMinutes: 3 },
+      { vehicle: scheduled('b', r24, 6), bucket: 'incoming', etaMinutes: 6 },
+      { vehicle: scheduled('c', r35, 4), bucket: 'incoming', etaMinutes: 4 },
+      { vehicle: scheduled('e', r24, 12), bucket: 'incoming', etaMinutes: 12 },
+    ];
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    expect(out.map((r) => r.vehicle.schedule?.tripId)).toEqual(['a', 'c']);
+  });
+
+  it('directionId undefined and -1 collapse to the same dedup key', () => {
+    const v1 = scheduled('u', r24, 3, -1);
+    const v2 = scheduled('u2', r24, 6, -1);
+    // Defensively also test with truly absent directionId.
+    const v3 = { ...scheduled('u3', r24, 9), directionId: undefined } as Vehicle;
+    const rows: BoardRow[] = [
+      { vehicle: v1, bucket: 'incoming', etaMinutes: 3 },
+      { vehicle: v2, bucket: 'incoming', etaMinutes: 6 },
+      { vehicle: v3, bucket: 'incoming', etaMinutes: 9 },
+    ];
+    // Multi-key set is forced by adding a row on r35 so dedup activates.
+    rows.push({
+      vehicle: scheduled('r35', r35, 1),
+      bucket: 'incoming',
+      etaMinutes: 1,
+    });
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    // r24 + r35: dedup keeps soonest of r24 (u) and r35 (r35).
+    expect(out.map((r) => r.vehicle.schedule?.tripId).sort()).toEqual(['r35', 'u']);
+  });
+
+  it('single-route stop with both directions: dedup skipped, both directions visible', () => {
+    // Real-world Cluj case: a mid-line stop serves the same route in
+    // both directions. The board is still "one route" from the
+    // rider's POV, so dedup must NOT collapse the two directions.
+    const rows: BoardRow[] = [
+      { vehicle: scheduled('north-1', r24, 3, 0), bucket: 'incoming', etaMinutes: 3 },
+      { vehicle: scheduled('north-2', r24, 8, 0), bucket: 'incoming', etaMinutes: 8 },
+      { vehicle: scheduled('south-1', r24, 5, 1), bucket: 'incoming', etaMinutes: 5 },
+      { vehicle: scheduled('south-2', r24, 11, 1), bucket: 'incoming', etaMinutes: 11 },
+    ];
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    // Single route → dedup skipped → all 4 rows visible (cap is 5).
+    expect(out).toHaveLength(4);
+  });
+
+  it('respects per-context-bucket cap (maxRows = 3)', () => {
+    // 5 routes, each one incoming row. With cap 3 only the soonest 3 survive.
+    const rows: BoardRow[] = [
+      { vehicle: scheduled('a', { id: 'A', shortName: 'A', color: '#fff' }, 3), bucket: 'incoming', etaMinutes: 3 },
+      { vehicle: scheduled('b', { id: 'B', shortName: 'B', color: '#fff' }, 5), bucket: 'incoming', etaMinutes: 5 },
+      { vehicle: scheduled('c', { id: 'C', shortName: 'C', color: '#fff' }, 7), bucket: 'incoming', etaMinutes: 7 },
+      { vehicle: scheduled('d', { id: 'D', shortName: 'D', color: '#fff' }, 9), bucket: 'incoming', etaMinutes: 9 },
+      { vehicle: scheduled('e', { id: 'E', shortName: 'E', color: '#fff' }, 11), bucket: 'incoming', etaMinutes: 11 },
+    ];
+    const out = capStationBoard(rows, 3);
+    expect(out).toHaveLength(3);
+    expect(out.map((r) => r.vehicle.schedule?.tripId)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('single-route board skips dedup — many incoming rows on same route survive up to cap', () => {
     const rows: BoardRow[] = Array.from({ length: 8 }, (_, i) => ({
       vehicle: scheduled(`i${i}`, r24, i + 1),
       bucket: 'incoming' as const,
       etaMinutes: i + 1,
     }));
-    const out = capStationBoard(rows);
-    expect(out).toHaveLength(STATION_BOARD_MAX_ROWS);
-    expect(out.every((r) => r.bucket === 'incoming')).toBe(true);
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    // Single (route, dir) cohort → dedup skipped, cap takes top 5.
+    expect(out).toHaveLength(DEFAULT_CONTEXT_BUCKET_CAP);
+    expect(out.every((r) => r.vehicle.route.id === '24')).toBe(true);
   });
 
-  it("includes 'departed' when there aren't enough incoming to fill", () => {
+  it('off-route is uncapped', () => {
+    // 4 routes with off-route rows. All must survive even when cap is 1.
     const rows: BoardRow[] = [
-      { vehicle: scheduled('arr', r24, 1), bucket: 'arriving', etaMinutes: 1 },
-      { vehicle: scheduled('i1', r24, 3), bucket: 'incoming', etaMinutes: 3 },
-      { vehicle: scheduled('d1', r9, -2), bucket: 'departed', etaMinutes: -2 },
+      { vehicle: scheduled('o1', r24, 5), bucket: 'off-route', etaMinutes: 5 },
+      { vehicle: scheduled('o2', r35, 6), bucket: 'off-route', etaMinutes: 6 },
+      { vehicle: scheduled('o3', r9, 7), bucket: 'off-route', etaMinutes: 7 },
     ];
-    const out = capStationBoard(rows);
-    expect(out.map((r) => r.bucket)).toEqual(['arriving', 'incoming', 'departed']);
+    const out = capStationBoard(rows, 1);
+    expect(out).toHaveLength(3);
   });
 
-  it("returns fewer than max if there isn't enough data", () => {
+  it('drop-off dedups by (route, direction) like other context buckets', () => {
+    // Two drop-off rows on r24 (one live, one scheduled) and one on r35.
+    // Dedup keeps the soonest per (route, direction) regardless of kind.
+    const live: Vehicle = {
+      kind: 'tracked',
+      id: 'live-r24',
+      route: r24,
+      type: 'bus',
+      directionId: 0,
+      confidence: 'medium',
+      schedule: { tripId: 'live-r24', scheduledDeparture: 541, directionId: 0 },
+      eta: { distanceMeters: 0, minutes: 1, confidence: 'medium' },
+      position: { lat: 0, lon: 0, source: 'gps', asOf: nowMs },
+      liveSources: ['gtfs-rt'],
+    } as Vehicle;
+    const queued = scheduled('queued-r24', r24, 7);
+    const otherRoute = scheduled('r35-drop', r35, 3);
     const rows: BoardRow[] = [
-      { vehicle: scheduled('i1', r24, 3), bucket: 'incoming', etaMinutes: 3 },
-      { vehicle: scheduled('i2', r24, 8), bucket: 'incoming', etaMinutes: 8 },
+      { vehicle: live, bucket: 'drop-off', etaMinutes: 1 },
+      { vehicle: queued, bucket: 'drop-off', etaMinutes: 7 },
+      { vehicle: otherRoute, bucket: 'drop-off', etaMinutes: 3 },
     ];
-    const out = capStationBoard(rows);
-    expect(out).toHaveLength(2);
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    // r24 dedups to the live (sooner) row; r35 keeps its own.
+    expect(out.map((r) => r.vehicle.schedule?.tripId)).toEqual(['live-r24', 'r35-drop']);
   });
 
-  it('never exceeds STATION_BOARD_MAX_ROWS', () => {
-    const rows: BoardRow[] = Array.from({ length: 50 }, (_, i) => ({
-      vehicle: scheduled(`i${i}`, r24, i + 1),
-      bucket: 'incoming' as const,
-      etaMinutes: i + 1,
-    }));
-    const out = capStationBoard(rows);
-    expect(out).toHaveLength(STATION_BOARD_MAX_ROWS);
+  it('preserves compareForBoard order in the output', () => {
+    // Departing should come first, then at-station, then arriving, etc.
+    const rows: BoardRow[] = [
+      { vehicle: scheduled('inc', r9, 5), bucket: 'incoming', etaMinutes: 5 },
+      { vehicle: scheduled('dep', r24, 0), bucket: 'departing', etaMinutes: 0 },
+      { vehicle: scheduled('at', r35, 0), bucket: 'at-station', etaMinutes: 0 },
+    ];
+    const out = capStationBoard(rows, DEFAULT_CONTEXT_BUCKET_CAP);
+    expect(out.map((r) => r.bucket)).toEqual(['departing', 'at-station', 'incoming']);
   });
 });
 
