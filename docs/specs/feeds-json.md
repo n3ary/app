@@ -34,10 +34,9 @@ This doc captures the contract from the app's perspective.
     { "agency_id": "2", "agency_name": "CTP Cluj", "agency_url": "…" }
   ],
   "files": {
-    "gtfs_zip":  "feeds/cluj-napoca.gtfs.zip",  // relative to binaries root
-    "sqlite_gz": "feeds/cluj-napoca.sqlite3.gz" // the only file the app downloads
+    "sqlite_gz": "cluj-napoca.sqlite3.gz"   // the only file the app downloads
   },
-  "size_bytes": { "gtfs_zip": 1811806, "sqlite_gz": 5716840 },
+  "size_bytes": { "sqlite_gz": 5716840 },
   "hash": "sha256-…",                           // used for freshness check
   "realtime": {
     "vehicle_positions": "https://cluj-rt-feed.gtfs.ro/vehiclePositions",

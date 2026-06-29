@@ -3,9 +3,9 @@
  * The registry is published nightly to the `binaries` branch and fetched
  * via `raw.githubusercontent.com` (CORS-open, ~5-min edge cache).
  *
- * Replaces the v1 `agencies.ts` / agency.json registry. Each entry is a
- * publishable transit feed: either a Transitous mirror (bucuresti-ilfov),
- * or a locally-enhanced build (cluj-napoca with daily CTP CSV scrape).
+ * Each entry is one publishable transit feed. Where the underlying GTFS
+ * zip came from is recorded in `source` but is otherwise an implementation
+ * detail of neary-gtfs — the app only consumes `files.sqlite_gz`.
  *
  * Source contract: https://github.com/ciotlosm/neary-gtfs (schema at
  * schemas/feeds.schema.json).
@@ -33,21 +33,16 @@ export interface Feed {
     agency_url: string | null;
   }>;
   source: {
-    type: 'build' | 'transitous' | 'mobility-database';
+    type: 'transitous' | 'mobility-database' | 'remote';
     publisher: string;
     upstream_url?: string | null;
-    /** Set by neary-gtfs build-all.js for mirror change-detection. */
+    /** Set by neary-gtfs build-all.js for change-detection (HEAD ETag match ⇒ skip rebuild). */
     upstream_etag?: string | null;
-    /** Set by neary-gtfs for locally-built feeds; sha256 of zip content. */
-    content_hash?: string | null;
   };
   files: {
-    /** Mirrors omit gtfs_zip — use source.upstream_url for the raw zip. */
-    gtfs_zip: string | null;
     sqlite_gz: string | null;
   };
   size_bytes: {
-    gtfs_zip: number | null;
     sqlite_gz: number | null;
   };
   /** sha256-... of sqlite_gz (the file the app actually downloads). */
