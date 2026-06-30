@@ -19,6 +19,7 @@
   import type { Urgency } from '$lib/domain/buckets';
   import RouteBadge from './RouteBadge.svelte';
   import { urgencyClass } from './urgencyClass';
+  import { iconButtonClass } from './iconButtonClass';
   import { cn } from './cn';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
@@ -135,16 +136,6 @@
   //   'high'   verified (≥2 live sources agree); full opacity.
   // See spec §2 "Card border, opacity, and anomaly indicator".
   const dim = $derived(vehicle.confidence === 'low');
-
-  // Shared class set for the 24x24 action-column buttons (schedule,
-  // map, expand-stops). Solid border-token fill + matching border so
-  // they read as tappable controls on touch, not decorative icons.
-  const iconButtonClass =
-    'inline-flex items-center justify-center w-6 h-6 rounded-md ' +
-    'bg-[color:var(--color-border)] text-[color:var(--color-fg)] ' +
-    'border border-[color:var(--color-border)] ' +
-    'hover:bg-[color:var(--color-fg-muted)]/25 ' +
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]';
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -296,7 +287,7 @@
       so a per-row icon was duplicate. State dot moved inline beside
       the headsign above so we only carry the 3 action buttons here.
     -->
-    <div class="flex items-center shrink-0">
+    <div class="flex items-center gap-1 shrink-0">
 
   <!-- Schedule button slot. -->
   <span class="shrink-0 w-6 flex items-center justify-center">

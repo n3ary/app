@@ -10,8 +10,8 @@
 <script lang="ts">
   import { Calendar, Heart, Map as MapIcon } from 'lucide-svelte';
   import {
-    Card, CardContent, IconButton, NoFeedState, RouteBadge, Spinner, Stack,
-    Typography, TypeBadge,
+    Card, CardContent, NoFeedState, RouteBadge, Spinner, Stack,
+    Typography, TypeBadge, iconButtonClass,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { Route, VehicleType } from '$lib/domain/types';
@@ -131,30 +131,33 @@
         href={scheduleHref}
         aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
         title="Open route schedule"
-        class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
+        class={iconButtonClass}
       >
-        <Calendar size={18} />
+        <Calendar size={16} strokeWidth={2.25} />
       </a>
     {/if}
     <a
       href={`/map/route/${route.id}_0`}
       aria-label={`Open map for ${typeLabel.toLowerCase()} ${route.shortName}`}
       title="Open route map"
-      class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
+      class={iconButtonClass}
     >
-      <MapIcon size={18} />
+      <MapIcon size={16} strokeWidth={2.25} />
     </a>
-    <IconButton
+    <button
+      type="button"
       aria-label={`${isFav ? 'Unfavorite' : 'Favorite'} ${typeLabel.toLowerCase()} ${route.shortName}`}
       aria-pressed={isFav}
       onclick={() => favoritesStore.toggle(route.id)}
+      class={iconButtonClass}
     >
       <Heart
-        size={18}
+        size={16}
+        strokeWidth={2.25}
         fill={isFav ? 'currentColor' : 'none'}
         class={isFav ? 'text-[color:var(--color-danger)]' : 'text-[color:var(--color-fg-muted)]'}
       />
-    </IconButton>
+    </button>
   </Stack>
 {/snippet}
 
