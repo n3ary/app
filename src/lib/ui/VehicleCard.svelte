@@ -192,7 +192,32 @@
     visually anchored to the row identity.
   -->
   <div class="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-    <div class="min-w-[9rem] flex-1">
+    <!-- Text block. When `onStopsExpand` is provided (stops list is
+         available for this trip), tapping anywhere on the text
+         block toggles the expansion — same action as the chevron
+         on the right, just a much larger thumb target. The chevron
+         stays as the visual cue. Inner interactive bits (kind-dot
+         button) call `e.stopPropagation()` so they don't double-
+         trigger. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class={cn(
+        'min-w-[9rem] flex-1',
+        onStopsExpand && 'cursor-pointer rounded-md -mx-1 px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
+      )}
+      role={onStopsExpand ? 'button' : undefined}
+      tabindex={onStopsExpand ? 0 : undefined}
+      aria-expanded={onStopsExpand ? stopsExpanded : undefined}
+      aria-label={onStopsExpand ? (stopsExpanded ? `Hide upcoming stops for ${vehicle.route.shortName}` : `Show upcoming stops for ${vehicle.route.shortName}`) : undefined}
+      onclick={onStopsExpand ? () => onStopsExpand?.() : undefined}
+      onkeydown={onStopsExpand ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onStopsExpand?.();
+        }
+      } : undefined}
+    >
       <div class="text-sm font-medium truncate flex items-center gap-1">
         <!-- Direction-of-travel cue. The headsign IS the destination, so
              a small arrow in front reads as 'going to …' without any

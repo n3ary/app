@@ -24,7 +24,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, Bus, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
+  import { ArrowRightLeft, Bus, Calendar, Maximize2, Minus, Moon, Plus } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
     Stack, Typography,
@@ -38,7 +38,7 @@
     type Route,
     type Vehicle,
   } from '$lib/domain/types';
-  import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
+  import { dateKeyInTz, minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
   import {
     buildTripShapePlan, predictPosition, predictPositionOnShape, predictPositionFromGps,
     type TripShapePlan,
@@ -115,13 +115,11 @@
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const localDate = new Intl.DateTimeFormat('en-CA', {
-          timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-        }).formatToParts(Date.now())
-          .reduce((acc, p) => p.type !== 'literal' ? acc + p.value : acc, '');
+        const nowMs = Date.now();
+        const localDate = dateKeyInTz(nowMs, tz);
         view = await repo.getRouteMapView(
           rid, dir, localDate,
-          minSinceMidnightInTz(Date.now(), tz),
+          minSinceMidnightInTz(nowMs, tz),
           LOOKBACK_MIN, LOOKAHEAD_MIN,
         );
         error = null;
@@ -883,7 +881,13 @@
     const headsignText = m.headsign
       ? `<span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.headsign)}</span>`
       : `<span style="flex:1;"></span>`;
-    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a></div>`;
+    // Routes with no usable schedule (Cluj's Tranzy-fallback `_NT*`
+    // trips: empty arrival_time on every stop_time row) skip the
+    // schedule shortcut — /schedule/route would have nothing to show.
+    const schedLink = view?.route.hasSchedule !== false
+      ? `<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a>`
+      : '';
+    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}${schedLink}</div>`;
     // Shared row template for every line below `topRow`. Three callers:
     // countdown (scheduled-at-origin "in X min"), leftAt (departed
     // bus's wall-clock origin time), arrivingIn (ETA to the rider's
@@ -1029,6 +1033,7 @@
 {#snippet minusIcon()}<Minus size={16} />{/snippet}
 {#snippet fitIcon()}<Maximize2 size={16} />{/snippet}
 {#snippet busIcon()}<Bus size={16} />{/snippet}
+{#snippet calendarIcon()}<Calendar size={16} />{/snippet}
 
 <div class="mx-auto max-w-5xl px-4 py-3">
   {#if userPrefs.feedId == null}
@@ -1114,6 +1119,24 @@
           {@render mapControl('Fit route to view', fitIcon, fitToRoute)}
           {@render mapControl('Focus on tracked vehicle', busIcon, focusOnVehicle, !focusOnVehicleEnabled)}
         </div>
+        <!-- Schedule shortcut in the bottom-right corner. Mirrors the
+             top-right zoom/fit cluster's styling so it reads as the
+             same control family, but lives in the opposite corner to
+             avoid clobbering the cluster while keeping a single
+             thumb-reachable destination. Same (route, direction) the
+             page already binds against — no parameter recomputation.
+             Hidden for routes with no usable schedule (the feed's
+             trips ship empty arrival_times) — /schedule/route would
+             have nothing to show. -->
+        {#if view?.route.hasSchedule !== false}
+          <div class="neary-map-controls-bottom">
+            {@render mapControl(
+              'Open schedule for this route',
+              calendarIcon,
+              () => goto(`/schedule/route/${routeId}_${direction}`),
+            )}
+          </div>
+        {/if}
       </Card>
     </Stack>
   {/if}
@@ -1143,6 +1166,17 @@
   .neary-map-controls {
     position: absolute;
     top: 0.5rem;
+    right: 0.5rem;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  /* Bottom-right cluster — same chrome as the top-right cluster,
+     opposite corner so the two don't crowd each other. */
+  .neary-map-controls-bottom {
+    position: absolute;
+    bottom: 0.5rem;
     right: 0.5rem;
     z-index: 1000;
     display: flex;

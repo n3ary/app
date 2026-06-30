@@ -1,5 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { formatBytes, formatWhen } from './formatters';
+import { setAppLocaleForTest } from '../i18n/locale';
+
+// Pin the app locale for these tests so weekday + month abbreviations
+// match the values the test helpers below derive. The production code
+// reads navigator.language; pinning here keeps the assertion strings
+// stable across whatever locale the CI runner happens to expose.
+beforeAll(() => setAppLocaleForTest('en-GB'));
+afterAll(() => setAppLocaleForTest(null));
 
 describe('formatBytes', () => {
   it('returns empty string for falsy values', () => {

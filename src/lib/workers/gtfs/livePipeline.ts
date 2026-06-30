@@ -25,6 +25,7 @@ import type { Vehicle } from '$lib/domain/types';
 
 import { getActiveTrips } from './queries/activeTrips';
 import { getShapesForTrips } from './queries/shapes';
+import { pushAllStationSubscribers } from './stationSubscribers';
 import { ensureDb, state } from './state';
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,9 @@ export async function tickLive(): Promise<void> {
     };
     lastSnapshot = payload;
     broadcast(payload);
+    // Push the assembled per-stop boards to every station subscriber
+    // in the same tick — keeps station UI in lockstep with map UI.
+    pushAllStationSubscribers(payload);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Keep the previous vehicles + status so the UI stays usable; just

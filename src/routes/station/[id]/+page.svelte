@@ -13,16 +13,12 @@
     Card, CardContent, NoFeedState, Spinner, Stack, StationCard, Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
-  import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
+  import { createStationBoardsController } from '$lib/data/stationBoardsController.svelte';
+  import type { StationBoardInput } from '$lib/data/stationBoardsController.svelte';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
-  import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
-  import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
@@ -34,18 +30,20 @@
   const stopId = $derived(Number(page.params.id));
   const stopIdValid = $derived(Number.isFinite(stopId) && stopId > 0);
 
-  let board = $state<{ stop: StopWithDistance; vehicles: Vehicle[] } | null>(null);
-  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
-  let stopDistancesByTrip = $state<Record<string, number[]>>({});
+  let board = $state<StationBoardInput | null>(null);
   let originRouteIds = $state<Set<string>>(new Set());
   let error = $state<string | null>(null);
   let notFound = $state(false);
   let routeFilter = $state<string | null>(null);
 
-  // Feed tz + wall clock both live in shared stores (feedsStore /
-  // nowTicker) so every consumer pages on a single source.
-  const feedTimezone = $derived(feedsStore.activeTimezone);
-  const nowMs = $derived(nowTicker.ms);
+  // Shared controller — same shape as /+page.svelte. We feed it a
+  // single-element array when board is loaded; it owns shape cache +
+  // assembly. routeFilterFor closes over the single-board routeFilter.
+  const boardsController = createStationBoardsController({
+    routeFilterFor: () => routeFilter,
+  });
+  $effect(() => { boardsController.setBoards(board ? [board] : null); });
+  const assembled = $derived(boardsController.assembled[0] ?? null);
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;
@@ -66,57 +64,10 @@
           board = result;
           error = null;
           routeFilter = null; // reset on every refresh
-          // Fetch shapes + origin-route membership in parallel.
-          const tripIds = tripIdsFromVehicles(result.vehicles);
-          const [fetchedShapes, fetchedStopDistances, originIds] = await Promise.all([
-            tripIds.length > 0 ? repo.getShapesForTrips(tripIds) : Promise.resolve({}),
-            tripIds.length > 0 ? repo.getStopDistancesForTrips(tripIds) : Promise.resolve({}),
-            repo.getOriginRoutesAtStop(sid),
-          ]);
-          shapes = fetchedShapes;
-          stopDistancesByTrip = fetchedStopDistances;
-          originRouteIds = new Set(originIds);
+          originRouteIds = new Set(await repo.getOriginRoutesAtStop(sid));
         }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
-      }
-    })();
-  });
-
-  // Top up `shapes` with any live-observation trip_ids that aren't
-  // already covered. Reconciler emits kind:'gps-only' orphans for live
-  // Fetch shapes for orphan kind:'gps-only' rows the worker emitted whose
-  // route appears on this station's board, so applyGpsEta can project
-  // them onto the right polyline.
-  $effect(() => {
-    if (!board) return;
-    const visibleRouteIds = new Set<string>();
-    for (const v of board.vehicles) visibleRouteIds.add(v.route.id);
-    const missing = Array.from(
-      new Set(
-        reconciledVehiclesStore.vehicles
-          .filter((v) =>
-            v.kind === 'gps-only' &&
-            v.tripId != null &&
-            visibleRouteIds.has(v.route.id) &&
-            !(v.tripId in shapes),
-          )
-          .map((v) => v.tripId as string),
-      ),
-    );
-    if (missing.length === 0) return;
-    (async () => {
-      try {
-        const repo = getGtfsRepo();
-        const [extraShapes, extraStopDistances] = await Promise.all([
-          repo.getShapesForTrips(missing),
-          repo.getStopDistancesForTrips(missing),
-        ]);
-        shapes = { ...shapes, ...extraShapes };
-        stopDistancesByTrip = { ...stopDistancesByTrip, ...extraStopDistances };
-      } catch {
-        // Soft-fail: orphan ETAs fall back to the sibling shape via
-        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
       }
     })();
   });
@@ -156,21 +107,10 @@
       </CardContent>
     </Card>
   {:else}
-    {@const rows = assembleLiveBoard({
-      vehicles: board.vehicles,
-      stop: board.stop,
-      reconciledVehicles: reconciledVehiclesStore.vehicles,
-      shapes,
-      stopDistancesByTrip,
-      prefs: userPrefs,
-      nowMs,
-      timezone: feedTimezone,
-      routeFilterId: routeFilter,
-    })}
     <StationCard
       station={{ id: board.stop.id, name: board.stop.name, lat: board.stop.lat, lon: board.stop.lon }}
-      rows={rows}
-      allRoutes={routesFromVehicles(board.vehicles)}
+      rows={assembled?.rows ?? []}
+      allRoutes={assembled?.allRoutes ?? []}
       selectedRouteId={routeFilter}
       onRouteClick={(rid) => (routeFilter = routeFilter === rid ? null : rid)}
       favoriteRouteIds={favoritesStore.routeIds}

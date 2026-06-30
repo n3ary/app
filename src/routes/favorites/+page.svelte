@@ -15,7 +15,7 @@
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { Route, VehicleType } from '$lib/domain/types';
-  import { vehicleTypeLabel } from '$lib/domain/types';
+  import { compareRouteShortName, vehicleTypeLabel } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -74,12 +74,7 @@
   // Apply the type filter once, then split into the two cards. Within
   // each section, sort numeric-first then alpha.
   function sortRoutes(list: Route[]): Route[] {
-    return [...list].sort((a, b) => {
-      const an = Number(a.shortName);
-      const bn = Number(b.shortName);
-      if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
-      return a.shortName.localeCompare(b.shortName);
-    });
+    return [...list].sort((a, b) => compareRouteShortName(a.shortName, b.shortName));
   }
   const filteredRoutes = $derived.by<Route[]>(() => {
     if (!allRoutes) return [];
@@ -97,20 +92,46 @@
 <!-- One row-renderer shared by both cards so the layout stays identical
      between favorited and other routes. KISS / DRY.
 
-     Layout: [Badge] [Type · shortName] [Map] [Schedule] [Heart]
-     The badge is identity-only (consistent with VehicleCard) —
-     navigation goes through the dedicated map / schedule icons so
-     a user learns one affordance per destination across the app. -->
+     Layout: [Badge → schedule (if available)] [Type] [Schedule (if available)] [Map] [Heart]
+     Routes whose feed has no usable schedule (Cluj's Tranzy-fallback
+     `_NT*` trips ship empty arrival_times — `route.hasSchedule` is
+     false) render with a plain badge and no Calendar icon, since
+     /schedule/route would have nothing to show. The map button
+     stays — the route geometry is always available.
+
+     Icon order (schedule → map) matches VehicleCard in the station
+     view so users see one consistent ordering across the app. -->
 {#snippet routeRow(route: Route)}
   {@const isFav = favoritesStore.has(route.id)}
   {@const type = route.type ?? 'unknown'}
   {@const typeLabel = vehicleTypeLabel(type)}
+  {@const hasSchedule = route.hasSchedule !== false}
+  {@const scheduleHref = hasSchedule ? `/schedule/route/${route.id}_0` : null}
   <Stack direction="row" spacing={1} align="center" class="px-1 py-1 rounded-md hover:bg-[color:var(--color-border)]/30">
-    <RouteBadge {route} size="medium" class="min-w-14" />
+    {#if scheduleHref}
+      <a
+        href={scheduleHref}
+        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+        class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
+      >
+        <RouteBadge {route} size="medium" class="min-w-14" />
+      </a>
+    {:else}
+      <RouteBadge {route} size="medium" class="min-w-14" />
+    {/if}
     <Typography variant="body2" class="flex-1 truncate">
       <span style={`color:${route.color}`} class="font-semibold">{typeLabel}</span>
-      <span class="text-[color:var(--color-fg-muted)]">{route.shortName}</span>
     </Typography>
+    {#if scheduleHref}
+      <a
+        href={scheduleHref}
+        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+        title="Open route schedule"
+        class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
+      >
+        <Calendar size={18} />
+      </a>
+    {/if}
     <a
       href={`/map/route/${route.id}_0`}
       aria-label={`Open map for ${typeLabel.toLowerCase()} ${route.shortName}`}
@@ -118,14 +139,6 @@
       class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
     >
       <MapIcon size={18} />
-    </a>
-    <a
-      href={`/schedule/route/${route.id}_0`}
-      aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
-      title="Open route schedule"
-      class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
-    >
-      <Calendar size={18} />
     </a>
     <IconButton
       aria-label={`${isFav ? 'Unfavorite' : 'Favorite'} ${typeLabel.toLowerCase()} ${route.shortName}`}
@@ -178,15 +191,6 @@
                 {#each presentTypes as t (t)}
                   <TypeBadge type={t} color={colorByType.get(t)} active={typeFilter === t} onclick={() => toggleType(t)} />
                 {/each}
-                {#if typeFilter !== null}
-                  <button
-                    type="button"
-                    class="text-xs underline text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)]"
-                    onclick={() => (typeFilter = null)}
-                  >
-                    Clear filter
-                  </button>
-                {/if}
               </Stack>
             </Stack>
           </CardContent>

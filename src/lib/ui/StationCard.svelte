@@ -17,6 +17,7 @@
     MapPin, type Icon as LucideIcon,
   } from 'lucide-svelte';
   import type { Route, Station, Vehicle } from '$lib/domain/types';
+  import { compareRouteShortName } from '$lib/domain/types';
   import {
     BUCKET_ORDER, bucketLabel, etaUrgency, type ArrivalBucket,
   } from '$lib/domain/buckets';
@@ -132,17 +133,11 @@
       for (const r of rows) map.set(r.vehicle.route.id, r.vehicle.route);
     }
     const favs = favoriteRouteIds;
-    const byShortName = (a: Route, b: Route): number => {
-      const an = Number(a.shortName);
-      const bn = Number(b.shortName);
-      if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
-      return a.shortName.localeCompare(b.shortName);
-    };
     return Array.from(map.values()).sort((a, b) => {
       const aFav = favs?.has(a.id) ?? false;
       const bFav = favs?.has(b.id) ?? false;
       if (aFav !== bFav) return aFav ? -1 : 1;
-      return byShortName(a, b);
+      return compareRouteShortName(a.shortName, b.shortName);
     });
   });
 
@@ -282,8 +277,14 @@
                        the same route which already exposes the same
                        schedule, map, and stops list). All three of
                        schedule, map, and stops-expansion gate off
-                       this — same predicate, one name. -->
+                       this — same predicate, one name.
+                       The schedule link additionally requires the
+                       route to have a usable schedule (false for
+                       Cluj's Tranzy-fallback `_NT*` trips, where
+                       arrival_time is empty — see route-colors.js
+                       in neary-gtfs + routesWithSchedule.ts). -->
                   {@const actionable = hasTripId && phase !== 'later'}
+                  {@const hasSchedule = vehicle.route.hasSchedule !== false}
                   {@const stopsEligible = getUpcomingStops != null
                     && actionable
                     && !vehicle.schedule?.isLastStop}
@@ -291,7 +292,7 @@
                     <VehicleCard
                       {vehicle}
                       urgency={etaUrgency(group.bucket, vehicle.eta?.minutes ?? 0)}
-                      scheduleHref={actionable ? `/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}` : undefined}
+                      scheduleHref={actionable && hasSchedule ? `/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}` : undefined}
                       mapHref={actionable
                         ? `/map/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}${vehicle.schedule?.tripId ? `/${encodeURIComponent(vehicle.schedule.tripId)}` : ''}?from=${station.id}`
                         : undefined}
@@ -299,7 +300,18 @@
                       stopsExpanded={expandedVehicleId === vehicle.id || loadingVehicleId === vehicle.id}
                     />
                     {#if stopsEligible}
-                      <Collapsible in={expandedVehicleId === vehicle.id}>
+                      <!-- reduced=true: skip Collapsible's
+                           `grid-template-rows: 0fr → 1fr` height
+                           animation. It triggers full layout +
+                           paint of every child each frame; with
+                           30+ stop rows inside, Safari profiling
+                           showed ~50ms paint per frame sustained
+                           for ~200ms (verified 2026-06-30,
+                           localhost-recording.json). The stops
+                           are async-fetched anyway, so the user
+                           already sees a brief loading state —
+                           the slide adds little, costs a lot. -->
+                      <Collapsible in={expandedVehicleId === vehicle.id} reduced>
                         {#if vehicleStops != null && expandedVehicleId === vehicle.id}
                           <div class="rounded-md border border-[color:var(--color-border)]/60 bg-[color:var(--color-surface-raised,var(--color-surface))] overflow-hidden">
                             <TripStopList stops={vehicleStops} class="py-1" />

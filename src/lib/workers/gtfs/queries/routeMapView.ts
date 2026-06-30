@@ -18,6 +18,7 @@ import { vehicleTypeFromGtfs } from '$lib/domain/types';
 import { activeServicesOn } from '../activeServices';
 import { shapeCache } from '../shapeCache';
 import { selectAll } from '../sqlHelpers';
+import { getRoutesWithSchedule } from './routesWithSchedule';
 
 export function getRouteMapView(
   db: Database,
@@ -43,12 +44,14 @@ export function getRouteMapView(
   );
   if (routeRows.length === 0) return null;
   const r = routeRows[0];
+  const withSchedule = getRoutesWithSchedule(db);
   const route = {
     id: String(r.route_id),
     shortName: r.route_short_name,
     color: r.route_color ? `#${r.route_color}` : '#F3513C',
     textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
     type: vehicleTypeFromGtfs(r.route_type),
+    hasSchedule: withSchedule.has(String(r.route_id)),
   };
 
   // 1) Active trips on (route, direction). Origin departure within

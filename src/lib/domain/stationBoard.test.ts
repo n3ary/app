@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyGpsEta,
   assembleStationBoard,
+  bucketLiveBoardMemo,
   capStationBoard,
   DEFAULT_CONTEXT_BUCKET_CAP,
   mergeReconciledIntoStationBoard,
@@ -774,5 +775,47 @@ describe('mergeReconciledIntoStationBoard', () => {
     });
     const orphan = out.find((v) => v.kind === 'gps-only');
     expect(orphan?.dropOffOnly).toBe(true);
+  });
+});
+
+describe('bucketLiveBoardMemo', () => {
+  const stop = { id: 1, name: 'A', lat: 46.77, lon: 23.62 };
+  const vehicles: Vehicle[] = [];
+  const prefs = { showDropOffOnly: false, hideScheduleOnly: false, hideDeparted: false } as never;
+  const baseInputs = {
+    vehicles, stop, prefs,
+    nowMs: 1_750_000_000_000, timezone: 'Europe/Bucharest',
+  } as const;
+
+  it('returns the same reference on repeated calls with identical inputs', () => {
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo(baseInputs);
+    expect(b).toBe(a); // cache hit returns the exact same array
+  });
+
+  it('returns a different reference when a primitive input changes', () => {
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo({ ...baseInputs, nowMs: baseInputs.nowMs + 1 });
+    expect(b).not.toBe(a);
+  });
+
+  it('returns a different reference when the vehicles array reference changes', () => {
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo({ ...baseInputs, vehicles: [...vehicles] });
+    expect(b).not.toBe(a);
+  });
+
+  it('caches independently per stop reference', () => {
+    const stopA = { ...stop, id: 1 };
+    const stopB = { ...stop, id: 2 };
+    const a1 = bucketLiveBoardMemo({ ...baseInputs, stop: stopA });
+    const b1 = bucketLiveBoardMemo({ ...baseInputs, stop: stopB });
+    // Different stops, different cache slots — each one returns its own
+    // reference, and a re-call still hits the per-stop cache.
+    const a2 = bucketLiveBoardMemo({ ...baseInputs, stop: stopA });
+    const b2 = bucketLiveBoardMemo({ ...baseInputs, stop: stopB });
+    expect(a2).toBe(a1);
+    expect(b2).toBe(b1);
+    expect(a1).not.toBe(b1);
   });
 });

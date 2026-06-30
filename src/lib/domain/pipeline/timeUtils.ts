@@ -2,6 +2,8 @@
  * Time utilities shared by pipeline stages. Pure functions.
  */
 
+import { appLocale } from '../../i18n/locale';
+
 /** Convert a GTFS time string "HH:MM:SS" (24h+ allowed for past-midnight
  *  trips) to minutes since midnight. Returns NaN on garbage. */
 export function timeToMinutes(t: string): number {
@@ -34,42 +36,113 @@ export function localMinSinceMidnight(d: Date): number {
  * clock is. Built on Intl.DateTimeFormat so it works in workers.
  */
 export function dateKeyInTz(nowMs: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(nowMs);
+  const sec = Math.floor(nowMs / 1000);
+  if (dateKeyCache && dateKeyCache.sec === sec && dateKeyCache.tz === timeZone) {
+    return dateKeyCache.value;
+  }
+  const parts = dateKeyFormatter(timeZone).formatToParts(sec * 1000);
   const y = parts.find((p) => p.type === 'year')?.value ?? '';
   const m = parts.find((p) => p.type === 'month')?.value ?? '';
   const d = parts.find((p) => p.type === 'day')?.value ?? '';
-  return `${y}${m}${d}`;
+  const value = `${y}${m}${d}`;
+  dateKeyCache = { sec, tz: timeZone, value };
+  return value;
 }
 
 /** Minutes since midnight in the given IANA timezone for a Unix ms timestamp. */
 export function minSinceMidnightInTz(nowMs: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(nowMs);
+  const sec = Math.floor(nowMs / 1000);
+  if (minSinceMidnightCache && minSinceMidnightCache.sec === sec && minSinceMidnightCache.tz === timeZone) {
+    return minSinceMidnightCache.value;
+  }
+  const parts = minSinceMidnightFormatter(timeZone).formatToParts(sec * 1000);
   const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
   const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
-  return h * 60 + m;
+  const value = h * 60 + m;
+  minSinceMidnightCache = { sec, tz: timeZone, value };
+  return value;
 }
 
 /** Day-of-week in the given IANA timezone for a Unix ms timestamp.
- *  Returns 0..6 with 0 = Sunday — same convention as `Date.getDay()`. */
+ *  Returns 0..6 with 0 = Sunday — same convention as `Date.getDay()`.
+ *
+ *  Computed from the numeric (y, m, d) parts returned by the date
+ *  formatter rather than the localised weekday string, so the
+ *  output is locale-independent (no `.format()` string parsing). */
 export function dayOfWeekInTz(nowMs: number, timeZone: string): number {
-  const wd = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    weekday: 'short',
-  }).format(nowMs);
-  // Intl returns 'Sun' | 'Mon' | … in the en-US locale.
-  const idx = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(wd);
-  return idx >= 0 ? idx : 0;
+  const sec = Math.floor(nowMs / 1000);
+  if (dayOfWeekCache && dayOfWeekCache.sec === sec && dayOfWeekCache.tz === timeZone) {
+    return dayOfWeekCache.value;
+  }
+  const parts = dateKeyFormatter(timeZone).formatToParts(sec * 1000);
+  const y = Number(parts.find((p) => p.type === 'year')?.value ?? 0);
+  const m = Number(parts.find((p) => p.type === 'month')?.value ?? 0);
+  const d = Number(parts.find((p) => p.type === 'day')?.value ?? 0);
+  // Build a UTC date from the local (y, m, d) and read its weekday.
+  // The UTC anchor is intentional — we don't want a system-tz offset
+  // to bump the day-of-week reading by ±1 across DST or odd locales.
+  const value = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  dayOfWeekCache = { sec, tz: timeZone, value };
+  return value;
 }
+
+// === Intl.DateTimeFormat caching ==========================================
+// Hot-path optimisation. `new Intl.DateTimeFormat(...)` is expensive
+// (~0.5–2 ms per construction on Safari/V8); `formatToParts()` on a cached
+// instance is O(µs). Pre-fix profiling (2026-06-30) saw
+// `minSinceMidnightInTz` at 5113 ms self-time across one ~6 s recording —
+// `pickWalkKmh` in predictPosition.ts calls it inside the GPS
+// dead-reckoning loop, once per GPS-only vehicle per reactive cycle.
+//
+// Two layers:
+//   1. Formatter cache keyed by timeZone — one Intl instance per (function, tz).
+//   2. Single-entry result cache keyed by (Math.floor(nowMs/1000), timeZone).
+//      All three outputs (date key, minute-since-midnight, day-of-week) are
+//      coarser than 1 s, so rounding nowMs to the second never changes the
+//      result but lets unrelated callers that computed `Date.now()` a few
+//      milliseconds apart still hit the cache.
+//
+// Locale: `appLocale()` is read once per construction (cache is per-tz,
+// not per-(locale, tz) — locale changes mid-session are a no-op until
+// the worker / page reloads, which is fine since `navigator.language`
+// doesn't change at runtime). `numberingSystem: 'latn'` forces Latin
+// digits so `Number(part.value)` round-trips on every locale.
+
+const dateKeyFormatters = new Map<string, Intl.DateTimeFormat>();
+function dateKeyFormatter(tz: string): Intl.DateTimeFormat {
+  let f = dateKeyFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat(appLocale(), {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      numberingSystem: 'latn',
+    });
+    dateKeyFormatters.set(tz, f);
+  }
+  return f;
+}
+
+const minSinceMidnightFormatters = new Map<string, Intl.DateTimeFormat>();
+function minSinceMidnightFormatter(tz: string): Intl.DateTimeFormat {
+  let f = minSinceMidnightFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat(appLocale(), {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      numberingSystem: 'latn',
+    });
+    minSinceMidnightFormatters.set(tz, f);
+  }
+  return f;
+}
+
+let dateKeyCache: { sec: number; tz: string; value: string } | null = null;
+let minSinceMidnightCache: { sec: number; tz: string; value: number } | null = null;
+let dayOfWeekCache: { sec: number; tz: string; value: number } | null = null;
 
 /** A day-window query against the GTFS schedule: which calendar day,
  *  what cutoff (minutes since local midnight), how far ahead to look. */

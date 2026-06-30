@@ -38,6 +38,17 @@ export interface Route {
    *  populate it still typecheck — callers must tolerate undefined
    *  and fall back to 'unknown'. */
   type?: VehicleType;
+  /** True when the feed has at least one trip on this route with at
+   *  least one usable `stop_times.arrival_time` — i.e. the schedule
+   *  view has something to show. Undefined when the projection layer
+   *  didn't populate it; UI consumers should treat undefined as
+   *  true (schedule available) for backwards compatibility. The
+   *  canonical "no schedule" case is Cluj's Tranzy-fallback `_NT*`
+   *  trips: the rows exist in trips.txt but every stop_time row
+   *  ships with empty arrival_time, so a /schedule/route view would
+   *  render an empty board. UI gates schedule buttons on this flag
+   *  to avoid dead links. */
+  hasSchedule?: boolean;
 }
 
 /** A station / stop as the UI sees it. */
@@ -326,4 +337,40 @@ export function formatRelativeMin(deltaMin: number): string {
  *  without combing through views. */
 export function isNightRoute(route: Route): boolean {
   return /n$/i.test(route.shortName);
+}
+
+/** Natural-sort comparator for route short-names. Splits each name into
+ *  alternating digit and non-digit runs and compares run-by-run:
+ *  numeric runs compare as numbers, non-numeric runs compare lexically.
+ *  Gives intuitive ordering for transit short-names that mix digits and
+ *  suffixes — `1, 7, 14, 24B, 25, 25N, 29, 29S, 42, 52, 52B, 52L, TE1, TE7`.
+ *
+ *  Previously this was a two-branch comparator (numeric when both
+ *  names parsed as numbers, lexical otherwise) which produced a
+ *  non-transitive ordering when one name was purely numeric and
+ *  another wasn't (e.g. compare(14, 24B), compare(24B, 7), and
+ *  compare(14, 7) disagreed), so JS sort returned arbitrary output. */
+const PURE_DIGITS = /^\d+$/;
+const NATURAL_RUN = /(\d+|\D+)/g;
+
+export function compareRouteShortName(a: string, b: string): number {
+  if (a === b) return 0;
+  // Fast path: both pure-digit names (the majority of transit feeds).
+  // Avoids the regex tokenisation + array allocation below for the
+  // common case. Cluj's catalog has ~120 of 168 routes hit this path.
+  if (PURE_DIGITS.test(a) && PURE_DIGITS.test(b)) return Number(a) - Number(b);
+  const ap = a.match(NATURAL_RUN) ?? [a];
+  const bp = b.match(NATURAL_RUN) ?? [b];
+  const n = Math.min(ap.length, bp.length);
+  for (let i = 0; i < n; i++) {
+    const an = Number(ap[i]);
+    const bn = Number(bp[i]);
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      if (an !== bn) return an - bn;
+    } else {
+      const c = ap[i].localeCompare(bp[i]);
+      if (c !== 0) return c;
+    }
+  }
+  return ap.length - bp.length;
 }

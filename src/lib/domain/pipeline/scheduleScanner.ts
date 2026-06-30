@@ -88,6 +88,16 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
     const departureMin = timeToMinutes(r.departure_time);
     const tripEndMin = timeToMinutes(r.trip_end_time);
 
+    // Skip rows whose timing data isn't parseable. This happens for
+    // upstream trips that exist in trips.txt but ship without per-
+    // stop arrival/departure times — Cluj's Tranzy-fallback trips
+    // (trip_id `..._NT001`, `..._NT002`, ...) are the canonical
+    // example. Without a real time we can't compute an ETA, and the
+    // downstream pipeline would emit `NaN min` into the UI. Drop
+    // them here — by definition there's no scheduled departure to
+    // surface on a station board.
+    if (!Number.isFinite(arrivalMin)) continue;
+
     // Inclusion rule:
     //   * future arrivals up to `windowMinutes` ahead, OR
     //   * past arrivals whose trip hasn't yet reached its terminus (so the
@@ -106,6 +116,11 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       shortName: r.route_short_name,
       color: r.route_color ? `#${r.route_color}` : '#F3513C',
       textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
+      // The NaN-arrival skip above guarantees every emitted row's trip
+      // has a usable arrival_time, so by definition this route has a
+      // schedule the /schedule/route view can render. Set explicitly
+      // so consumers don't have to fall through `?? true`.
+      hasSchedule: true,
     };
     const type: VehicleType = vehicleTypeFromGtfs(r.route_type);
     const schedule: ScheduledRun = {
