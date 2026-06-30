@@ -101,8 +101,6 @@
   let error = $state<string | null>(null);
   // Last departed trip on today's tab: non-expandable separator row shown above upcoming trips.
   let lastDepartedTrip = $state<ScheduleTrip | null>(null);
-  // Guard kept for back-compat but auto-expand is intentionally disabled — trips start collapsed.
-  let todayAutoExpanded = $state(true);
   // Whether the today list is expanded past the initial visible window.
   let todayListExpanded = $state(false);
   // Max upcoming trips shown before the "show more" button appears.

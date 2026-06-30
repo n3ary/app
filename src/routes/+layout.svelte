@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import '$lib/styles/app.css';
+  import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page, updated } from '$app/state';
   import { Heart, MapPin, Settings } from 'lucide-svelte';
@@ -93,10 +94,16 @@
     if (key === lastBoundFeedKey) return;
     lastBoundFeedKey = key;
     const repo = getGtfsRepo();
-    statusBus.push({
-      id: 'gtfs-bind',
-      kind: 'loading',
-      message: `Loading schedule for ${feed.name}…`,
+    // statusBus.push reads `entries` (findIndex for dedupe), so calls
+    // from inside a $effect must be wrapped in untrack to avoid
+    // effect_update_depth loops. Matches the pattern at
+    // routes/+page.svelte for the gps-pending push.
+    untrack(() => {
+      statusBus.push({
+        id: 'gtfs-bind',
+        kind: 'loading',
+        message: `Loading schedule for ${feed.name}…`,
+      });
     });
     repo
       .setFeed($state.snapshot(feed) as typeof feed)
@@ -107,18 +114,22 @@
         // the main-thread store to receive every tick. Idempotent across
         // feed switches.
         reconciledVehiclesStore.bind();
-        statusBus.push({
-          id: 'gtfs-bind',
-          kind: 'success',
-          message: 'Schedule ready.',
+        untrack(() => {
+          statusBus.push({
+            id: 'gtfs-bind',
+            kind: 'success',
+            message: 'Schedule ready.',
+          });
         });
       })
       .catch((e: Error) => {
-        statusBus.push({
-          id: 'gtfs-bind',
-          kind: 'error',
-          message: e?.message ?? 'Failed to load schedule.',
-          ttlMs: 0,
+        untrack(() => {
+          statusBus.push({
+            id: 'gtfs-bind',
+            kind: 'error',
+            message: e?.message ?? 'Failed to load schedule.',
+            ttlMs: 0,
+          });
         });
         // Roll back the binding tracker so the user can retry by re-selecting.
         lastBoundFeedKey = null;
@@ -202,15 +213,24 @@
     const fetchAdvanced = nowFetch != null && nowFetch !== pendingRefreshSnapMs;
     const errorChanged = nowError !== pendingRefreshSnapError;
     if (!fetchAdvanced && !errorChanged) return;
+    // untrack: statusBus.push reads `entries` for dedupe; without
+    // wrapping, the push would add it as a dep and re-fire this
+    // effect, looping until effect_update_depth. clearPendingRefresh()
+    // below would normally break the cycle, but untrack makes the
+    // safety explicit. See routes/+page.svelte for the matching pattern.
     if (nowError && !fetchAdvanced) {
-      statusBus.push({ id: REFRESH_ID, kind: 'error', message: `Refresh failed: ${nowError}` });
+      untrack(() => {
+        statusBus.push({ id: REFRESH_ID, kind: 'error', message: `Refresh failed: ${nowError}` });
+      });
     } else {
       const stats = reconciledVehiclesStore.stats;
       const count = stats ? stats.matched + stats.live : 0;
-      statusBus.push({
-        id: REFRESH_ID,
-        kind: 'success',
-        message: count > 0 ? `Updated — ${count} live vehicles` : 'Updated — no live vehicles',
+      untrack(() => {
+        statusBus.push({
+          id: REFRESH_ID,
+          kind: 'success',
+          message: count > 0 ? `Updated — ${count} live vehicles` : 'Updated — no live vehicles',
+        });
       });
     }
     clearPendingRefresh();
