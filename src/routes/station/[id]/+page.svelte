@@ -108,6 +108,27 @@
       }
     })();
   });
+
+  // Single owner of the assembled board. Mirrors the pattern in
+  // routes/+page.svelte: heavy pipeline runs once per dependency
+  // change behind a $derived.by; template just consumes the result.
+  const assembled = $derived.by(() => {
+    if (!board) return null;
+    return {
+      rows: assembleLiveBoardMemo({
+        vehicles: board.vehicles,
+        stop: board.stop,
+        reconciledVehicles: reconciledVehiclesStore.vehicles,
+        shapes,
+        stopDistancesByTrip,
+        prefs: userPrefs,
+        nowMs,
+        timezone: feedTimezone,
+        routeFilterId: routeFilter,
+      }),
+      allRoutes: routesFromVehicles(board.vehicles),
+    };
+  });
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -144,21 +165,10 @@
       </CardContent>
     </Card>
   {:else}
-    {@const rows = assembleLiveBoardMemo({
-      vehicles: board.vehicles,
-      stop: board.stop,
-      reconciledVehicles: reconciledVehiclesStore.vehicles,
-      shapes,
-      stopDistancesByTrip,
-      prefs: userPrefs,
-      nowMs,
-      timezone: feedTimezone,
-      routeFilterId: routeFilter,
-    })}
     <StationCard
       station={{ id: board.stop.id, name: board.stop.name, lat: board.stop.lat, lon: board.stop.lon }}
-      rows={rows}
-      allRoutes={routesFromVehicles(board.vehicles)}
+      rows={assembled?.rows ?? []}
+      allRoutes={assembled?.allRoutes ?? []}
       selectedRouteId={routeFilter}
       onRouteClick={(rid) => (routeFilter = routeFilter === rid ? null : rid)}
       favoriteRouteIds={favoritesStore.routeIds}

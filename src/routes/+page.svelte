@@ -204,6 +204,35 @@
       }
     })();
   });
+
+  // Single owner of the per-board assembly. One `$derived.by` runs
+  // the heavy pipeline (mergeReconciledIntoStationBoard → applyGpsEta
+  // → assembleStationBoard) once per board per dependency change, with
+  // assembleLiveBoardMemo's WeakMap giving per-board reuse when only
+  // one stop's filter changed. Replaces two inline `{@const}` call
+  // sites in the template (count banner + StationCard render) that
+  // previously duplicated the same 8-field input bag.
+  const assembledBoards = $derived.by(() => {
+    if (!boards) return [];
+    return boards.map(({ stop, vehicles }) => ({
+      stop,
+      vehicles,
+      rows: assembleLiveBoardMemo({
+        vehicles,
+        stop,
+        reconciledVehicles: reconciledVehiclesStore.vehicles,
+        shapes,
+        stopDistancesByTrip,
+        prefs: userPrefs,
+        nowMs,
+        timezone: feedTimezone,
+        routeFilterId: routeFilters[stop.id] ?? null,
+      }),
+      allRoutes: routesFromVehicles(vehicles),
+    }));
+  });
+  const rawTotal = $derived(assembledBoards.reduce((n, b) => n + b.vehicles.length, 0));
+  const filteredTotal = $derived(assembledBoards.reduce((n, b) => n + b.rows.length, 0));
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -271,20 +300,6 @@
           </Stack>
         </Box>
       {/if}
-      {@const rawTotal = boards.reduce((n, b) => n + b.vehicles.length, 0)}
-      {@const filteredTotal = boards.reduce(
-        (n, b) => n + assembleLiveBoardMemo({
-          vehicles: b.vehicles,
-          stop: b.stop,
-          reconciledVehicles: reconciledVehiclesStore.vehicles,
-          shapes,
-          stopDistancesByTrip,
-          prefs: userPrefs,
-          nowMs,
-          timezone: feedTimezone,
-        }).length,
-        0,
-      )}
       {#if rawTotal > 0 && filteredTotal === 0}
         <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">
           {rawTotal} vehicles found but all hidden by your filters
@@ -292,24 +307,12 @@
           departed).
         </Box>
       {/if}
-      {#each boards as { stop, vehicles } (stop.id)}
-        {@const routeFilter = routeFilters[stop.id] ?? null}
-        {@const board = assembleLiveBoardMemo({
-          vehicles,
-          stop,
-          reconciledVehicles: reconciledVehiclesStore.vehicles,
-          shapes,
-          stopDistancesByTrip,
-          prefs: userPrefs,
-          nowMs,
-          timezone: feedTimezone,
-          routeFilterId: routeFilter,
-        })}
+      {#each assembledBoards as { stop, vehicles, rows, allRoutes } (stop.id)}
         <StationCard
           station={{ id: stop.id, name: stop.name, distance: stop.distance, lat: stop.lat, lon: stop.lon }}
-          rows={board}
-          allRoutes={routesFromVehicles(vehicles)}
-          selectedRouteId={routeFilter}
+          rows={rows}
+          allRoutes={allRoutes}
+          selectedRouteId={routeFilters[stop.id] ?? null}
           onRouteClick={(rid) => toggleRouteFilter(stop.id, rid)}
           favoriteRouteIds={favoritesStore.routeIds}
           getUpcomingStops={getUpcomingStops}
