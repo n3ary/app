@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyGpsEta,
-  assembleLiveBoard,
-  assembleLiveBoardMemo,
   assembleStationBoard,
+  bucketLiveBoardMemo,
   capStationBoard,
   DEFAULT_CONTEXT_BUCKET_CAP,
   mergeReconciledIntoStationBoard,
@@ -779,51 +778,42 @@ describe('mergeReconciledIntoStationBoard', () => {
   });
 });
 
-describe('assembleLiveBoardMemo', () => {
+describe('bucketLiveBoardMemo', () => {
   const stop = { id: 1, name: 'A', lat: 46.77, lon: 23.62 };
   const vehicles: Vehicle[] = [];
-  const reconciledVehicles: Vehicle[] = [];
-  const shapes = {};
-  const stopDistancesByTrip = {};
   const prefs = { showDropOffOnly: false, hideScheduleOnly: false, hideDeparted: false } as never;
   const baseInputs = {
-    vehicles, stop, reconciledVehicles, shapes, stopDistancesByTrip, prefs,
+    vehicles, stop, prefs,
     nowMs: 1_750_000_000_000, timezone: 'Europe/Bucharest',
   } as const;
 
   it('returns the same reference on repeated calls with identical inputs', () => {
-    const a = assembleLiveBoardMemo(baseInputs);
-    const b = assembleLiveBoardMemo(baseInputs);
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo(baseInputs);
     expect(b).toBe(a); // cache hit returns the exact same array
   });
 
   it('returns a different reference when a primitive input changes', () => {
-    const a = assembleLiveBoardMemo(baseInputs);
-    const b = assembleLiveBoardMemo({ ...baseInputs, nowMs: baseInputs.nowMs + 1 });
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo({ ...baseInputs, nowMs: baseInputs.nowMs + 1 });
     expect(b).not.toBe(a);
   });
 
-  it('returns a different reference when a referenced collection changes', () => {
-    const a = assembleLiveBoardMemo(baseInputs);
-    const b = assembleLiveBoardMemo({ ...baseInputs, reconciledVehicles: [...reconciledVehicles] });
+  it('returns a different reference when the vehicles array reference changes', () => {
+    const a = bucketLiveBoardMemo(baseInputs);
+    const b = bucketLiveBoardMemo({ ...baseInputs, vehicles: [...vehicles] });
     expect(b).not.toBe(a);
-  });
-
-  it('produces the same result as the non-memoised function', () => {
-    const direct = assembleLiveBoard(baseInputs);
-    const memo = assembleLiveBoardMemo({ ...baseInputs, stop: { ...stop } });
-    expect(memo).toEqual(direct);
   });
 
   it('caches independently per stop reference', () => {
     const stopA = { ...stop, id: 1 };
     const stopB = { ...stop, id: 2 };
-    const a1 = assembleLiveBoardMemo({ ...baseInputs, stop: stopA });
-    const b1 = assembleLiveBoardMemo({ ...baseInputs, stop: stopB });
+    const a1 = bucketLiveBoardMemo({ ...baseInputs, stop: stopA });
+    const b1 = bucketLiveBoardMemo({ ...baseInputs, stop: stopB });
     // Different stops, different cache slots — each one returns its own
     // reference, and a re-call still hits the per-stop cache.
-    const a2 = assembleLiveBoardMemo({ ...baseInputs, stop: stopA });
-    const b2 = assembleLiveBoardMemo({ ...baseInputs, stop: stopB });
+    const a2 = bucketLiveBoardMemo({ ...baseInputs, stop: stopA });
+    const b2 = bucketLiveBoardMemo({ ...baseInputs, stop: stopB });
     expect(a2).toBe(a1);
     expect(b2).toBe(b1);
     expect(a1).not.toBe(b1);

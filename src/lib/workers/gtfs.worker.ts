@@ -34,6 +34,7 @@ import {
 import { ensureDb, state } from './gtfs/state';
 
 import { getActiveTrips } from './gtfs/queries/activeTrips';
+import { assembleLiveBoards } from './gtfs/queries/assembleLiveBoards';
 import { getRouteDirectionEndpoints } from './gtfs/queries/routeEndpoints';
 import { getRouteMapView } from './gtfs/queries/routeMapView';
 import { getRouteSchedule } from './gtfs/queries/routeSchedule';
@@ -212,6 +213,15 @@ const api: GtfsRepo = {
   },
   async getReconciledSnapshot() {
     return getReconciledSnapshot();
+  },
+  async assembleLiveBoards(boards, nowMs) {
+    return assembleLiveBoards(
+      await ensureDb(),
+      state.currentFeedTz ?? 'UTC',
+      getReconciledSnapshot(),
+      boards,
+      nowMs,
+    );
   },
 };
 

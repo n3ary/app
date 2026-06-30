@@ -301,6 +301,28 @@ export interface GtfsRepo {
 
   /** Latest broadcast payload, or null before the first successful poll. */
   getReconciledSnapshot(): Promise<ReconciledSnapshot | null>;
+
+  /**
+   * Worker-side merge + GPS-ETA per board. Takes per-stop scheduled
+   * vehicle lists, returns the same set with `kind` upgraded by the
+   * latest reconciled snapshot and ETAs adjusted by the GPS-derived
+   * predictor. Shapes + stop distances stay inside the worker — main
+   * never has to fetch or cache them.
+   *
+   * Call once per visible-boards change OR once per reconciled-snapshot
+   * tick (the reconciled snapshot the worker uses is the latest it
+   * has broadcast, so main + worker agree on freshness). Main keeps
+   * the result keyed by stopId and feeds it into `bucketLiveBoardMemo`
+   * for filtering + bucketing.
+   */
+  assembleLiveBoards(
+    boards: Array<{
+      stopId: number;
+      stop: { lat?: number; lon?: number };
+      vehicles: Vehicle[];
+    }>,
+    nowMs: number,
+  ): Promise<Array<{ stopId: number; vehicles: Vehicle[] }>>;
 }
 
 /** One trip on a route+direction, surfaced by getRouteSchedule. */

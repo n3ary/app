@@ -216,45 +216,30 @@ export function capStationBoard(rows: BoardRow[], maxRows = DEFAULT_CONTEXT_BUCK
  *   4. Bucket + filter + sort + cap (assembleStationBoard).
  */
 
-export interface AssembleLiveBoardInputs {
-  /** Per-stop scheduled vehicles, all `kind: 'scheduled'`, with
-   *  scheduled arrival/departure at THIS stop (from the worker's
-   *  `getStationBoard` / `getStationArrivals`). */
-  vehicles: Vehicle[];
+/** Inputs for `assembleLiveVehicles` — the worker-side half of the
+ *  live pipeline (merge + GPS-ETA). The main-side bucket step lives
+ *  separately so route filter + prefs (UI state) don't have to cross
+ *  the worker IPC boundary. */
+export interface AssembleLiveVehiclesInputs {
+  /** Per-stop scheduled vehicles, all `kind: 'scheduled'`. */
+  perStopVehicles: Vehicle[];
   stop: { lat?: number; lon?: number };
-  /** Globally-reconciled vehicles from the worker's reconciliation
-   *  broadcast (`reconciledVehiclesStore.vehicles`). A mix of
-   *  `kind: 'scheduled' | 'tracked' | 'verified' | 'gps-only'`. The
-   *  merge joins these into the per-stop board by `tripId`. */
+  /** Globally-reconciled vehicles from the worker's broadcast. */
   reconciledVehicles: Vehicle[];
-  /** Route shapes keyed by trip_id, from the worker (cached).
-   *  Trips without a shape entry just keep their scheduled ETA.
-   *  Pass `{}` to disable GPS-derived ETA altogether. */
   shapes: Record<string, Polyline>;
-  /** Per-trip ordered stop distances (`shape_dist_traveled`) used by
-   *  the per-segment + dwell ETA walk. Trips missing from this record
-   *  fall back to single-segment ETA. */
   stopDistancesByTrip?: Record<string, number[]>;
-  prefs: BoardPrefs;
   nowMs: number;
-  /** Feed's IANA timezone, e.g. 'Europe/Bucharest'. Used uniformly by
-   *  the merge orphan ETA seed and bucketer for every minute-since-
-   *  midnight comparison. Must match the timezone of the static GTFS
-   *  feed that produced `vehicles`. */
   timezone: string;
-  /** Optional view-only route filter from the StationCard badge row.
-   *  Applied as the very first pipeline stage so it scopes the rest. */
-  routeFilterId?: string | null;
 }
 
-export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
-  const scoped =
-    input.routeFilterId != null
-      ? input.vehicles.filter((v) => v.route.id === input.routeFilterId)
-      : input.vehicles;
+/** Merge + GPS-ETA — the heavy half of the live pipeline. Runs inside
+ *  the worker (via `repo.assembleLiveBoards`) so shape polylines and
+ *  stop-distance arrays never cross the IPC boundary. Pure function;
+ *  exported for the worker query and for direct unit testing. */
+export function assembleLiveVehicles(input: AssembleLiveVehiclesInputs): Vehicle[] {
   const nowMin = minSinceMidnightInTz(input.nowMs, input.timezone);
   const merged = mergeReconciledIntoStationBoard({
-    perStopVehicles: scoped,
+    perStopVehicles: input.perStopVehicles,
     reconciledVehicles: input.reconciledVehicles,
     nowMin,
   });
@@ -263,55 +248,42 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
   // (route, direction) share their shape_id in every feed we've seen,
   // so any scheduled sibling's polyline projects an orphan onto the
   // correct route geometry.
-  const shapesByRouteDir = buildShapesByRouteDir(scoped, input.shapes);
-  const withGpsEta = applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
+  const shapesByRouteDir = buildShapesByRouteDir(input.perStopVehicles, input.shapes);
+  return applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
     nowMs: input.nowMs,
     timezone: input.timezone,
     stopDistancesByTrip: input.stopDistancesByTrip ?? {},
   });
-  return assembleStationBoard(withGpsEta, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
-/**
- * Memoised wrapper around `assembleLiveBoard` keyed on `input.stop`.
- *
- * Same output as the bare function; returns a cached `BoardRow[]`
- * when every input is reference-equal (primitives `===`-equal) to
- * the previous call for the same stop.
- *
- * Why: the Stations page re-evaluates this for every visible board on
- * every reactive tick, and currently calls it TWICE per board per
- * render (once for the `filteredTotal` empty-state count, once for
- * the actual render). Chrome trace 2026-06-30 attributed 6635 ms of
- * pure self-time to `applyGpsEta` (which is the bulk of this
- * function) inside a ~6 s recording — the long pole on the main
- * thread after the timezone-helper + shape-cache fixes landed.
- *
- * Cache is a WeakMap keyed on `input.stop`. The stop reference is
- * stable across reactive re-renders within a single fetch cycle,
- * so most ticks hit. On a fresh fetch (new stop objects) every key
- * misses once — correct — and the old keys are GC'd automatically.
- *
- * Inputs compared by reference:
- *   vehicles, reconciledVehicles, shapes, stopDistancesByTrip, prefs
- * By value:
- *   nowMs, timezone, routeFilterId
- *
- * Anything not on either list is a bug in the cache check.
- */
-const assembleLiveBoardCache = new WeakMap<object, {
-  inputs: AssembleLiveBoardInputs;
+/** Inputs for `bucketLiveBoardMemo` — the main-side half of the live
+ *  pipeline. Vehicles are already merged + GPS-ETA-adjusted by the
+ *  worker (`repo.assembleLiveBoards`); main only filters by route and
+ *  buckets/caps for display. */
+export interface BucketLiveBoardInputs {
+  /** Per-stop vehicles, already through `assembleLiveVehicles` in the
+   *  worker — `kind` is final and ETA is GPS-adjusted where applicable. */
+  vehicles: Vehicle[];
+  stop: { lat?: number; lon?: number };
+  prefs: BoardPrefs;
+  nowMs: number;
+  timezone: string;
+  routeFilterId?: string | null;
+}
+
+const bucketLiveBoardCache = new WeakMap<object, {
+  inputs: BucketLiveBoardInputs;
   result: BoardRow[];
 }>();
 
-export function assembleLiveBoardMemo(input: AssembleLiveBoardInputs): BoardRow[] {
-  const cached = assembleLiveBoardCache.get(input.stop);
+/** Memoised main-side bucketing for vehicles already assembled by the
+ *  worker. Replaces `assembleLiveBoardMemo` once the worker owns the
+ *  shape / GPS-ETA half of the pipeline. */
+export function bucketLiveBoardMemo(input: BucketLiveBoardInputs): BoardRow[] {
+  const cached = bucketLiveBoardCache.get(input.stop);
   if (
     cached &&
     cached.inputs.vehicles === input.vehicles &&
-    cached.inputs.reconciledVehicles === input.reconciledVehicles &&
-    cached.inputs.shapes === input.shapes &&
-    cached.inputs.stopDistancesByTrip === input.stopDistancesByTrip &&
     cached.inputs.prefs === input.prefs &&
     cached.inputs.nowMs === input.nowMs &&
     cached.inputs.timezone === input.timezone &&
@@ -319,8 +291,11 @@ export function assembleLiveBoardMemo(input: AssembleLiveBoardInputs): BoardRow[
   ) {
     return cached.result;
   }
-  const result = assembleLiveBoard(input);
-  assembleLiveBoardCache.set(input.stop, { inputs: input, result });
+  const scoped = input.routeFilterId != null
+    ? input.vehicles.filter((v) => v.route.id === input.routeFilterId)
+    : input.vehicles;
+  const result = assembleStationBoard(scoped, input.stop, input.prefs, input.nowMs, input.timezone);
+  bucketLiveBoardCache.set(input.stop, { inputs: input, result });
   return result;
 }
 

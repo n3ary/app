@@ -2,29 +2,29 @@
 // nearby stations) and /station/[id]/+page.svelte (URL-id single
 // station). The two pages have identical "render a list of assembled
 // station boards" needs but different selection mechanisms — this
-// module owns the shared half: page state for boards, the shape /
-// stop-distance cache, the union-based shape sync $effect, and the
-// per-board $derived.by that runs the assemble pipeline once.
+// module owns the shared half: page state for boards, the per-tick
+// worker call that produces GPS-adjusted vehicles per stop, and the
+// per-board $derived.by that buckets the result for display.
 //
 // The caller (page) owns selection — it calls setBoards() from its own
 // $effect with whatever boards came back from its query. The caller
 // also owns route-filter state (since /'s is per-stop and /station's
 // is single) and passes a getter via routeFilterFor.
 //
-// Standard Svelte 5 composable pattern: the runes inside this factory
-// register with the calling component's lifecycle because the factory
-// is invoked from a component's <script> at init.
+// Architecture note: the heavy merge + GPS-ETA half of the pipeline
+// runs worker-side now (`repo.assembleLiveBoards`), so shape polylines
+// and stop-distance arrays never cross the IPC boundary. Main thread
+// receives Vehicle[] per stop with `kind` and ETA already finalised
+// and only does the final filter + bucket via `bucketLiveBoardMemo`.
 
 import { untrack } from 'svelte';
 import { getGtfsRepo } from '$lib/data/gtfs/repo';
 import type { StopWithDistance } from '$lib/data/gtfs/types';
-import { syncTripShapeCache } from '$lib/data/gtfs/tripShapeCache';
 import {
-  assembleLiveBoardMemo,
+  bucketLiveBoardMemo,
   routesFromVehicles,
   type BoardRow,
 } from '$lib/domain/stationBoard';
-import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
 import type { Route, Vehicle } from '$lib/domain/types';
 import { feedsStore } from '$lib/stores/feedsStore.svelte';
 import { nowTicker } from '$lib/stores/nowTicker.svelte';
@@ -52,47 +52,44 @@ export type StationBoardsController = {
 
 export function createStationBoardsController(opts: {
   /**
-   * Called per-stop during assembly. Read reactive state inside so the
+   * Called per-stop during bucketing. Read reactive state inside so the
    * $derived.by traces it (e.g. `() => routeFilters[stopId] ?? null`).
    */
   routeFilterFor: (stopId: number) => string | null;
 }): StationBoardsController {
   let boards = $state<StationBoardInput[] | null>(null);
-  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
-  let stopDistancesByTrip = $state<Record<string, number[]>>({});
+  // Per-stop vehicles after worker-side merge + GPS-ETA. Keyed by
+  // stop.id. Empty record before the first worker call resolves.
+  let livePerStop = $state<Record<number, Vehicle[]>>({});
 
-  // Shape sync — the single owner of `shapes` / `stopDistancesByTrip`.
-  // Reacts to either a boards change or new live observations; computes
-  // the union of (scheduled trip_ids on visible boards) + (gps-only
-  // orphan trip_ids on visible routes); diff-fetches via the shared
-  // cache helper. Reads of prev cache go through untrack so the effect
-  // cannot depend on its own writes (the helper's reference-equality
-  // no-op handles the steady state, this is the belt-and-braces).
-  // See git log 5f368df + a32bd9f for the bug-class this avoids.
+  // Worker-side assembly. Reacts to either a boards change or new
+  // reconciled snapshot (the worker uses the latest snapshot it has
+  // broadcast, so main + worker agree on freshness). The async IIFE's
+  // write to `livePerStop` cannot retrigger the effect because we
+  // never read it here.
   $effect(() => {
-    if (!boards) return;
-    const visibleRouteIds = new Set<string>();
-    const tripIds = new Set<string>();
-    for (const b of boards) {
-      for (const v of b.vehicles) visibleRouteIds.add(v.route.id);
-      for (const tid of tripIdsFromVehicles(b.vehicles)) tripIds.add(tid);
+    if (!boards || boards.length === 0) {
+      if (Object.keys(untrack(() => livePerStop)).length > 0) livePerStop = {};
+      return;
     }
-    for (const v of reconciledVehiclesStore.vehicles) {
-      if (v.kind !== 'gps-only') continue;
-      if (v.tripId == null) continue;
-      if (!visibleRouteIds.has(v.route.id)) continue;
-      tripIds.add(v.tripId);
-    }
+    // Touch reconciledVehiclesStore so the effect re-fires per live tick.
+    void reconciledVehiclesStore.vehicles;
+    const nowMs = Date.now();
+    const inputs = boards.map((b) => ({
+      stopId: b.stop.id,
+      stop: { lat: b.stop.lat, lon: b.stop.lon },
+      vehicles: b.vehicles,
+    }));
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const prev = untrack(() => ({ shapes, stopDistances: stopDistancesByTrip }));
-        const next = await syncTripShapeCache(repo, tripIds, prev);
-        if (next.shapes !== prev.shapes) shapes = next.shapes;
-        if (next.stopDistances !== prev.stopDistances) stopDistancesByTrip = next.stopDistances;
+        const out = await repo.assembleLiveBoards(inputs, nowMs);
+        const next: Record<number, Vehicle[]> = {};
+        for (const { stopId, vehicles } of out) next[stopId] = vehicles;
+        livePerStop = next;
       } catch {
-        // Soft-fail: ETAs fall back to the sibling shape via
-        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
+        // Soft-fail: keep last good livePerStop. Scheduled vehicles
+        // still render via the fallback in the derived below.
       }
     })();
   });
@@ -102,22 +99,24 @@ export function createStationBoardsController(opts: {
 
   const assembled = $derived.by<AssembledStationBoard[]>(() => {
     if (!boards) return [];
-    return boards.map(({ stop, vehicles }) => ({
-      stop,
-      vehicles,
-      rows: assembleLiveBoardMemo({
-        vehicles,
+    return boards.map(({ stop, vehicles }) => {
+      // Until the first worker response lands for this stop, fall
+      // back to scheduled-only vehicles so the card paints something.
+      const live = livePerStop[stop.id] ?? vehicles;
+      return {
         stop,
-        reconciledVehicles: reconciledVehiclesStore.vehicles,
-        shapes,
-        stopDistancesByTrip,
-        prefs: userPrefs,
-        nowMs,
-        timezone: feedTimezone,
-        routeFilterId: opts.routeFilterFor(stop.id),
-      }),
-      allRoutes: routesFromVehicles(vehicles),
-    }));
+        vehicles,
+        rows: bucketLiveBoardMemo({
+          vehicles: live,
+          stop,
+          prefs: userPrefs,
+          nowMs,
+          timezone: feedTimezone,
+          routeFilterId: opts.routeFilterFor(stop.id),
+        }),
+        allRoutes: routesFromVehicles(vehicles),
+      };
+    });
   });
   const rawTotal = $derived(assembled.reduce((n, b) => n + b.vehicles.length, 0));
   const filteredTotal = $derived(assembled.reduce((n, b) => n + b.rows.length, 0));
