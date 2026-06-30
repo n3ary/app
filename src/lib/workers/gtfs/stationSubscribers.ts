@@ -48,18 +48,23 @@ export async function subscribeStationBoards(
   // we have. Without this the page would wait up to one poll interval
   // (15 s) for its first live data.
   void pushOne(sub, getReconciledSnapshot());
-  return {
-    unsubscribe: Comlink.proxy(() => {
+  // Proxy the whole handle so Comlink keeps it as a remote reference.
+  // Per-method Comlink.proxy() doesn't help here — Comlink only checks
+  // the proxy marker at the TOP of the returned value, so a plain
+  // object containing proxied functions trips structuredClone with
+  // "Unserializable return value".
+  return Comlink.proxy({
+    unsubscribe: () => {
       subscribers.delete(key);
-    }),
-    setStopIds: Comlink.proxy((next) => {
+    },
+    setStopIds: (next: readonly number[]) => {
       sub.stopIds = new Set(next);
       // Push right away so a stop-set change (user moved, refresh
       // changed selection, navigation) is reflected without waiting
       // for the next tick.
       void pushOne(sub, getReconciledSnapshot());
-    }),
-  };
+    },
+  });
 }
 
 /** Called from `tickLive` after a successful reconcile + broadcast.
