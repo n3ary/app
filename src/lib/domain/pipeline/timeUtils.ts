@@ -2,6 +2,8 @@
  * Time utilities shared by pipeline stages. Pure functions.
  */
 
+import { appLocale } from '../../i18n/locale';
+
 /** Convert a GTFS time string "HH:MM:SS" (24h+ allowed for past-midnight
  *  trips) to minutes since midnight. Returns NaN on garbage. */
 export function timeToMinutes(t: string): number {
@@ -62,16 +64,24 @@ export function minSinceMidnightInTz(nowMs: number, timeZone: string): number {
 }
 
 /** Day-of-week in the given IANA timezone for a Unix ms timestamp.
- *  Returns 0..6 with 0 = Sunday — same convention as `Date.getDay()`. */
+ *  Returns 0..6 with 0 = Sunday — same convention as `Date.getDay()`.
+ *
+ *  Computed from the numeric (y, m, d) parts returned by the date
+ *  formatter rather than the localised weekday string, so the
+ *  output is locale-independent (no `.format()` string parsing). */
 export function dayOfWeekInTz(nowMs: number, timeZone: string): number {
   const sec = Math.floor(nowMs / 1000);
   if (dayOfWeekCache && dayOfWeekCache.sec === sec && dayOfWeekCache.tz === timeZone) {
     return dayOfWeekCache.value;
   }
-  const wd = dayOfWeekFormatter(timeZone).format(sec * 1000);
-  // Intl returns 'Sun' | 'Mon' | … in the en-US locale.
-  const idx = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(wd);
-  const value = idx >= 0 ? idx : 0;
+  const parts = dateKeyFormatter(timeZone).formatToParts(sec * 1000);
+  const y = Number(parts.find((p) => p.type === 'year')?.value ?? 0);
+  const m = Number(parts.find((p) => p.type === 'month')?.value ?? 0);
+  const d = Number(parts.find((p) => p.type === 'day')?.value ?? 0);
+  // Build a UTC date from the local (y, m, d) and read its weekday.
+  // The UTC anchor is intentional — we don't want a system-tz offset
+  // to bump the day-of-week reading by ±1 across DST or odd locales.
+  const value = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   dayOfWeekCache = { sec, tz: timeZone, value };
   return value;
 }
@@ -91,16 +101,23 @@ export function dayOfWeekInTz(nowMs: number, timeZone: string): number {
 //      coarser than 1 s, so rounding nowMs to the second never changes the
 //      result but lets unrelated callers that computed `Date.now()` a few
 //      milliseconds apart still hit the cache.
+//
+// Locale: `appLocale()` is read once per construction (cache is per-tz,
+// not per-(locale, tz) — locale changes mid-session are a no-op until
+// the worker / page reloads, which is fine since `navigator.language`
+// doesn't change at runtime). `numberingSystem: 'latn'` forces Latin
+// digits so `Number(part.value)` round-trips on every locale.
 
 const dateKeyFormatters = new Map<string, Intl.DateTimeFormat>();
 function dateKeyFormatter(tz: string): Intl.DateTimeFormat {
   let f = dateKeyFormatters.get(tz);
   if (!f) {
-    f = new Intl.DateTimeFormat('en-CA', {
+    f = new Intl.DateTimeFormat(appLocale(), {
       timeZone: tz,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
+      numberingSystem: 'latn',
     });
     dateKeyFormatters.set(tz, f);
   }
@@ -111,23 +128,14 @@ const minSinceMidnightFormatters = new Map<string, Intl.DateTimeFormat>();
 function minSinceMidnightFormatter(tz: string): Intl.DateTimeFormat {
   let f = minSinceMidnightFormatters.get(tz);
   if (!f) {
-    f = new Intl.DateTimeFormat('en-GB', {
+    f = new Intl.DateTimeFormat(appLocale(), {
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
+      numberingSystem: 'latn',
     });
     minSinceMidnightFormatters.set(tz, f);
-  }
-  return f;
-}
-
-const dayOfWeekFormatters = new Map<string, Intl.DateTimeFormat>();
-function dayOfWeekFormatter(tz: string): Intl.DateTimeFormat {
-  let f = dayOfWeekFormatters.get(tz);
-  if (!f) {
-    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' });
-    dayOfWeekFormatters.set(tz, f);
   }
   return f;
 }

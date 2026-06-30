@@ -4,6 +4,8 @@
  * complex than this file should live in `src/lib/domain/` instead.
  */
 
+import { appLocale } from '../i18n/locale';
+
 /** Bytes → "X KB" / "Y MB" with sensible precision for UI labels.
  *  Returns an empty string for null / undefined / 0 so call sites can
  *  inline it conditionally without their own guards. */
@@ -28,8 +30,9 @@ export function formatBytes(n: number | null | undefined): string {
  *  precise than the date itself, so this hands off rather than
  *  showing both. Time component is dropped once a date is shown
  *  because at that age sub-minute precision isn't useful.
- *  Uses `en-GB` locale to pin DD/MM-style ordering and month
- *  abbreviations across browsers. */
+ *  Uses the app-wide locale (see `$lib/i18n/locale`) so weekday and
+ *  month abbreviations match the user's browser settings — and stay
+ *  consistent with every other Intl-driven output in the app. */
 export function formatWhen(ms: number | null | undefined): string {
   if (ms == null) return '—';
 
@@ -50,7 +53,8 @@ export function formatWhen(ms: number | null | undefined): string {
     (startOfDay(now).getTime() - startOfDay(then).getTime()) / 86_400_000,
   );
 
-  const time = then.toLocaleString('en-GB', {
+  const locale = appLocale();
+  const time = then.toLocaleString(locale, {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -59,13 +63,13 @@ export function formatWhen(ms: number | null | undefined): string {
   if (daysDiff === 0) return `today, ${time}`;
   if (daysDiff === 1) return `yesterday, ${time}`;
   if (daysDiff < 7) {
-    const wd = then.toLocaleString('en-GB', { weekday: 'short' });
+    const wd = then.toLocaleString(locale, { weekday: 'short' });
     return `${wd} ${time}`;
   }
   if (then.getFullYear() === now.getFullYear()) {
-    return then.toLocaleString('en-GB', { day: 'numeric', month: 'short' });
+    return then.toLocaleString(locale, { day: 'numeric', month: 'short' });
   }
-  return then.toLocaleString('en-GB', {
+  return then.toLocaleString(locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

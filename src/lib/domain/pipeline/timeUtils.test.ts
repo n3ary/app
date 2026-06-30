@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import {
   dateKeyInTz,
   dayOfWeekInTz,
   minSinceMidnightInTz,
   timeToMinutes,
 } from './timeUtils';
+import { setAppLocaleForTest } from '../../i18n/locale';
+
+// Pin the app locale so the numeric Intl parts the helpers read
+// always come back as Latin digits with predictable types.
+beforeAll(() => setAppLocaleForTest('en-GB'));
+afterAll(() => setAppLocaleForTest(null));
 
 describe('timeToMinutes', () => {
   it('parses "HH:MM" / "HH:MM:SS" to minutes since midnight', () => {

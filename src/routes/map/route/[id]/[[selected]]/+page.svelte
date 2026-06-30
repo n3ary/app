@@ -38,7 +38,7 @@
     type Route,
     type Vehicle,
   } from '$lib/domain/types';
-  import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
+  import { dateKeyInTz, minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
   import {
     buildTripShapePlan, predictPosition, predictPositionOnShape, predictPositionFromGps,
     type TripShapePlan,
@@ -115,13 +115,11 @@
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const localDate = new Intl.DateTimeFormat('en-CA', {
-          timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-        }).formatToParts(Date.now())
-          .reduce((acc, p) => p.type !== 'literal' ? acc + p.value : acc, '');
+        const nowMs = Date.now();
+        const localDate = dateKeyInTz(nowMs, tz);
         view = await repo.getRouteMapView(
           rid, dir, localDate,
-          minSinceMidnightInTz(Date.now(), tz),
+          minSinceMidnightInTz(nowMs, tz),
           LOOKBACK_MIN, LOOKAHEAD_MIN,
         );
         error = null;
