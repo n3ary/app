@@ -39,6 +39,7 @@ import { getRouteSchedule } from './gtfs/queries/routeSchedule';
 import { getStopsAlongTrip } from './gtfs/queries/routeStops';
 import { getRouteById, getRoutes, getRoutesForStop } from './gtfs/queries/routes';
 import { getNetworks } from './gtfs/queries/networks';
+import { getFeedConfig } from './gtfs/queries/feedConfig';
 import { getStationBoard, getStationBoardsNear } from './gtfs/queries/stationBoards';
 import { getDeparturesFromStop, getOriginRoutesAtStop, getStopsNear } from './gtfs/queries/stops';
 import { getWeeklySchedule } from './gtfs/queries/weeklySchedule';
@@ -94,6 +95,9 @@ const api: GtfsRepo = {
   },
   async getNetworks() {
     return getNetworks(await ensureDb());
+  },
+  async getFeedConfig() {
+    return getFeedConfig(await ensureDb());
   },
   async getRouteById(routeId) {
     return getRouteById(await ensureDb(), routeId);
