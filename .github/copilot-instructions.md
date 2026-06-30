@@ -13,6 +13,9 @@ agent guide is [AGENTS.md](../AGENTS.md) — read that first.
   abstractions.
 - **No comments** unless they explain a non-obvious WHY.
 - **Source of truth = code.** Docs cover what isn't obvious from reading [src/](../src/).
+- **Feed-agnostic.** No `if (feedId === ...)`, no per-agency hacks. GTFS
+  spec violations get fixed in the producer, not here — see
+  [docs/standards/feed-agnostic.md](../docs/standards/feed-agnostic.md).
 
 ## Placement (when adding a doc)
 

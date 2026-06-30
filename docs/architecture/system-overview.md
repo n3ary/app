@@ -82,3 +82,11 @@ Multi-feed lifecycle in the worker: [../specs/multi-feed-data-lifecycle.md](../s
 3. **Vehicle taxonomy is data.** Discriminated union encodes what we know
    about each vehicle's position source — see
    [../concepts/vehicle.md](../concepts/vehicle.md).
+
+## Feed-agnostic by construction
+
+The app consumes GTFS as a contract; it carries no per-feed knowledge.
+Any non-conformance (e.g. `route_desc` duplicating `route_long_name`,
+placeholder route colors, malformed RT payloads) is fixed in the
+producer — neary-gtfs or the upstream source adapter — never patched
+here. Rules: [../standards/feed-agnostic.md](../standards/feed-agnostic.md).

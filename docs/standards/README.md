@@ -6,6 +6,7 @@ Short, enforceable rules. Each doc is < 100 lines.
 |---|---|
 | [core-principles.md](core-principles.md) | Simplicity first, reuse before write, clean architecture |
 | [documentation.md](documentation.md) | Where docs live and how to write them |
+| [feed-agnostic.md](feed-agnostic.md) | No per-feed exceptions; feeds fix non-conformance upstream |
 | [naming.md](naming.md) | Files, directories, code identifiers |
 | [testing.md](testing.md) | Scope, location, size targets |
 | [verification.md](verification.md) | Verify before stating; confidence in answers |

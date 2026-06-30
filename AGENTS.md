@@ -49,6 +49,13 @@ The rules below are how those principles apply to agent behavior in this repo.
   subtle invariant, workaround). Never restate what the code says.
 - Don't add error handling for cases that can't happen — trust internal code.
 
+### Feed-agnostic
+
+Neary is a generic GTFS consumer. No per-feed branches, no per-agency
+workarounds, no city-specific fallbacks. Feeds that ship non-conformant
+data fix themselves upstream (neary-gtfs or the source adapter). Full
+rules: [docs/standards/feed-agnostic.md](docs/standards/feed-agnostic.md).
+
 ### Follow the placement framework
 
 When adding a doc, ask in order — see [docs/standards/documentation.md](docs/standards/documentation.md):
