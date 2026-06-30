@@ -112,8 +112,8 @@ const api: GtfsRepo = {
   // ── Stops ───────────────────────────────────────────────────────────
   async getStopsNear(lat, lon, radiusMeters, limit) {
     return getStopsNear(await ensureDb(), lat, lon, radiusMeters, limit);
-  },  async searchStops(text, anchorLat, anchorLon, limit) {
-    return searchStops(await ensureDb(), text, anchorLat, anchorLon, limit);
+  },  async searchStops(text, anchorLat, anchorLon, limit, sort) {
+    return searchStops(await ensureDb(), text, anchorLat, anchorLon, limit, sort);
   },  async getDeparturesFromStop(stopId, localDate, localMinutesSinceMidnight, windowMinutes) {
     return getDeparturesFromStop(
       await ensureDb(),

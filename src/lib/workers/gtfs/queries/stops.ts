@@ -51,10 +51,18 @@ export function getStopsNear(
     .slice(0, limit);
 }
 
-/** Diacritic-insensitive substring search over stop names, sorted by
- *  distance from an anchor (GPS or feed center). Empty input falls back
- *  to `getStopsNear` with a wide radius so the overlay shows useful
- *  results before the user types.
+/** Diacritic-insensitive substring search over stop names.
+ *
+ *  Two sort modes:
+ *  - `'distance'` (default): sort by distance from `(anchorLat, anchorLon)`.
+ *    Empty `text` falls back to `getStopsNear` with a wide radius so the
+ *    overlay shows useful results before the user types. Used when the
+ *    user has a GPS position.
+ *  - `'name'`: sort alphabetically by `stop_name` (locale-aware). Empty
+ *    `text` returns the alphabetical head of the feed's stops. Used when
+ *    the user has no GPS — distance from the feed centroid carries no
+ *    rider-useful signal, so we don't pretend otherwise. `anchorLat` /
+ *    `anchorLon` are ignored.
  *
  *  We fetch all schedule-bearing stops and filter in JS rather than via
  *  SQL `LIKE`: SQLite's `LIKE` is ASCII-only for case folding so
@@ -69,12 +77,15 @@ export function searchStops(
   anchorLat: number,
   anchorLon: number,
   limit = 25,
+  sort: 'distance' | 'name' = 'distance',
 ): StopWithDistance[] {
   const needle = normalizeForSearch(text);
-  if (!needle) {
-    // Empty input: nearest 25 (wide-enough radius to cover any feed bbox).
+
+  if (sort === 'distance' && !needle) {
+    // Empty input + distance mode: nearest 25 (wide-enough radius to cover any feed bbox).
     return getStopsNear(db, anchorLat, anchorLon, 50_000, limit);
   }
+
   type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
   const candidates = selectAll<Row>(
     db,
@@ -85,8 +96,23 @@ export function searchStops(
      );`,
     [],
   );
-  return candidates
-    .filter((s) => normalizeForSearch(s.stop_name).includes(needle))
+  const matched = needle
+    ? candidates.filter((s) => normalizeForSearch(s.stop_name).includes(needle))
+    : candidates;
+
+  if (sort === 'name') {
+    return matched
+      .map((s) => ({
+        id: s.stop_id,
+        name: s.stop_name,
+        lat: s.stop_lat,
+        lon: s.stop_lon,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, limit);
+  }
+
+  return matched
     .map((s) => ({
       id: s.stop_id,
       name: s.stop_name,

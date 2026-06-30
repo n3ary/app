@@ -86,16 +86,23 @@ export interface GtfsRepo {
   getStopsNear(lat: number, lon: number, radiusMeters: number, limit?: number): Promise<StopWithDistance[]>;
 
   /**
-   * Diacritic-insensitive substring search over stop names, sorted by
-   * distance from an anchor (GPS position or active feed's `center`).
-   * Empty `text` falls back to "nearest 25" so the header search
-   * overlay shows useful results before the user types.
+   * Diacritic-insensitive substring search over stop names.
+   *
+   * `sort: 'distance'` (default) sorts by distance from the anchor
+   * (GPS position or active feed's `center`); empty `text` falls back
+   * to "nearest 25" so the header search overlay shows useful
+   * results before the user types.
+   *
+   * `sort: 'name'` sorts alphabetically; anchor params are ignored.
+   * Used when the user has no GPS — distance from the feed centroid
+   * carries no rider-useful signal.
    */
   searchStops(
     text: string,
     anchorLat: number,
     anchorLon: number,
     limit?: number,
+    sort?: 'distance' | 'name',
   ): Promise<StopWithDistance[]>;
 
   /**

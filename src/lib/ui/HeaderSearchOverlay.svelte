@@ -43,6 +43,13 @@
     const feed = feedsStore.byId(feedsStore.boundFeedId);
     return feed?.center ?? null;
   });
+  // When the user hasn't enabled GPS, distance from the feed centroid
+  // is noise — sort alphabetically and hide the distance column.
+  const hasGps = $derived(locationStore.position != null);
+  const sortMode = $derived<'distance' | 'name'>(hasGps ? 'distance' : 'name');
+  // With name-sort the user is scanning the alphabet, so a larger
+  // page is friendlier than the GPS-sorted "top 25".
+  const resultLimit = $derived(hasGps ? 25 : 100);
 
   // 150 ms debounce on the input so each keystroke doesn't kick off a
   // worker round-trip. Reset when the overlay closes so a re-open starts
@@ -82,12 +89,14 @@
       return;
     }
     const text = debouncedQuery;
+    const limit = resultLimit;
+    const mode = sortMode;
     loading = true;
     errorMsg = null;
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const r = await repo.searchStops(text, a.lat, a.lon, 25);
+        const r = await repo.searchStops(text, a.lat, a.lon, limit, mode);
         results = r;
       } catch (e) {
         errorMsg = e instanceof Error ? e.message : String(e);
@@ -177,9 +186,11 @@
                   >
                     <MapPin size={14} class="shrink-0 text-[color:var(--color-fg-muted)]" />
                     <span class="flex-1 min-w-0 text-sm truncate">{stop.name}</span>
-                    <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
-                      {formatDistance(stop.distance)}
-                    </span>
+                    {#if hasGps}
+                      <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
+                        {formatDistance(stop.distance)}
+                      </span>
+                    {/if}
                   </button>
                 </li>
               {/each}
@@ -188,9 +199,9 @@
         </div>
       </div>
 
-      {#if anchor && !locationStore.position}
+      {#if anchor && !hasGps}
         <Typography variant="caption" class="block text-center text-[color:var(--color-fg-muted)]">
-          Distances are from the feed's center until you enable location.
+          Enable location to sort results by distance.
         </Typography>
       {/if}
     </Bits.Content>
