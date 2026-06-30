@@ -92,36 +92,46 @@
 <!-- One row-renderer shared by both cards so the layout stays identical
      between favorited and other routes. KISS / DRY.
 
-     Layout: [Badge → schedule] [Type] [Schedule] [Map] [Heart]
-     Tapping the badge opens the route's schedule — the dedicated
-     Calendar icon to its right is the same destination, just an
-     easier-to-discover target. Icon order (schedule → map) matches
-     VehicleCard in the station view so users see one consistent
-     ordering across the app. -->
+     Layout: [Badge → schedule (if available)] [Type] [Schedule (if available)] [Map] [Heart]
+     Routes whose feed has no usable schedule (Cluj's Tranzy-fallback
+     `_NT*` trips ship empty arrival_times — `route.hasSchedule` is
+     false) render with a plain badge and no Calendar icon, since
+     /schedule/route would have nothing to show. The map button
+     stays — the route geometry is always available.
+
+     Icon order (schedule → map) matches VehicleCard in the station
+     view so users see one consistent ordering across the app. -->
 {#snippet routeRow(route: Route)}
   {@const isFav = favoritesStore.has(route.id)}
   {@const type = route.type ?? 'unknown'}
   {@const typeLabel = vehicleTypeLabel(type)}
-  {@const scheduleHref = `/schedule/route/${route.id}_0`}
+  {@const hasSchedule = route.hasSchedule !== false}
+  {@const scheduleHref = hasSchedule ? `/schedule/route/${route.id}_0` : null}
   <Stack direction="row" spacing={1} align="center" class="px-1 py-1 rounded-md hover:bg-[color:var(--color-border)]/30">
-    <a
-      href={scheduleHref}
-      aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
-      class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
-    >
+    {#if scheduleHref}
+      <a
+        href={scheduleHref}
+        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+        class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
+      >
+        <RouteBadge {route} size="medium" class="min-w-14" />
+      </a>
+    {:else}
       <RouteBadge {route} size="medium" class="min-w-14" />
-    </a>
+    {/if}
     <Typography variant="body2" class="flex-1 truncate">
       <span style={`color:${route.color}`} class="font-semibold">{typeLabel}</span>
     </Typography>
-    <a
-      href={scheduleHref}
-      aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
-      title="Open route schedule"
-      class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
-    >
-      <Calendar size={18} />
-    </a>
+    {#if scheduleHref}
+      <a
+        href={scheduleHref}
+        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+        title="Open route schedule"
+        class="inline-flex items-center justify-center w-10 h-10 rounded-full text-current hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] transition-colors"
+      >
+        <Calendar size={18} />
+      </a>
+    {/if}
     <a
       href={`/map/route/${route.id}_0`}
       aria-label={`Open map for ${typeLabel.toLowerCase()} ${route.shortName}`}

@@ -8,6 +8,7 @@ import type { Database } from '@sqlite.org/sqlite-wasm';
 import type { Route } from '$lib/domain/types';
 import { vehicleTypeFromGtfs } from '$lib/domain/types';
 import { selectAll } from '../sqlHelpers';
+import { getRoutesWithSchedule } from './routesWithSchedule';
 
 type RouteRow = {
   route_id: string;
@@ -17,40 +18,44 @@ type RouteRow = {
   route_type: number | null;
 };
 
-function rowToRoute(r: RouteRow): Route {
+function rowToRoute(r: RouteRow, withSchedule: Set<string>): Route {
   return {
     id: r.route_id,
     shortName: r.route_short_name,
     color: r.route_color ? `#${r.route_color}` : '#F3513C',
     textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
     type: vehicleTypeFromGtfs(r.route_type),
+    hasSchedule: withSchedule.has(r.route_id),
   };
 }
 
 export function getRoutes(db: Database): Route[] {
+  const withSchedule = getRoutesWithSchedule(db);
   const rows = selectAll<RouteRow>(
     db,
     `SELECT route_id, route_short_name, route_color, route_text_color, route_type
      FROM routes
      ORDER BY CAST(route_short_name AS INTEGER), route_short_name;`,
   );
-  return rows.map(rowToRoute);
+  return rows.map((r) => rowToRoute(r, withSchedule));
 }
 
 export function getRouteById(db: Database, routeId: string): Route | null {
+  const withSchedule = getRoutesWithSchedule(db);
   const rows = selectAll<RouteRow>(
     db,
     `SELECT route_id, route_short_name, route_color, route_text_color, route_type
      FROM routes WHERE route_id = ?;`,
     [routeId],
   );
-  return rows.length === 0 ? null : rowToRoute(rows[0]);
+  return rows.length === 0 ? null : rowToRoute(rows[0], withSchedule);
 }
 
 /** All distinct routes that serve a given stop. Ordered by route
  *  short_name (numeric where possible). Used by the map view's stop
  *  popup. */
 export function getRoutesForStop(db: Database, stopId: number): Route[] {
+  const withSchedule = getRoutesWithSchedule(db);
   const rows = selectAll<RouteRow>(
     db,
     `SELECT DISTINCT r.route_id, r.route_short_name, r.route_color, r.route_text_color, r.route_type
@@ -61,5 +66,5 @@ export function getRoutesForStop(db: Database, stopId: number): Route[] {
      ORDER BY CAST(r.route_short_name AS INTEGER), r.route_short_name;`,
     [stopId],
   );
-  return rows.map(rowToRoute);
+  return rows.map((r) => rowToRoute(r, withSchedule));
 }

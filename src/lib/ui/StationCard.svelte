@@ -277,8 +277,14 @@
                        the same route which already exposes the same
                        schedule, map, and stops list). All three of
                        schedule, map, and stops-expansion gate off
-                       this — same predicate, one name. -->
+                       this — same predicate, one name.
+                       The schedule link additionally requires the
+                       route to have a usable schedule (false for
+                       Cluj's Tranzy-fallback `_NT*` trips, where
+                       arrival_time is empty — see route-colors.js
+                       in neary-gtfs + routesWithSchedule.ts). -->
                   {@const actionable = hasTripId && phase !== 'later'}
+                  {@const hasSchedule = vehicle.route.hasSchedule !== false}
                   {@const stopsEligible = getUpcomingStops != null
                     && actionable
                     && !vehicle.schedule?.isLastStop}
@@ -286,7 +292,7 @@
                     <VehicleCard
                       {vehicle}
                       urgency={etaUrgency(group.bucket, vehicle.eta?.minutes ?? 0)}
-                      scheduleHref={actionable ? `/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}` : undefined}
+                      scheduleHref={actionable && hasSchedule ? `/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}` : undefined}
                       mapHref={actionable
                         ? `/map/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}${vehicle.schedule?.tripId ? `/${encodeURIComponent(vehicle.schedule.tripId)}` : ''}?from=${station.id}`
                         : undefined}

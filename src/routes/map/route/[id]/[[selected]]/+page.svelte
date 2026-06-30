@@ -883,7 +883,13 @@
     const headsignText = m.headsign
       ? `<span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.headsign)}</span>`
       : `<span style="flex:1;"></span>`;
-    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a></div>`;
+    // Routes with no usable schedule (Cluj's Tranzy-fallback `_NT*`
+    // trips: empty arrival_time on every stop_time row) skip the
+    // schedule shortcut — /schedule/route would have nothing to show.
+    const schedLink = view?.route.hasSchedule !== false
+      ? `<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a>`
+      : '';
+    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}${schedLink}</div>`;
     // Shared row template for every line below `topRow`. Three callers:
     // countdown (scheduled-at-origin "in X min"), leftAt (departed
     // bus's wall-clock origin time), arrivingIn (ETA to the rider's
@@ -1120,14 +1126,19 @@
              same control family, but lives in the opposite corner to
              avoid clobbering the cluster while keeping a single
              thumb-reachable destination. Same (route, direction) the
-             page already binds against — no parameter recomputation. -->
-        <div class="neary-map-controls-bottom">
-          {@render mapControl(
-            'Open schedule for this route',
-            calendarIcon,
-            () => goto(`/schedule/route/${routeId}_${direction}`),
-          )}
-        </div>
+             page already binds against — no parameter recomputation.
+             Hidden for routes with no usable schedule (the feed's
+             trips ship empty arrival_times) — /schedule/route would
+             have nothing to show. -->
+        {#if view?.route.hasSchedule !== false}
+          <div class="neary-map-controls-bottom">
+            {@render mapControl(
+              'Open schedule for this route',
+              calendarIcon,
+              () => goto(`/schedule/route/${routeId}_${direction}`),
+            )}
+          </div>
+        {/if}
       </Card>
     </Stack>
   {/if}

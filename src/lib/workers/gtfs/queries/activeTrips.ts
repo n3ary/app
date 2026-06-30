@@ -16,6 +16,7 @@ import { vehicleTypeFromGtfs } from '$lib/domain/types';
 import { dateKeyInTz, minSinceMidnightInTz, timeToMinutes } from '$lib/domain/pipeline/timeUtils';
 import { activeServicesOn } from '../activeServices';
 import { selectAll } from '../sqlHelpers';
+import { getRoutesWithSchedule } from './routesWithSchedule';
 
 export function getActiveTrips(
   db: Database,
@@ -63,6 +64,7 @@ export function getActiveTrips(
 
   const lower = nowMin - lookbackMin;
   const upper = nowMin + lookaheadMin;
+  const withSchedule = getRoutesWithSchedule(db);
   const out: Vehicle[] = [];
   for (const r of rows) {
     const tripStartMin = timeToMinutes(r.trip_start_time);
@@ -77,6 +79,7 @@ export function getActiveTrips(
       color: r.route_color ? `#${r.route_color}` : '#F3513C',
       textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
       type: vehicleTypeFromGtfs(r.route_type),
+      hasSchedule: withSchedule.has(String(r.route_id)),
     };
     out.push({
       kind: 'scheduled',

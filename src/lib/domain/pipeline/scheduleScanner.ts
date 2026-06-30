@@ -116,6 +116,11 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       shortName: r.route_short_name,
       color: r.route_color ? `#${r.route_color}` : '#F3513C',
       textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
+      // The NaN-arrival skip above guarantees every emitted row's trip
+      // has a usable arrival_time, so by definition this route has a
+      // schedule the /schedule/route view can render. Set explicitly
+      // so consumers don't have to fall through `?? true`.
+      hasSchedule: true,
     };
     const type: VehicleType = vehicleTypeFromGtfs(r.route_type);
     const schedule: ScheduledRun = {
