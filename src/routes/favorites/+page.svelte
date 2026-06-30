@@ -97,7 +97,10 @@
     sortRoutes(filteredRoutes.filter((r) => favoritesStore.has(r.id))),
   );
   const otherRoutes = $derived(
-    sortRoutes(filteredRoutes.filter((r) => !favoritesStore.has(r.id))),
+    sortRoutes(filteredRoutes.filter((r) => !favoritesStore.has(r.id) && r.hasSchedule !== false)),
+  );
+  const noScheduleRoutes = $derived(
+    sortRoutes(filteredRoutes.filter((r) => !favoritesStore.has(r.id) && r.hasSchedule === false)),
   );
 
 
@@ -253,27 +256,49 @@
         </Card>
       {/if}
 
-      <Card>
-        <CardContent>
-          <Stack spacing={1}>
-            <Stack spacing={0.5}>
-              <Typography variant="h5">
-                {favRoutes.length > 0 ? 'All other routes' : 'All routes'}
-              </Typography>
-              <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                {favRoutes.length > 0
-                  ? `${otherRoutes.length} more to choose from. Tap the heart to favorite.`
-                  : `${otherRoutes.length} routes available. Tap the heart to favorite.`}
-              </Typography>
+      {#if otherRoutes.length > 0}
+        <Card>
+          <CardContent>
+            <Stack spacing={1}>
+              <Stack spacing={0.5}>
+                <Typography variant="h5">
+                  {favRoutes.length > 0 ? 'All other routes' : 'All routes'}
+                </Typography>
+                <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                  {favRoutes.length > 0
+                    ? `${otherRoutes.length} more to choose from. Tap the heart to favorite.`
+                    : `${otherRoutes.length} routes available. Tap the heart to favorite.`}
+                </Typography>
+              </Stack>
+              <Stack spacing={0.5}>
+                {#each otherRoutes as route (route.id)}
+                  {@render routeRow(route)}
+                {/each}
+              </Stack>
             </Stack>
-            <Stack spacing={0.5}>
-              {#each otherRoutes as route (route.id)}
-                {@render routeRow(route)}
-              {/each}
+          </CardContent>
+        </Card>
+      {/if}
+
+      {#if noScheduleRoutes.length > 0}
+        <Card>
+          <CardContent>
+            <Stack spacing={1}>
+              <Stack spacing={0.5}>
+                <Typography variant="h5">All other routes (no schedule available)</Typography>
+                <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                  {noScheduleRoutes.length} route{noScheduleRoutes.length !== 1 ? 's' : ''} without timetable data. Tap the heart to favorite.
+                </Typography>
+              </Stack>
+              <Stack spacing={0.5}>
+                {#each noScheduleRoutes as route (route.id)}
+                  {@render routeRow(route)}
+                {/each}
+              </Stack>
             </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      {/if}
     </Stack>
   {/if}
 </div>
