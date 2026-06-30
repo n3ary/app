@@ -13,9 +13,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { AlertTriangle, MapPin } from 'lucide-svelte';
+  import { AlertTriangle, Bus, MapPin } from 'lucide-svelte';
   import {
-    Box, Button, Card, CardContent, InfoCard, NoFeedState, Spinner, Stack, StationCard,
+    Box, Button, Card, CardContent, InfoCard, Spinner, Stack, StationCard,
     Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
@@ -29,6 +29,7 @@
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
+  import { searchOverlayStore } from '$lib/stores/searchOverlayStore.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
@@ -168,12 +169,8 @@
     })();
   });
 
-  // Single source of truth for the GPS-required card: when the user
-  // hasn't enabled location (either never opted in, or permission is
-  // denied / unsupported), the page can't show nearby stations. We
-  // render one card in the boards area explaining that, with an
-  // Enable button when opt-in is still possible.
-  const needsLocation = $derived(gpsState === 'not-opted-in' || gpsState === 'unavailable');
+  // Permission-denied vs other-unavailable need different copy in the
+  // location banner, so we expose denied explicitly.
   const denied = $derived(
     gpsState === 'unavailable' && locationStore.permission === 'denied',
   );
@@ -198,122 +195,177 @@
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
-  {#if userPrefs.feedId == null}
-    <NoFeedState
-      message="Neary needs a transit feed to load schedules and routes. Pick one in Settings to get started. The data downloads once and is cached for offline use — no account needed."
-    />
-  {:else if needsLocation}
-    <InfoCard variant="primary" title="Location needed">
-      {#snippet icon()}<MapPin size={16} />{/snippet}
-      {#snippet body()}
-        {#if denied}
-          Location is off in your browser settings, so we can't suggest stations near you.
-          Open your browser's Settings → Site permissions → Location to allow it for this site,
-          then tap <strong>Try again</strong>. You can also pick a station from the
-          search icon in the header.
-        {:else}
-          Neary needs your location to suggest stations near you. We never store it, never
-          send it to a server, and never track you in the background. You can also pick a
-          station from the search icon in the header.
-        {/if}
-      {/snippet}
-      {#snippet actions()}
-        <Button variant="contained" size="small" onclick={() => locationStore.enable()}>
-          {denied ? 'Try again' : 'Enable location'}
-        </Button>
-      {/snippet}
-    </InfoCard>
-  {:else if boardsError}
-    <InfoCard variant="danger" title="Failed to load nearby stations">
-      {#snippet icon()}<AlertTriangle size={16} />{/snippet}
-      {#snippet body()}{boardsError}{/snippet}
-    </InfoCard>
-  {:else if !boards}
-    <Card>
-      <CardContent>
-        <Stack direction="row" spacing={1} align="center">
-          <Spinner size={16} />
-          <Typography variant="caption">
-            {gpsState === 'pending' ? 'Determining your location…' : 'Loading nearby stations…'}
-          </Typography>
-        </Stack>
-      </CardContent>
-    </Card>
-  {:else if boards.length === 0}
-    {@const outsideBbox = activeFeed && userPos
-      ? !isPositionInFeedBbox(userPos, activeFeed)
-      : false}
-    {@const distanceKm = outsideBbox && activeFeed && userPos
-      ? Math.round(distanceToFeedBboxKm(userPos, activeFeed))
-      : 0}
-    {@const suggestion = outsideBbox && nearestFeed && nearestFeed.feed.id !== activeFeed?.id
-      ? nearestFeed
-      : null}
-    {#if outsideBbox && activeFeed}
-      <InfoCard variant="warning" title="Wrong feed for your location">
-        {#snippet icon()}<MapPin size={16} />{/snippet}
+  <Stack spacing={1}>
+
+    <!-- ── Setup banners ─────────────────────────────────────────────
+         Stack what's missing at the top so the user can see all the
+         setup work in one glance. Each banner owns its primary
+         action; the page below it shows nothing until both feed AND
+         GPS are resolved. -->
+
+    {#if userPrefs.feedId == null}
+      <InfoCard variant="primary" title="Select your transit feed">
+        {#snippet icon()}<Bus size={16} />{/snippet}
         {#snippet body()}
-          You're about {distanceKm} km from the <strong>{activeFeed.name}</strong> service area.
-          {#if suggestion}
-            The closest feed we publish is <strong>{suggestion.feed.name}</strong>
-            ({suggestion.distanceKm === 0
-              ? 'covers your location'
-              : `${Math.round(suggestion.distanceKm)} km away`}).
-          {:else}
-            None of the feeds we publish cover your location.
-            Pick one in <a href="/settings" class="underline">Settings</a>.
-          {/if}
+          Neary needs a transit feed to load schedules and routes for your city.
+          Pick one in Settings to get started — the data downloads once and is cached
+          for offline use, no account needed.
         {/snippet}
         {#snippet actions()}
-          {#if suggestion}
-            <Button
-              variant="contained"
-              size="small"
-              onclick={() => switchFeed(suggestion.feed.id)}
-            >
-              Switch to {suggestion.feed.name}
-            </Button>
-            <Button variant="text" size="small" onclick={() => goto('/settings')}>
-              Open Settings
-            </Button>
-          {:else}
-            <Button variant="contained" size="small" onclick={() => goto('/settings')}>
-              Open Settings
-            </Button>
-          {/if}
-        {/snippet}
-      </InfoCard>
-    {:else}
-      <InfoCard title="No nearby stations">
-        {#snippet icon()}<MapPin size={16} />{/snippet}
-        {#snippet body()}
-          No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of your current position.
-          Try moving closer to a transit corridor.
+          <Button variant="contained" size="small" onclick={() => goto('/settings')}>
+            Open Settings
+          </Button>
         {/snippet}
       </InfoCard>
     {/if}
-  {:else}
-    <Stack spacing={1}>
-      {#if boardsController.rawTotal > 0 && boardsController.filteredTotal === 0}
-        <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">
-          {boardsController.rawTotal} vehicles found but all hidden by your filters
-          (check Settings → Display: drop-off-only, schedule-only,
-          departed).
-        </Box>
+
+    {#if gpsState === 'not-opted-in'}
+      <InfoCard variant="primary" title="See stops near you">
+        {#snippet icon()}<MapPin size={16} />{/snippet}
+        {#snippet body()}
+          Allow location access so we can suggest the closest stops automatically.
+          It stays on your device — never sent, stored, or used to track you.
+        {/snippet}
+        {#snippet actions()}
+          <Button variant="contained" size="small" onclick={() => locationStore.enable()}>
+            Enable location
+          </Button>
+        {/snippet}
+      </InfoCard>
+    {:else if denied}
+      <InfoCard title="Location is off">
+        {#snippet icon()}<MapPin size={16} />{/snippet}
+        {#snippet body()}
+          Closest-stop suggestions are turned off because your browser is blocking
+          location for this site. If you change your mind, open
+          Settings → Site permissions → Location to allow it, then tap
+          <strong>Try again</strong>.
+        {/snippet}
+        {#snippet actions()}
+          <Button variant="contained" size="small" onclick={() => locationStore.enable()}>
+            Try again
+          </Button>
+        {/snippet}
+      </InfoCard>
+    {:else if gpsState === 'unavailable'}
+      <InfoCard title="Location not supported">
+        {#snippet icon()}<MapPin size={16} />{/snippet}
+        {#snippet body()}
+          Your browser doesn't expose a geolocation API, so we can't suggest stops
+          near you.
+        {/snippet}
+      </InfoCard>
+    {/if}
+
+    <!-- ── Nearby stations ──────────────────────────────────────────
+         Only renders once both prerequisites (feed AND GPS) are
+         satisfied. Otherwise the banners above carry the page. -->
+
+    {#if userPrefs.feedId != null && gpsState === 'available'}
+      {#if boardsError}
+        <InfoCard variant="danger" title="Failed to load nearby stations">
+          {#snippet icon()}<AlertTriangle size={16} />{/snippet}
+          {#snippet body()}{boardsError}{/snippet}
+        </InfoCard>
+      {:else if !boards}
+        <Card>
+          <CardContent>
+            <Stack direction="row" spacing={1} align="center">
+              <Spinner size={16} />
+              <Typography variant="caption">Loading nearby stations…</Typography>
+            </Stack>
+          </CardContent>
+        </Card>
+      {:else if boards.length === 0}
+        {@const outsideBbox = activeFeed && userPos
+          ? !isPositionInFeedBbox(userPos, activeFeed)
+          : false}
+        {@const distanceKm = outsideBbox && activeFeed && userPos
+          ? Math.round(distanceToFeedBboxKm(userPos, activeFeed))
+          : 0}
+        {@const suggestion = outsideBbox && nearestFeed && nearestFeed.feed.id !== activeFeed?.id
+          ? nearestFeed
+          : null}
+        {#if outsideBbox && activeFeed}
+          <InfoCard variant="warning" title="Wrong feed for your location">
+            {#snippet icon()}<MapPin size={16} />{/snippet}
+            {#snippet body()}
+              You're about {distanceKm} km from the <strong>{activeFeed.name}</strong> service area.
+              {#if suggestion}
+                The closest feed we publish is <strong>{suggestion.feed.name}</strong>
+                ({suggestion.distanceKm === 0
+                  ? 'covers your location'
+                  : `${Math.round(suggestion.distanceKm)} km away`}).
+              {:else}
+                None of the feeds we publish cover your location.
+                Pick one in <a href="/settings" class="underline">Settings</a>.
+              {/if}
+            {/snippet}
+            {#snippet actions()}
+              {#if suggestion}
+                <Button
+                  variant="contained"
+                  size="small"
+                  onclick={() => switchFeed(suggestion.feed.id)}
+                >
+                  Switch to {suggestion.feed.name}
+                </Button>
+                <Button variant="text" size="small" onclick={() => goto('/settings')}>
+                  Open Settings
+                </Button>
+              {:else}
+                <Button variant="contained" size="small" onclick={() => goto('/settings')}>
+                  Open Settings
+                </Button>
+              {/if}
+            {/snippet}
+          </InfoCard>
+        {:else}
+          <InfoCard title="No stops near you">
+            {#snippet icon()}<MapPin size={16} />{/snippet}
+            {#snippet body()}
+              No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of your current position.
+              Try searching for a specific station instead.
+            {/snippet}
+            {#snippet actions()}
+              <Button variant="contained" size="small" onclick={() => searchOverlayStore.open()}>
+                Search stations
+              </Button>
+            {/snippet}
+          </InfoCard>
+        {/if}
+      {:else}
+        {#if boardsController.rawTotal > 0 && boardsController.filteredTotal === 0}
+          <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">
+            {boardsController.rawTotal} vehicles found but all hidden by your filters
+            (check Settings → Display: drop-off-only, schedule-only,
+            departed).
+          </Box>
+        {/if}
+        {#each boardsController.assembled as { stop, vehicles, rows, allRoutes } (stop.id)}
+          <StationCard
+            station={{ id: stop.id, name: stop.name, distance: stop.distance, lat: stop.lat, lon: stop.lon }}
+            rows={rows}
+            allRoutes={allRoutes}
+            selectedRouteId={routeFilters[stop.id] ?? null}
+            onRouteClick={(rid) => toggleRouteFilter(stop.id, rid)}
+            favoriteRouteIds={favoritesStore.routeIds}
+            getUpcomingStops={getUpcomingStops}
+            expanded={expandedStopId === stop.id}
+            ontoggle={() => (expandedStopId = expandedStopId === stop.id ? null : stop.id)}
+          />
+        {/each}
       {/if}
-      {#each boardsController.assembled as { stop, vehicles, rows, allRoutes } (stop.id)}
-        <StationCard
-          station={{ id: stop.id, name: stop.name, distance: stop.distance, lat: stop.lat, lon: stop.lon }}
-          rows={rows}
-          allRoutes={allRoutes}
-          selectedRouteId={routeFilters[stop.id] ?? null}
-          onRouteClick={(rid) => toggleRouteFilter(stop.id, rid)}
-          favoriteRouteIds={favoritesStore.routeIds}
-          getUpcomingStops={getUpcomingStops}
-          expanded={expandedStopId === stop.id}
-          ontoggle={() => (expandedStopId = expandedStopId === stop.id ? null : stop.id)}
-        />
-      {/each}
-    </Stack>
-  {/if}
+    {:else if userPrefs.feedId != null && gpsState === 'pending'}
+      <Card>
+        <CardContent>
+          <Stack direction="row" spacing={1} align="center">
+            <Spinner size={16} />
+            <Typography variant="caption">Determining your location…</Typography>
+          </Stack>
+        </CardContent>
+      </Card>
+    {/if}
+
+  </Stack>
 </div>

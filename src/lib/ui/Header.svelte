@@ -19,6 +19,7 @@
 <script lang="ts">
   import { RefreshCw, Search } from 'lucide-svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
+  import { searchOverlayStore } from '$lib/stores/searchOverlayStore.svelte';
   import HeaderSearchOverlay from './HeaderSearchOverlay.svelte';
   import IconButton from './IconButton.svelte';
   import StatusDot from './StatusDot.svelte';
@@ -35,8 +36,6 @@
   };
 
   let { title, health, onrefresh, refreshing = false, showSearch = false }: Props = $props();
-
-  let searchOpen = $state(false);
 </script>
 
 <header
@@ -59,7 +58,7 @@
   </div>
 
   {#if showSearch}
-    <IconButton size="small" onclick={() => (searchOpen = true)} aria-label="Search stations">
+    <IconButton size="small" onclick={() => searchOverlayStore.open()} aria-label="Search stations">
       <Search size={18} />
     </IconButton>
   {/if}
@@ -71,4 +70,4 @@
   {/if}
 </header>
 
-<HeaderSearchOverlay open={searchOpen} onclose={() => (searchOpen = false)} />
+<HeaderSearchOverlay open={searchOverlayStore.isOpen} onclose={() => searchOverlayStore.close()} />
