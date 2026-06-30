@@ -15,6 +15,7 @@
     formatBytes, formatWhen,
   } from '$lib/ui';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
+  import { locationStore } from '$lib/stores/locationStore.svelte';
   import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
 
   /** localStorage key for tracking when this client first saw the current
@@ -111,6 +112,32 @@
             checked={userPrefs.showDepartedVehicles}
             onchange={(v) => (userPrefs.showDepartedVehicles = v)}
             aria-label="Show recently departed vehicles"
+          />
+        </Stack>
+      </Stack>
+    </CardContent>
+  </Card>
+
+  <!-- ===== Privacy ===== -->
+  <Card>
+    <CardContent>
+      <Stack spacing={2}>
+        <Typography variant="h6">Privacy</Typography>
+
+        <Stack direction="row" align="center" justify="between">
+          <Box class="flex-1 min-w-0">
+            <Typography variant="body2">Use location</Typography>
+            <Typography variant="caption">
+              Sort nearby stations and put real-time arrivals closer to you first.
+              Your position stays on your device — never sent, stored, or used to
+              track you. Turn off any time; declining the browser prompt also
+              turns this off.
+            </Typography>
+          </Box>
+          <Switch
+            checked={userPrefs.gpsOptedIn}
+            onchange={(v) => (v ? locationStore.enable() : locationStore.disable())}
+            aria-label="Use location"
           />
         </Stack>
       </Stack>

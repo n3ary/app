@@ -61,7 +61,18 @@ class LocationStore {
       },
       (err) => {
         this.error = err;
-        if (err.code === err.PERMISSION_DENIED) this.permission = 'denied';
+        if (err.code === err.PERMISSION_DENIED) {
+          this.permission = 'denied';
+          // Revert opt-in so declining the browser prompt isn't a
+          // one-way trip into a stuck red dot. The header reads 'off'
+          // (grey, tap-to-enable) and the home page shows the Enable
+          // banner again -- the user can re-tap whenever they want.
+          // The browser remembers the denial; subsequent enable()
+          // calls only re-prompt if the user clears it in browser
+          // settings.
+          userPrefs.gpsOptedIn = false;
+          this.stop();
+        }
       },
       // Low-accuracy is fine for proximity filtering and saves battery on iOS.
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 30_000 },
@@ -82,6 +93,21 @@ class LocationStore {
   enable(): boolean {
     userPrefs.gpsOptedIn = true;
     return this.start();
+  }
+
+  /**
+   * Explicit opt-out: clear the persistent flag, stop the watch, and
+   * drop any cached position. Called from the Settings "Use location"
+   * toggle so the user can revoke without having to wait for the next
+   * browser prompt and decline it. The browser's own permission record
+   * is untouched (only the OS / browser UI can clear that).
+   */
+  disable(): void {
+    userPrefs.gpsOptedIn = false;
+    this.stop();
+    this.position = null;
+    this.error = null;
+    this.lastUpdated = null;
   }
 
   stop(): void {
