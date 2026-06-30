@@ -326,7 +326,7 @@
         feedConfig: feedConfigStore.speedConfig,
         vehicleDirectionId: opts.directionId === -1 ? undefined : opts.directionId,
         dwellStopDistAlongM: opts.dwellStopDistAlongM ?? undefined,
-        dwellSecondsPerStop: 20,
+        dwellSecondsPerStop: feedConfigStore.dwellSec,
         ctx: {
           feedConfig: feedConfigStore.speedConfig,
           timezone: tz,

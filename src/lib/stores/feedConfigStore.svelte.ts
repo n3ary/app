@@ -16,6 +16,7 @@ import { feedsStore } from './feedsStore.svelte';
 function createFeedConfigStore() {
   let speedConfig = $state<FeedSpeedConfig>(DEFAULT_FEED_SPEED_CONFIG);
   let todProfile = $state<TodProfile>(DEFAULT_TOD_PROFILE);
+  let dwellSec = $state<number>(20);
 
   $effect.root(() => {
     $effect(() => {
@@ -39,9 +40,11 @@ function createFeedConfigStore() {
               peak_windows: cfg.timing.peak_windows,
               night_window: cfg.timing.night_window,
             };
+            dwellSec = cfg.timing.dwell_sec ?? 20;
           } else {
             speedConfig = DEFAULT_FEED_SPEED_CONFIG;
             todProfile = DEFAULT_TOD_PROFILE;
+            dwellSec = 20;
           }
         });
     });
@@ -50,6 +53,7 @@ function createFeedConfigStore() {
   return {
     get speedConfig() { return speedConfig; },
     get todProfile() { return todProfile; },
+    get dwellSec() { return dwellSec; },
   };
 }
 
