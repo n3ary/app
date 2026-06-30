@@ -61,12 +61,12 @@ export function createStationBoardsController(opts: {
    * Called per-stop during bucketing. Read reactive state inside so the
    * $derived.by traces it (e.g. `() => routeFilters[stopId] ?? null`).
    */
-  routeFilterFor: (stopId: number) => string | null;
+  routeFilterFor: (stopId: string) => string | null;
 }): StationBoardsController {
   let boards = $state<StationBoardInput[] | null>(null);
   // Per-stop vehicles pushed by the worker subscription. Keyed by
   // stop.id. Empty record before the first push lands.
-  let livePerStop = $state<Record<number, Vehicle[]>>({});
+  let livePerStop = $state<Record<string, Vehicle[]>>({});
 
   // ---- Subscription lifecycle -------------------------------------------
   // One persistent worker subscription per controller instance. We track
@@ -75,7 +75,7 @@ export function createStationBoardsController(opts: {
   // and we always apply the latest stop-set after registration completes.
   let subscription: StationBoardsSubscription | null = null;
   let subscribing: Promise<StationBoardsSubscription | null> | null = null;
-  let pendingIds: number[] = [];
+  let pendingIds: string[] = [];
   // Set in the teardown $effect so a subscribe that resolves AFTER the
   // controller is gone doesn't install a worker listener that pushes
   // into stale $state (which surfaces as Comlink "Unserializable return
@@ -83,12 +83,12 @@ export function createStationBoardsController(opts: {
   let disposed = false;
 
   const onPush = (payload: StationBoardPush) => {
-    const next: Record<number, Vehicle[]> = {};
+    const next: Record<string, Vehicle[]> = {};
     for (const { stopId, vehicles } of payload) next[stopId] = vehicles;
     livePerStop = next;
   };
 
-  function applyIds(ids: number[]): void {
+  function applyIds(ids: string[]): void {
     pendingIds = ids;
     if (subscription) {
       subscription.setStopIds(ids);

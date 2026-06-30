@@ -69,7 +69,7 @@
      *  upcoming stops from this station to the end of the trip. The callback
      *  receives the trip id and current stop id; the caller slices the stop
      *  list so the first returned stop is the one after the current station. */
-    getUpcomingStops?: (tripId: string, currentStopId: number) => Promise<ScheduleTripStop[]>;
+    getUpcomingStops?: (tripId: string, currentStopId: string) => Promise<ScheduleTripStop[]>;
     class?: string;
   };
 

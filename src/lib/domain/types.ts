@@ -75,7 +75,12 @@ export interface Network {
 
 /** A station / stop as the UI sees it. */
 export interface Station {
-  id: number;
+  /** GTFS stop_id — a free-form text identifier per the GTFS spec.
+   *  Kept as a string everywhere so feeds with non-numeric ids
+   *  (Bucharest's STB has 'PV1_1950', '147102') round-trip cleanly
+   *  through URLs, comparisons, and set membership without lossy
+   *  numeric coercion. Same convention as Route.id. */
+  id: string;
   name: string;
   /** Distance from the user in meters. Undefined for non-located contexts. */
   distance?: number;

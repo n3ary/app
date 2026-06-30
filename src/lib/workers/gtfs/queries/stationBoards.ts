@@ -18,11 +18,11 @@ import { getStopsNear } from './stops';
 export function getStationBoard(
   db: Database,
   tz: string,
-  stopId: number,
+  stopId: string,
   nowMs: number,
   windowMinutes: number,
 ): { stop: StopWithDistance; vehicles: Vehicle[] } | null {
-  type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
+  type Row = { stop_id: string; stop_name: string; stop_lat: number; stop_lon: number };
   const rows = selectAll<Row>(
     db,
     `SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops WHERE stop_id = ?;`,

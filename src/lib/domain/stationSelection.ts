@@ -45,7 +45,7 @@ export interface StationBoardCandidate<S> {
 /** Minimum shape we need from a `Stop` to run selection. The repo's
  *  StopWithDistance satisfies this. */
 export interface SelectableStop {
-  id: number;
+  id: string;
   distance?: number;
 }
 
@@ -68,7 +68,7 @@ export interface SelectionResult<S extends SelectableStop> {
   boards: StationBoardCandidate<S>[];
   /** Stop id that the view should auto-expand. Always the closest of
    *  whatever `boards` contains; null when boards is empty. */
-  expandedStopId: number | null;
+  expandedStopId: string | null;
 }
 
 export function selectBoardsForView<S extends SelectableStop>(

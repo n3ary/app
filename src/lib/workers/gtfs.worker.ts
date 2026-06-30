@@ -105,7 +105,7 @@ const api: GtfsRepo = {
   async getRouteById(routeId) {
     return getRouteById(await ensureDb(), routeId);
   },
-  async getRoutesForStop(stopId: number) {
+  async getRoutesForStop(stopId: string) {
     return getRoutesForStop(await ensureDb(), stopId);
   },
 
@@ -123,7 +123,7 @@ const api: GtfsRepo = {
       windowMinutes,
     );
   },
-  async getOriginRoutesAtStop(stopId: number) {
+  async getOriginRoutesAtStop(stopId: string) {
     return getOriginRoutesAtStop(await ensureDb(), stopId);
   },
 

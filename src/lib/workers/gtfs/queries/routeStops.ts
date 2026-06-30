@@ -11,7 +11,7 @@ import { selectAll } from '../sqlHelpers';
 
 export function getStopsAlongTrip(db: Database, tripId: string): ScheduleTripStop[] {
   type Row = {
-    stop_id: number;
+    stop_id: string;
     stop_name: string;
     stop_lat: number;
     stop_lon: number;

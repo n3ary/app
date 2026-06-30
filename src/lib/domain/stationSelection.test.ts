@@ -13,7 +13,7 @@ const cfg = {
 };
 
 function stop(id: number, distance: number) {
-  return { id, distance };
+  return { id: String(id), distance };
 }
 function vehicle(route: Route): Vehicle {
   return {
@@ -36,8 +36,8 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: null,
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([1]);
-    expect(res.expandedStopId).toBe(1);
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1']);
+    expect(res.expandedStopId).toBe('1');
   });
 
   it('pairs the 2nd closest when within pairProximityM of the closest', () => {
@@ -50,8 +50,8 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: null,
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([1, 2]);
-    expect(res.expandedStopId).toBe(1); // closest always expanded
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1'); // closest always expanded
   });
 
   it('never returns a 2nd stop that exceeds nearbyRadiusM, even if close to the closest', () => {
@@ -65,7 +65,7 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: null,
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([1]);
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1']);
   });
 
   it('falls back to closest stop with a favorite route when nothing within nearbyRadiusM', () => {
@@ -78,8 +78,8 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: new Set(['99']),
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([2]);
-    expect(res.expandedStopId).toBe(2);
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['2']);
+    expect(res.expandedStopId).toBe('2');
   });
 
   it('wider fallback respects favoriteFallbackRadiusM', () => {
@@ -93,8 +93,8 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: new Set(['99']),
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([1]);
-    expect(res.expandedStopId).toBe(1);
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1']);
+    expect(res.expandedStopId).toBe('1');
   });
 
   it('returns truly empty only when nothing is within favoriteFallbackRadiusM', () => {
@@ -116,7 +116,7 @@ describe('selectBoardsForView', () => {
       config: cfg,
       favoriteRouteIds: null,
     });
-    expect(res.boards.map((b) => b.stop.id)).toEqual([1]);
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1']);
   });
 
   it('returns empty when candidates is empty', () => {

@@ -52,7 +52,7 @@
   }
 
   const demoStation: Station = {
-    id: 4012, name: 'Piața Mihai Viteazul',
+    id: '4012', name: 'Piața Mihai Viteazul',
     distance: 120, lat: 46.7712, lon: 23.6236,
   };
 

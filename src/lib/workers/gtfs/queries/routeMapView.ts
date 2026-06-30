@@ -160,7 +160,7 @@ function loadStopsForTrips(
   if (tripIds.length === 0) return out;
   const tripPh = tripIds.map(() => '?').join(',');
   type Row = {
-    trip_id: string; stop_id: number; stop_name: string;
+    trip_id: string; stop_id: string; stop_name: string;
     stop_lat: number; stop_lon: number;
     arrival_time: string; stop_sequence: number;
     shape_dist_traveled: number | null;

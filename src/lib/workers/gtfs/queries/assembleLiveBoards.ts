@@ -29,13 +29,13 @@ import { getShapesForTrips } from './shapes';
 import { getStopDistancesForTrips } from './routeStops';
 
 export type AssembleLiveBoardsInput = {
-  stopId: number;
+  stopId: string;
   stop: { lat?: number; lon?: number };
   vehicles: Vehicle[];
 };
 
 export type AssembleLiveBoardsResult = {
-  stopId: number;
+  stopId: string;
   vehicles: Vehicle[];
 };
 

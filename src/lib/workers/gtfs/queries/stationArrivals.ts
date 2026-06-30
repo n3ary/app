@@ -17,7 +17,7 @@ import { selectAll } from '../sqlHelpers';
 export function getStationArrivals(
   db: Database,
   tz: string,
-  stopId: number,
+  stopId: string,
   nowMs: number,
   windowMinutes: number,
 ): Vehicle[] {

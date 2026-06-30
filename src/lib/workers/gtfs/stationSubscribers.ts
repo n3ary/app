@@ -31,16 +31,16 @@ import { ensureDb, state } from './state';
 type StationListener = (payload: StationBoardPush) => void;
 
 type StationSub = {
-  stopIds: Set<number>;
+  stopIds: Set<string>;
   cb: StationListener;
 };
 
 const subscribers = new Map<symbol, StationSub>();
 
 export async function subscribeStationBoards(
-  initialStopIds: readonly number[],
+  initialStopIds: readonly string[],
   cb: StationListener,
-): Promise<{ unsubscribe: () => void; setStopIds: (next: readonly number[]) => void }> {
+): Promise<{ unsubscribe: () => void; setStopIds: (next: readonly string[]) => void }> {
   const key = Symbol();
   const sub: StationSub = { stopIds: new Set(initialStopIds), cb };
   subscribers.set(key, sub);
@@ -57,7 +57,7 @@ export async function subscribeStationBoards(
     unsubscribe: () => {
       subscribers.delete(key);
     },
-    setStopIds: (next: readonly number[]) => {
+    setStopIds: (next: readonly string[]) => {
       sub.stopIds = new Set(next);
       // Push right away so a stop-set change (user moved, refresh
       // changed selection, navigation) is reflected without waiting
@@ -92,7 +92,7 @@ async function pushOne(sub: StationSub, snap: ReconciledSnapshot | null): Promis
     // per tick keeps the worker as the source of truth for scheduled
     // data; the queries are indexed and cheap (~ms for ~10 stops).
     const scheduled: Array<{
-      stopId: number;
+      stopId: string;
       stop: { lat?: number; lon?: number };
       vehicles: Vehicle[];
     }> = [];

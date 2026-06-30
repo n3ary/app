@@ -5,7 +5,7 @@ import type { ScheduleTripStop } from './types';
  *  Slicing is done here so no filtering logic leaks into UI components. */
 export async function getUpcomingStops(
   tripId: string,
-  currentStopId: number,
+  currentStopId: string,
 ): Promise<ScheduleTripStop[]> {
   const repo = getGtfsRepo();
   const all = await repo.getStopsAlongTrip(tripId);

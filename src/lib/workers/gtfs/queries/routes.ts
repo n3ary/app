@@ -98,7 +98,7 @@ export function getRouteById(db: Database, routeId: string): Route | null {
 /** All distinct routes that serve a given stop. Ordered by route
  *  short_name (numeric where possible). Used by the map view's stop
  *  popup. */
-export function getRoutesForStop(db: Database, stopId: number): Route[] {
+export function getRoutesForStop(db: Database, stopId: string): Route[] {
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
   const descCol = desc === 'route_desc' ? 'r.route_desc' : 'NULL AS route_desc';

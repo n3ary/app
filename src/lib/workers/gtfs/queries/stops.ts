@@ -23,7 +23,7 @@ export function getStopsNear(
 ): StopWithDistance[] {
   const dLat = radiusMeters / 111_320;
   const dLon = radiusMeters / (111_320 * Math.cos((lat * Math.PI) / 180));
-  type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
+  type Row = { stop_id: string; stop_name: string; stop_lat: number; stop_lon: number };
   // The window-level "service is active right now" check stays in
   // stationArrivals so the nearby list still surfaces stops whose
   // buses have stopped for the night.
@@ -86,7 +86,7 @@ export function searchStops(
     return getStopsNear(db, anchorLat, anchorLon, 50_000, limit);
   }
 
-  type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
+  type Row = { stop_id: string; stop_name: string; stop_lat: number; stop_lon: number };
   const candidates = selectAll<Row>(
     db,
     `SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon
@@ -132,7 +132,7 @@ function normalizeForSearch(s: string): string {
  *  trip's service is active on `localDate`. */
 export function getDeparturesFromStop(
   db: Database,
-  stopId: number,
+  stopId: string,
   localDate: string,
   localMinutesSinceMidnight: number,
   windowMinutes: number,
@@ -199,7 +199,7 @@ export function getDeparturesFromStop(
 /** Route ids for which `stopId` is the first stop (origin) of at
  *  least one trip. Used to show the isStart ▶ marker on route badges
  *  in the station view. */
-export function getOriginRoutesAtStop(db: Database, stopId: number): string[] {
+export function getOriginRoutesAtStop(db: Database, stopId: string): string[] {
   type Row = { route_id: string };
   const rows = selectAll<Row>(
     db,

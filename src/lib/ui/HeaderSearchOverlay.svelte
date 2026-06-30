@@ -106,7 +106,7 @@
     })();
   });
 
-  function selectStop(id: number) {
+  function selectStop(id: string) {
     onclose();
     goto(`/station/${id}`);
   }

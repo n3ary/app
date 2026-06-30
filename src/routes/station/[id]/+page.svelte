@@ -27,8 +27,8 @@
   // the rest of the GTFS service day.
   const ARRIVALS_WINDOW_MIN = DEFAULT_CONFIG.arrivalsWindowMin;
 
-  const stopId = $derived(Number(page.params.id));
-  const stopIdValid = $derived(Number.isFinite(stopId) && stopId > 0);
+  const stopId = $derived(page.params.id ?? '');
+  const stopIdValid = $derived(stopId.length > 0);
 
   let board = $state<StationBoardInput | null>(null);
   let originRouteIds = $state<Set<string>>(new Set());

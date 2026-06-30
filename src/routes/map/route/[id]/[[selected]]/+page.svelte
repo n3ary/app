@@ -66,14 +66,11 @@
   // Origin stop the user came from when they tapped 'map' on a station-card
   // vehicle row. Painted in green on the route so the rider can recognise
   // 'this is the stop I was at'. Null when the URL has no `?from` param
-  // (e.g. arriving via favorites, browser history, deep link). Parsed as
-  // a number because Station.id is numeric in our schema.
-  const fromStopId = $derived.by<number | null>(() => {
-    const v = page.url.searchParams.get('from');
-    if (v == null) return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  });
+  // (e.g. arriving via favorites, browser history, deep link). GTFS
+  // stop_id is a free-form string per spec.
+  const fromStopId = $derived<string | null>(
+    page.url.searchParams.get('from'),
+  );
 
   // Remember the original direction + trip so that swapping twice restores
   // the highlight. Captured once on first arrival; swapping to the other
@@ -143,7 +140,7 @@
 
   // Routes per stop — fetched once when the view payload arrives so
   // the stop popup can show route badges without a per-click async call.
-  let stopRoutes = $state<Map<number, Route[]>>(new Map());
+  let stopRoutes = $state<Map<string, Route[]>>(new Map());
   $effect(() => {
     const stops = view?.stops;
     if (!stops || stops.length === 0) return;
@@ -263,7 +260,7 @@
     // stop, in which case computeArrivingInMin always returns null.
     const fromTarget = ((): { lat: number; lon: number } | null => {
       if (fromStopId == null) return null;
-      const s = curView.stops.find((x) => Number(x.stopId) === fromStopId);
+      const s = curView.stops.find((x) => x.stopId === fromStopId);
       return s ? { lat: s.lat, lon: s.lon } : null;
     })();
     const arrivingTodBucket = clockToBucket(
@@ -422,7 +419,7 @@
           scheduledFromArrivalMin:
             fromStopId == null
               ? null
-              : (t.stops.find((s) => Number(s.stopId) === fromStopId)?.arrivalMin ?? null),
+              : (t.stops.find((s) => s.stopId === fromStopId)?.arrivalMin ?? null),
           dwellStopDistAlongM: stopDistAlongM(t.tripId, t.stops),
         }),
       });
@@ -734,15 +731,9 @@
       // change — the popup, hit target, and trip data are identical.
       const originStopId = fromStopId;
       currentView.stops.forEach((s) => {
-        // Coerce both sides through Number(). The TypeScript types
-        // say `number === number`, but at runtime SQLite-wasm sometimes
-        // surfaces stop_id as a string (the JSON serialisation in the
-        // worker → main thread Comlink hop loses the original numeric
-        // typing for some columns). Number() handles both shapes
-        // uniformly without resorting to '==='. NaN guarded by the
-        // originStopId != null check above (fromStopId is already a
-        // parsed number).
-        const isOrigin = originStopId != null && Number(s.stopId) === originStopId;
+        // Both sides are strings (GTFS stop_id is a free-form text id
+        // per spec, kept as string end-to-end). Direct === compare.
+        const isOrigin = originStopId != null && s.stopId === originStopId;
         const m = Lref.circleMarker([s.lat, s.lon], {
           // Stops are already drawn ON TOP of the route polyline:
           // both live in overlayPane, the polyline is added by this
@@ -999,7 +990,7 @@
       font:600 10px/1.4 ui-sans-serif,system-ui;white-space:nowrap;
     ">${escapeHtml(r.shortName)}</span>`;
   }
-  function stopPopupHtml(stopId: number, name: string, routes: Route[]): string {
+  function stopPopupHtml(stopId: string, name: string, routes: Route[]): string {
     const externalLinkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
     const badgesHtml = routes.length > 0
       ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;">${routes.map(routeBadgeHtml).join('')}</div>`

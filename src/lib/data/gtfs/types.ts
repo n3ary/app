@@ -111,7 +111,7 @@ export interface GtfsRepo {
    * stop_times -> trips -> routes -> calendar.
    */
   getDeparturesFromStop(
-    stopId: number,
+    stopId: string,
     localDate: string,
     localMinutesSinceMidnight: number,
     windowMinutes: number,
@@ -143,7 +143,7 @@ export interface GtfsRepo {
    * getStationBoardsNear instead.
    */
   getStationBoard(
-    stopId: number,
+    stopId: string,
     nowMs: number,
     windowMinutes: number,
   ): Promise<{ stop: StopWithDistance; vehicles: Vehicle[] } | null>;
@@ -211,13 +211,13 @@ export interface GtfsRepo {
    * short_name (same sort as getRoutes). Empty array when the stop has
    * no scheduled service.
    */
-  getRoutesForStop(stopId: number): Promise<Route[]>;
+  getRoutesForStop(stopId: string): Promise<Route[]>;
 
   /**
    * Route ids for which `stopId` is the first stop (origin) of at least one trip.
    * Used to show the isStart ▶ marker on route badges in the station view.
    */
-  getOriginRoutesAtStop(stopId: number): Promise<string[]>;
+  getOriginRoutesAtStop(stopId: string): Promise<string[]>;
 
   /**
    * One round-trip payload for the route-map view: every trip
@@ -281,7 +281,7 @@ export interface GtfsRepo {
    * latest snapshot if one is already available.
    */
   subscribeStationBoards(
-    initialStopIds: readonly number[],
+    initialStopIds: readonly string[],
     cb: (payload: StationBoardPush) => void,
   ): Promise<StationBoardsSubscription>;
 }
@@ -289,7 +289,7 @@ export interface GtfsRepo {
 /** Per-stop assembled vehicles, as pushed by `subscribeStationBoards`.
  *  Stops that don't exist in the feed are silently dropped. */
 export type StationBoardPush = ReadonlyArray<{
-  stopId: number;
+  stopId: string;
   vehicles: Vehicle[];
 }>;
 
@@ -299,7 +299,7 @@ export interface StationBoardsSubscription {
   unsubscribe: () => void;
   /** Replace the stop set. Triggers an immediate push so a stop-set
    *  change is reflected without waiting for the next poll. */
-  setStopIds: (next: readonly number[]) => void;
+  setStopIds: (next: readonly string[]) => void;
 }
 
 /** One trip on a route+direction, surfaced by getRouteSchedule. */
@@ -339,7 +339,7 @@ export interface RouteDirectionEndpoints {
 
 /** One stop on a single trip's stop_times. */
 export interface ScheduleTripStop {
-  stopId: number;
+  stopId: string;
   stopName: string;
   lat: number;
   lon: number;

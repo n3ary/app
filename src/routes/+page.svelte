@@ -82,13 +82,13 @@
 
   let boards = $state<StationBoardInput[] | null>(null);
   let boardsError = $state<string | null>(null);
-  let expandedStopId = $state<number | null>(null);
+  let expandedStopId = $state<string | null>(null);
   // Per-stop route filter — click a route badge on a StationCard to scope
   // its board to that route; click again to clear. Lives in page state
   // (not in a store) because the spec is: temporary, view-only, cleared
   // on view-swap (this component remounts) or refresh (we reset below).
-  let routeFilters = $state<Record<number, string | null>>({});
-  function toggleRouteFilter(stopId: number, routeId: string) {
+  let routeFilters = $state<Record<string, string | null>>({});
+  function toggleRouteFilter(stopId: string, routeId: string) {
     routeFilters[stopId] = routeFilters[stopId] === routeId ? null : routeId;
   }
 
