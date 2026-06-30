@@ -196,6 +196,25 @@
   const coveringFeed = $derived(
     nearestFeed && nearestFeed.distanceKm === 0 ? nearestFeed.feed : null,
   );
+  // True when GPS is on, a feed list is loaded, and NO published feed
+  // covers the user's position. Tells the no-feed banner to soften its
+  // promise (we probably can't help with stops here either).
+  const noFeedCoversUser = $derived(
+    !!userPos && !!feedsStore.feeds && !coveringFeed,
+  );
+  // Pre-emptive "wrong feed for your location" warning: fires whenever
+  // the user has selected a feed but their GPS position falls outside
+  // its bbox. Surfaces earlier than the empty-boards branch because
+  // an outside-bbox query is almost guaranteed to return nothing, and
+  // the empty state alone doesn't explain the cause.
+  const wrongFeedFor = $derived.by(() => {
+    if (!activeFeed || !userPos) return null;
+    if (isPositionInFeedBbox(userPos, activeFeed)) return null;
+    const distanceKm = Math.round(distanceToFeedBboxKm(userPos, activeFeed));
+    const suggestion =
+      nearestFeed && nearestFeed.feed.id !== activeFeed.id ? nearestFeed : null;
+    return { distanceKm, suggestion };
+  });
 
   function switchFeed(id: string) {
     userPrefs.feedId = id;
@@ -219,6 +238,10 @@
             Looks like you're in <strong>{coveringFeed.name}</strong>'s service
             area. Use it with one tap, or pick a different feed in Settings.
             The data downloads once and is cached for offline use.
+          {:else if noFeedCoversUser}
+            None of the transit feeds Neary publishes cover your current
+            location, so nearby stops likely won't be available. You can still
+            pick a feed in Settings to browse routes for another city.
           {:else}
             Neary needs a transit feed to load schedules and routes for your city.
             Pick one in Settings to get started — the data downloads once and is cached
@@ -298,11 +321,49 @@
       </InfoCard>
     {/if}
 
+    {#if wrongFeedFor && activeFeed}
+      <InfoCard variant="warning" title="Wrong feed for your location">
+        {#snippet icon()}<MapPin size={16} />{/snippet}
+        {#snippet body()}
+          Your selected feed <strong>{activeFeed.name}</strong> is about
+          {wrongFeedFor.distanceKm} km away, so nearby stops won't be available.
+          {#if wrongFeedFor.suggestion}
+            <strong>{wrongFeedFor.suggestion.feed.name}</strong> covers your
+            current location — switch with one tap.
+          {:else}
+            None of the feeds we publish cover your current location.
+            You can still browse <strong>{activeFeed.name}</strong>'s routes
+            from the other tabs.
+          {/if}
+        {/snippet}
+        {#snippet actions()}
+          {#if wrongFeedFor.suggestion}
+            {@const suggested = wrongFeedFor.suggestion.feed}
+            <Button
+              variant="contained"
+              size="small"
+              onclick={() => switchFeed(suggested.id)}
+            >
+              Switch to {suggested.name}
+            </Button>
+            <Button variant="text" size="small" onclick={() => goto('/settings')}>
+              Open Settings
+            </Button>
+          {:else}
+            <Button variant="text" size="small" onclick={() => goto('/settings')}>
+              Open Settings
+            </Button>
+          {/if}
+        {/snippet}
+      </InfoCard>
+    {/if}
+
     <!-- ── Nearby stations ──────────────────────────────────────────
          Only renders once both prerequisites (feed AND GPS) are
-         satisfied. Otherwise the banners above carry the page. -->
+         satisfied AND the user is inside the selected feed's bbox.
+         Otherwise the banners above carry the page. -->
 
-    {#if userPrefs.feedId != null && gpsState === 'available'}
+    {#if userPrefs.feedId != null && gpsState === 'available' && !wrongFeedFor}
       {#if boardsError}
         <InfoCard variant="danger" title="Failed to load nearby stations">
           {#snippet icon()}<AlertTriangle size={16} />{/snippet}
@@ -318,63 +379,18 @@
           </CardContent>
         </Card>
       {:else if boards.length === 0}
-        {@const outsideBbox = activeFeed && userPos
-          ? !isPositionInFeedBbox(userPos, activeFeed)
-          : false}
-        {@const distanceKm = outsideBbox && activeFeed && userPos
-          ? Math.round(distanceToFeedBboxKm(userPos, activeFeed))
-          : 0}
-        {@const suggestion = outsideBbox && nearestFeed && nearestFeed.feed.id !== activeFeed?.id
-          ? nearestFeed
-          : null}
-        {#if outsideBbox && activeFeed}
-          <InfoCard variant="warning" title="Wrong feed for your location">
-            {#snippet icon()}<MapPin size={16} />{/snippet}
-            {#snippet body()}
-              You're about {distanceKm} km from the <strong>{activeFeed.name}</strong> service area.
-              {#if suggestion}
-                The closest feed we publish is <strong>{suggestion.feed.name}</strong>
-                ({suggestion.distanceKm === 0
-                  ? 'covers your location'
-                  : `${Math.round(suggestion.distanceKm)} km away`}).
-              {:else}
-                None of the feeds we publish cover your location.
-                Pick one in <a href="/settings" class="underline">Settings</a>.
-              {/if}
-            {/snippet}
-            {#snippet actions()}
-              {#if suggestion}
-                <Button
-                  variant="contained"
-                  size="small"
-                  onclick={() => switchFeed(suggestion.feed.id)}
-                >
-                  Switch to {suggestion.feed.name}
-                </Button>
-                <Button variant="text" size="small" onclick={() => goto('/settings')}>
-                  Open Settings
-                </Button>
-              {:else}
-                <Button variant="contained" size="small" onclick={() => goto('/settings')}>
-                  Open Settings
-                </Button>
-              {/if}
-            {/snippet}
-          </InfoCard>
-        {:else}
-          <InfoCard title="No stops near you">
-            {#snippet icon()}<MapPin size={16} />{/snippet}
-            {#snippet body()}
-              No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of your current position.
-              Try searching for a specific station instead.
-            {/snippet}
-            {#snippet actions()}
-              <Button variant="contained" size="small" onclick={() => searchOverlayStore.open()}>
-                Search stations
-              </Button>
-            {/snippet}
-          </InfoCard>
-        {/if}
+        <InfoCard title="No stops near you">
+          {#snippet icon()}<MapPin size={16} />{/snippet}
+          {#snippet body()}
+            No stops within {DEFAULT_CONFIG.favoriteFallbackRadiusM} m of your current position.
+            Try searching for a specific station instead.
+          {/snippet}
+          {#snippet actions()}
+            <Button variant="contained" size="small" onclick={() => searchOverlayStore.open()}>
+              Search stations
+            </Button>
+          {/snippet}
+        </InfoCard>
       {:else}
         {#if boardsController.rawTotal > 0 && boardsController.filteredTotal === 0}
           <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">
