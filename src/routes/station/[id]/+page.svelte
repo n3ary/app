@@ -16,7 +16,7 @@
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import { syncTripShapeCache } from '$lib/data/gtfs/tripShapeCache';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
-  import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
+  import { assembleLiveBoardMemo, routesFromVehicles } from '$lib/domain/stationBoard';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
   import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
   import type { Vehicle } from '$lib/domain/types';
@@ -157,7 +157,7 @@
       </CardContent>
     </Card>
   {:else}
-    {@const rows = assembleLiveBoard({
+    {@const rows = assembleLiveBoardMemo({
       vehicles: board.vehicles,
       stop: board.stop,
       reconciledVehicles: reconciledVehiclesStore.vehicles,

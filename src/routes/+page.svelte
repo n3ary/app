@@ -18,7 +18,7 @@
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import { syncTripShapeCache } from '$lib/data/gtfs/tripShapeCache';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
-  import { assembleLiveBoard, routesFromVehicles } from '$lib/domain/stationBoard';
+  import { assembleLiveBoardMemo, routesFromVehicles } from '$lib/domain/stationBoard';
   import { selectBoardsForView } from '$lib/domain/stationSelection';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
   import { isPositionInFeedBbox, distanceToFeedBboxKm } from '$lib/domain/feedCoverage';
@@ -278,7 +278,7 @@
       {/if}
       {@const rawTotal = boards.reduce((n, b) => n + b.vehicles.length, 0)}
       {@const filteredTotal = boards.reduce(
-        (n, b) => n + assembleLiveBoard({
+        (n, b) => n + assembleLiveBoardMemo({
           vehicles: b.vehicles,
           stop: b.stop,
           reconciledVehicles: reconciledVehiclesStore.vehicles,
@@ -299,7 +299,7 @@
       {/if}
       {#each boards as { stop, vehicles } (stop.id)}
         {@const routeFilter = routeFilters[stop.id] ?? null}
-        {@const board = assembleLiveBoard({
+        {@const board = assembleLiveBoardMemo({
           vehicles,
           stop,
           reconciledVehicles: reconciledVehiclesStore.vehicles,

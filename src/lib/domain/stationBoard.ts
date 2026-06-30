@@ -272,6 +272,58 @@ export function assembleLiveBoard(input: AssembleLiveBoardInputs): BoardRow[] {
   return assembleStationBoard(withGpsEta, input.stop, input.prefs, input.nowMs, input.timezone);
 }
 
+/**
+ * Memoised wrapper around `assembleLiveBoard` keyed on `input.stop`.
+ *
+ * Same output as the bare function; returns a cached `BoardRow[]`
+ * when every input is reference-equal (primitives `===`-equal) to
+ * the previous call for the same stop.
+ *
+ * Why: the Stations page re-evaluates this for every visible board on
+ * every reactive tick, and currently calls it TWICE per board per
+ * render (once for the `filteredTotal` empty-state count, once for
+ * the actual render). Chrome trace 2026-06-30 attributed 6635 ms of
+ * pure self-time to `applyGpsEta` (which is the bulk of this
+ * function) inside a ~6 s recording — the long pole on the main
+ * thread after the timezone-helper + shape-cache fixes landed.
+ *
+ * Cache is a WeakMap keyed on `input.stop`. The stop reference is
+ * stable across reactive re-renders within a single fetch cycle,
+ * so most ticks hit. On a fresh fetch (new stop objects) every key
+ * misses once — correct — and the old keys are GC'd automatically.
+ *
+ * Inputs compared by reference:
+ *   vehicles, reconciledVehicles, shapes, stopDistancesByTrip, prefs
+ * By value:
+ *   nowMs, timezone, routeFilterId
+ *
+ * Anything not on either list is a bug in the cache check.
+ */
+const assembleLiveBoardCache = new WeakMap<object, {
+  inputs: AssembleLiveBoardInputs;
+  result: BoardRow[];
+}>();
+
+export function assembleLiveBoardMemo(input: AssembleLiveBoardInputs): BoardRow[] {
+  const cached = assembleLiveBoardCache.get(input.stop);
+  if (
+    cached &&
+    cached.inputs.vehicles === input.vehicles &&
+    cached.inputs.reconciledVehicles === input.reconciledVehicles &&
+    cached.inputs.shapes === input.shapes &&
+    cached.inputs.stopDistancesByTrip === input.stopDistancesByTrip &&
+    cached.inputs.prefs === input.prefs &&
+    cached.inputs.nowMs === input.nowMs &&
+    cached.inputs.timezone === input.timezone &&
+    cached.inputs.routeFilterId === input.routeFilterId
+  ) {
+    return cached.result;
+  }
+  const result = assembleLiveBoard(input);
+  assembleLiveBoardCache.set(input.stop, { inputs: input, result });
+  return result;
+}
+
 /* ---------------------------------------------------------------------- *
  * Station-side merge with the worker's reconciled vehicles
  * ---------------------------------------------------------------------- *
