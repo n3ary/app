@@ -75,14 +75,12 @@ class LocationStore {
 
   /**
    * Mark the user as opted in (persists across reloads via userPrefs) and
-   * start the watch. Single entry point for the in-page opt-in banner and
-   * the header's GPS-off dot — they both call this. Idempotent: safe to
-   * call repeatedly. Clears any previous "Not now" dismissal so the
-   * banner won't reappear after a deliberate opt-in.
+   * start the watch. Single entry point for the in-page "Enable location"
+   * button and the header's GPS-off dot — they both call this. Idempotent:
+   * safe to call repeatedly.
    */
   enable(): boolean {
     userPrefs.gpsOptedIn = true;
-    userPrefs.gpsPromptDismissedAt = null;
     return this.start();
   }
 
