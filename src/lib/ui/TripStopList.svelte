@@ -28,7 +28,7 @@
 </script>
 
 <Stack spacing={0.5} class={className}>
-  {#each stops as s, i (s.stopId)}
+  {#each stops as s, i (s.stopSequence)}
     <!-- Whole row navigates to the station view. The trailing
          ExternalLink icon is kept (inside the anchor) so the
          tap-to-open affordance is visually obvious. -->
