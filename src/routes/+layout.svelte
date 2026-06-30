@@ -64,6 +64,15 @@
     }
   });
 
+  // Resume the GPS watch on app start when the user previously opted in.
+  // GPS is strictly opt-in (#110) — the in-page banner / header dot are
+  // the only paths to flip `userPrefs.gpsOptedIn`. We never prompt for
+  // permission without that flag, so a returning user doesn't see the
+  // browser dialog every time they open the app.
+  $effect(() => {
+    if (userPrefs.gpsOptedIn) locationStore.start();
+  });
+
   // Reflect the user's chosen theme on the root element so theme.css overrides
   // pick up immediately. Idempotent — setting the same value is a no-op.
   $effect(() => {
@@ -240,9 +249,8 @@
   // lights up when the worker has a feed bound; Live reflects the
   // worker's reconciliation broadcast (lastFetchMs / error). GPS and
   // Connection are real — see locationStore + connectionStore. The GPS
-  // watch isn't started by the layout itself; the Stations route calls
-  // locationStore.start() on mount so we don't prompt for permission
-  // on routes that don't need it.
+  // watch starts in the resume-effect above when the user has previously
+  // opted in (#110); otherwise the Stations view drives the opt-in flow.
   const health: HeaderHealth = $derived({
     gps: {
       state: locationStore.freshness,
@@ -292,6 +300,7 @@
   {activeNav}
   onnav={(to) => goto(to)}
   onrefresh={startRefresh}
+  showSearch={userPrefs.feedId != null}
 >
   {@render children()}
 </AppLayout>

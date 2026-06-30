@@ -1,4 +1,4 @@
-export type HealthState = 'ok' | 'stale' | 'error' | 'idle';
+export type HealthState = 'ok' | 'stale' | 'error' | 'idle' | 'off';
 
 export interface HeaderHealth {
   gps: { state: HealthState; tooltip?: string };

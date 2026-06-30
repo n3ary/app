@@ -1,18 +1,21 @@
 <!--
   Stations — the default landing route. Until a feed is selected, shows
   an empty state pointing to Settings. With a feed selected, fetches the
-  nearest stops (GPS or default location) and renders a StationCard list
-  with the bucketed arrivals board for each.
+  nearest stops (GPS if the user has opted in, else the active feed's
+  published center) and renders a StationCard list with the bucketed
+  arrivals board for each.
 
-  Side effect: starts the location watch on mount so the header's GPS dot
-  lights up immediately (any other route doesn't need GPS so the prompt
-  doesn't appear until you've at least visited /).
+  GPS is strictly opt-in (#110). The browser permission dialog is never
+  triggered without an explicit user gesture — the in-page banner below
+  is one entry point, the header GPS dot is the other. Returning users
+  who opted in previously have the watch auto-resumed by +layout.
 -->
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { MapPin } from 'lucide-svelte';
   import {
-    Box, Card, CardContent, NoFeedState, Spinner, Stack, StationCard, Typography,
+    Box, Button, Card, CardContent, NoFeedState, Spinner, Stack, StationCard,
+    Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
@@ -28,11 +31,6 @@
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
-  // Demo fallback location when GPS is unavailable / not yet granted:
-  // Piața Mihai Viteazul, central Cluj. Lets the page work in dev /
-  // offline / before the location prompt is accepted.
-  const FALLBACK_LAT = 46.7712;
-  const FALLBACK_LON = 23.6236;
   // Query a single, wide radius that covers BOTH the primary nearby
   // search and the favorite-route fallback. The domain selector then
   // narrows to 1–2 stops per the rules in lib/domain/stationSelection.
@@ -48,27 +46,44 @@
   // overshoot is free.
   const ARRIVALS_WINDOW_MIN = DEFAULT_CONFIG.arrivalsWindowMin;
 
-  onMount(() => locationStore.start());
-
-  // Three-way GPS state: pending (waiting for first fix), available
-  // (we have a position), or unavailable (denied / errored / geolocation
-  // unsupported). The boards-fetch effect gates on this so we never
-  // briefly query the fallback location while GPS is just slow to resolve.
-  type GpsState = 'pending' | 'available' | 'unavailable';
+  // GPS state, four-way:
+  //   not-opted-in — user has never tapped Enable; banner drives opt-in.
+  //   pending      — opted in, watch active, no first fix yet.
+  //   available    — we have a position.
+  //   unavailable  — geolocation unsupported, or permission denied / errored.
+  type GpsState = 'not-opted-in' | 'pending' | 'available' | 'unavailable';
   const gpsState = $derived.by<GpsState>(() => {
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return 'unavailable';
     if (locationStore.position) return 'available';
     if (locationStore.permission === 'denied') return 'unavailable';
     if (locationStore.error && !locationStore.position) return 'unavailable';
+    if (!userPrefs.gpsOptedIn) return 'not-opted-in';
     return 'pending';
   });
 
+  // Active feed for fallback anchor (when GPS isn't available) and for
+  // the bbox-distance hint in the empty state.
+  const activeFeed = $derived(feedsStore.byId(feedsStore.boundFeedId));
+
+  // Fallback anchor when GPS isn't available: the feed's published
+  // bbox centroid (`Feed.center`, populated by neary-gtfs). Boards stay
+  // pinned to this until the user opts in or grants permission.
+  const fallbackAnchor = $derived(activeFeed?.center ?? null);
+
   // Round to 4 decimals so GPS jitter doesn't refire the SQLite query.
   const queryLat = $derived(
-    Math.round((locationStore.position?.coords.latitude ?? FALLBACK_LAT) * 1e4) / 1e4,
+    locationStore.position
+      ? Math.round(locationStore.position.coords.latitude * 1e4) / 1e4
+      : fallbackAnchor
+        ? Math.round(fallbackAnchor.lat * 1e4) / 1e4
+        : null,
   );
   const queryLon = $derived(
-    Math.round((locationStore.position?.coords.longitude ?? FALLBACK_LON) * 1e4) / 1e4,
+    locationStore.position
+      ? Math.round(locationStore.position.coords.longitude * 1e4) / 1e4
+      : fallbackAnchor
+        ? Math.round(fallbackAnchor.lon * 1e4) / 1e4
+        : null,
   );
 
   let boards = $state<StationBoardInput[] | null>(null);
@@ -123,6 +138,13 @@
     // Wait for GPS to resolve in one direction or the other so we don't
     // briefly render the fallback list during the pre-fix window.
     if (gpsState === 'pending') return;
+    // Need an anchor — either GPS position or feed.center. The feed's
+    // center is guaranteed by the neary-gtfs schema; missing means a
+    // misbuilt feed and we bail with a visible error.
+    if (queryLat == null || queryLon == null) {
+      boardsError = "Active feed has no center coordinate. Re-pick the feed in Settings.";
+      return;
+    }
     // Subscribe to manual-refresh ticks so the header refresh button
     // re-fires this effect.
     refreshBus.tick;
@@ -155,6 +177,18 @@
       }
     })();
   });
+
+  // Banner visibility. Shown when:
+  //   - GPS opt-in is available (not denied / unsupported) AND
+  //     the user hasn't dismissed AND hasn't opted in yet, OR
+  //   - permission was explicitly denied (regardless of dismissal —
+  //     denial is a settings-level instruction the user needs to see).
+  const showOptInBanner = $derived(
+    gpsState === 'not-opted-in' && userPrefs.gpsPromptDismissedAt == null,
+  );
+  const showDeniedBanner = $derived(
+    gpsState === 'unavailable' && locationStore.permission === 'denied',
+  );
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -214,13 +248,46 @@
     </Card>
   {:else}
     <Stack spacing={1}>
-      {#if gpsState === 'unavailable'}
-        <Box class="px-2 py-1 text-xs text-[color:var(--color-fg-muted)]">
-          <Stack direction="row" spacing={1} align="center">
-            <MapPin size={12} />
-            <span>No GPS — showing stations near a fallback location ({FALLBACK_LAT}, {FALLBACK_LON}).</span>
-          </Stack>
-        </Box>
+      {#if showOptInBanner}
+        <Card>
+          <CardContent>
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} align="center">
+                <MapPin size={16} class="shrink-0 text-[color:var(--color-primary)]" />
+                <Typography variant="h6">See stops near you</Typography>
+              </Stack>
+              <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                Neary uses your location to sort nearby stations and put real-time arrivals
+                closer to you first. We never store it, never send it to a server, and never
+                track you in the background.
+              </Typography>
+              <Stack direction="row" spacing={1} align="center" class="pt-1">
+                <Button variant="contained" size="small" onclick={() => locationStore.enable()}>
+                  Enable location
+                </Button>
+                <Button
+                  variant="text"
+                  size="small"
+                  onclick={() => { userPrefs.gpsPromptDismissedAt = Date.now(); }}
+                >
+                  Not now
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+      {:else if showDeniedBanner}
+        <Card>
+          <CardContent>
+            <Stack direction="row" spacing={1} align="center">
+              <MapPin size={14} class="shrink-0 text-[color:var(--color-fg-muted)]" />
+              <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                Location is off in your browser settings. Open Settings → Site permissions →
+                Location to allow it.
+              </Typography>
+            </Stack>
+          </CardContent>
+        </Card>
       {/if}
       {#if boardsController.rawTotal > 0 && boardsController.filteredTotal === 0}
         <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">

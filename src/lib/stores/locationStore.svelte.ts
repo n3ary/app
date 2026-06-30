@@ -3,18 +3,21 @@
  * the Stations view's proximity query.
  *
  * Lifecycle:
- *   - Constructed lazily on first reactive access (module-level $state is
- *     fine in browser; SSR builds skip the watchPosition call because no
- *     consumer touches it during prerender).
- *   - `start()` is idempotent — the Stations route calls it on mount; later
- *     navigations to other views keep the watch alive so we don't lose
- *     position lock between tab switches.
+ *   - Constructed lazily on first reactive access (browser only; SSR builds
+ *     skip the watchPosition call because no consumer touches it during
+ *     prerender).
+ *   - GPS is strictly opt-in. `start()` is idempotent but does not flip the
+ *     "opted in" flag; callers that want the user choice to persist across
+ *     reloads use `enable()` instead. The +layout effect calls `start()`
+ *     on mount when `userPrefs.gpsOptedIn` is already true.
  *   - A 15s ticker bumps `now`, so the `freshness` getter naturally demotes
  *     ok -> stale -> error over time without us having to remember to
  *     re-render.
  */
 
-export type FreshState = 'idle' | 'ok' | 'stale' | 'error';
+import { userPrefs } from './userPrefs.svelte';
+
+export type FreshState = 'off' | 'idle' | 'ok' | 'stale' | 'error';
 export type PermissionState = 'unknown' | 'prompt' | 'granted' | 'denied';
 
 class LocationStore {
@@ -68,6 +71,19 @@ class LocationStore {
       this.tickerId = setInterval(() => (this.now = Date.now()), 15_000);
     }
     return true;
+  }
+
+  /**
+   * Mark the user as opted in (persists across reloads via userPrefs) and
+   * start the watch. Single entry point for the in-page opt-in banner and
+   * the header's GPS-off dot — they both call this. Idempotent: safe to
+   * call repeatedly. Clears any previous "Not now" dismissal so the
+   * banner won't reappear after a deliberate opt-in.
+   */
+  enable(): boolean {
+    userPrefs.gpsOptedIn = true;
+    userPrefs.gpsPromptDismissedAt = null;
+    return this.start();
   }
 
   stop(): void {
@@ -129,7 +145,8 @@ class LocationStore {
    * Header-dot state. Buckets:
    *   - permission denied: error (red)
    *   - watch error w/ no position ever: error
-   *   - no position yet: idle (grey)
+   *   - watch not started (user hasn't opted in): off (grey, tap-to-enable)
+   *   - watch started but no position yet: idle (grey, waiting)
    *   - position < 60s old: ok (green)
    *   - position 60s-5min old: stale (amber)
    *   - position older: error (red — likely lost signal)
@@ -137,7 +154,7 @@ class LocationStore {
   get freshness(): FreshState {
     if (this.permission === 'denied') return 'error';
     if (this.error && !this.position) return 'error';
-    if (!this.lastUpdated) return 'idle';
+    if (!this.lastUpdated) return this.isWatching ? 'idle' : 'off';
     const age = this.now - this.lastUpdated;
     if (age < 60_000) return 'ok';
     if (age < 5 * 60_000) return 'stale';
@@ -151,7 +168,7 @@ class LocationStore {
     if (!this.lastUpdated) {
       return this.isWatching
         ? 'Waiting for first GPS fix…'
-        : 'GPS not requested by this view';
+        : 'GPS off — tap to enable.';
     }
     const ageSec = Math.round((this.now - this.lastUpdated) / 1000);
     if (ageSec < 60) return `GPS fresh (${ageSec}s ago)`;

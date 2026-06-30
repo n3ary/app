@@ -46,6 +46,16 @@ class UserPrefs {
   stationBoardMaxRows = $state(3);
   /** User's optional Tranzy API key — when set, live data layer activates. */
   apiKey = $state<string | null>(null);
+  /** Whether the user has explicitly opted in to location access. Drives the
+   *  Stations-view banner + the header GPS dot's `off` state. The +layout
+   *  effect auto-starts the GPS watch on mount when this is true, so the
+   *  user only sees the browser permission prompt once. */
+  gpsOptedIn = $state(false);
+  /** Timestamp (ms) when the user dismissed the in-page opt-in banner via
+   *  "Not now". Null means never dismissed. Cleared back to null the moment
+   *  the user opts in. The banner stays hidden once set; clearing
+   *  localStorage is the documented escape hatch. */
+  gpsPromptDismissedAt = $state<number | null>(null);
 
   constructor() {
     if (typeof localStorage === 'undefined') return;
@@ -61,6 +71,8 @@ class UserPrefs {
         showDebugIds: boolean;
         apiKey: string | null;
         stationBoardMaxRows: number;
+        gpsOptedIn: boolean;
+        gpsPromptDismissedAt: number | null;
       }>;
       if (o.theme === 'auto' || o.theme === 'light' || o.theme === 'dark') this.theme = o.theme;
       if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
@@ -70,6 +82,8 @@ class UserPrefs {
       if (typeof o.showDebugIds === 'boolean') this.showDebugIds = o.showDebugIds;
       if (typeof o.apiKey === 'string' || o.apiKey === null) this.apiKey = o.apiKey;
       if (typeof o.stationBoardMaxRows === 'number' && o.stationBoardMaxRows > 0) this.stationBoardMaxRows = o.stationBoardMaxRows;
+      if (typeof o.gpsOptedIn === 'boolean') this.gpsOptedIn = o.gpsOptedIn;
+      if (typeof o.gpsPromptDismissedAt === 'number' || o.gpsPromptDismissedAt === null) this.gpsPromptDismissedAt = o.gpsPromptDismissedAt;
     } catch {
       // Corrupt or unreadable storage — fall back to defaults silently.
     }
@@ -86,6 +100,8 @@ class UserPrefs {
       showDebugIds: this.showDebugIds,
       apiKey: this.apiKey,
       stationBoardMaxRows: this.stationBoardMaxRows,
+      gpsOptedIn: this.gpsOptedIn,
+      gpsPromptDismissedAt: this.gpsPromptDismissedAt,
     };
   }
 }

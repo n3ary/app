@@ -16,7 +16,7 @@
   import { cn } from './cn';
   import { statusBus } from '$lib/stores/statusBus.svelte';
 
-  type State = 'ok' | 'stale' | 'error' | 'idle';
+  type State = 'ok' | 'stale' | 'error' | 'idle' | 'off';
 
   type Props = {
     state: State;
@@ -24,16 +24,21 @@
     tooltip?: string;
     /** Pulse animation for "ok" state to signal liveness (e.g. live vehicles tick). */
     pulse?: boolean;
+    /** Overrides the default tap handler (which surfaces the tooltip text
+     *  to the StatusBar). Used by the GPS dot's 'off' state to trigger the
+     *  enable flow instead. */
+    onclick?: () => void;
     class?: string;
   };
 
-  let { state, label, tooltip, pulse = false, class: className }: Props = $props();
+  let { state, label, tooltip, pulse = false, onclick, class: className }: Props = $props();
 
   const COLOR: Record<State, string> = {
     ok: 'bg-[color:var(--color-success)]',
     stale: 'bg-[color:var(--color-warning)]',
     error: 'bg-[color:var(--color-danger)]',
     idle: 'bg-[color:var(--color-fg-muted)]/40',
+    off: 'bg-[color:var(--color-fg-muted)]/30 border border-[color:var(--color-fg-muted)]/50',
   };
 
   // Tap = surface the same text the hover tooltip carries, but in the
@@ -46,8 +51,13 @@
     stale: 'warning',
     error: 'error',
     idle: 'info',
+    off: 'info',
   };
   function handleTap() {
+    if (onclick) {
+      onclick();
+      return;
+    }
     statusBus.push({
       id: `status-dot:${label}`,
       kind: KIND[state],

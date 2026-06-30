@@ -25,6 +25,9 @@
     health: HeaderHealth;
     onrefresh?: () => void;
     refreshing?: boolean;
+    /** Show the station-search icon in the header. Owner of the feed
+     *  selection (typically +layout.svelte) decides; defaults to off. */
+    showSearch?: boolean;
     navItems: readonly NavItem[];
     activeNav: T;
     onnav: (next: T) => void;
@@ -36,6 +39,7 @@
     health,
     onrefresh,
     refreshing = false,
+    showSearch = false,
     navItems,
     activeNav,
     onnav,
@@ -44,7 +48,7 @@
 </script>
 
 <div class="min-h-svh flex flex-col bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
-  <Header {title} {health} {onrefresh} {refreshing} />
+  <Header {title} {health} {onrefresh} {refreshing} {showSearch} />
   <StatusBar />
   <!-- Bottom padding clears the fixed BottomNavigation (h-14 ≈ 56 px)
        PLUS the iOS home-indicator inset. Without var(--space-safe-bottom)

@@ -51,6 +51,57 @@ export function getStopsNear(
     .slice(0, limit);
 }
 
+/** Diacritic-insensitive substring search over stop names, sorted by
+ *  distance from an anchor (GPS or feed center). Empty input falls back
+ *  to `getStopsNear` with a wide radius so the overlay shows useful
+ *  results before the user types.
+ *
+ *  We fetch all schedule-bearing stops and filter in JS rather than via
+ *  SQL `LIKE`: SQLite's `LIKE` is ASCII-only for case folding so
+ *  `'piata'` wouldn't match `'Piața'` (ț = U+021B). NFD+strip-marks
+ *  normalization on both sides handles the diacritic case cleanly.
+ *  Cluj-scale feeds (~2k stops) make the JS pass trivial; for
+ *  city-network feeds an order of magnitude larger this can become a
+ *  FTS5 virtual table without changing the public signature. */
+export function searchStops(
+  db: Database,
+  text: string,
+  anchorLat: number,
+  anchorLon: number,
+  limit = 25,
+): StopWithDistance[] {
+  const needle = normalizeForSearch(text);
+  if (!needle) {
+    // Empty input: nearest 25 (wide-enough radius to cover any feed bbox).
+    return getStopsNear(db, anchorLat, anchorLon, 50_000, limit);
+  }
+  type Row = { stop_id: number; stop_name: string; stop_lat: number; stop_lon: number };
+  const candidates = selectAll<Row>(
+    db,
+    `SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon
+     FROM stops s
+     WHERE EXISTS (
+       SELECT 1 FROM stop_times st WHERE st.stop_id = s.stop_id LIMIT 1
+     );`,
+    [],
+  );
+  return candidates
+    .filter((s) => normalizeForSearch(s.stop_name).includes(needle))
+    .map((s) => ({
+      id: s.stop_id,
+      name: s.stop_name,
+      lat: s.stop_lat,
+      lon: s.stop_lon,
+      distance: haversineMeters(anchorLat, anchorLon, s.stop_lat, s.stop_lon),
+    }))
+    .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+    .slice(0, limit);
+}
+
+function normalizeForSearch(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
 /** Next departures from a stop within `windowMinutes`, where the
  *  trip's service is active on `localDate`. */
 export function getDeparturesFromStop(
