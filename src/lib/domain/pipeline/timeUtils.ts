@@ -34,42 +34,102 @@ export function localMinSinceMidnight(d: Date): number {
  * clock is. Built on Intl.DateTimeFormat so it works in workers.
  */
 export function dateKeyInTz(nowMs: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(nowMs);
+  if (dateKeyCache && dateKeyCache.ms === nowMs && dateKeyCache.tz === timeZone) {
+    return dateKeyCache.value;
+  }
+  const parts = dateKeyFormatter(timeZone).formatToParts(nowMs);
   const y = parts.find((p) => p.type === 'year')?.value ?? '';
   const m = parts.find((p) => p.type === 'month')?.value ?? '';
   const d = parts.find((p) => p.type === 'day')?.value ?? '';
-  return `${y}${m}${d}`;
+  const value = `${y}${m}${d}`;
+  dateKeyCache = { ms: nowMs, tz: timeZone, value };
+  return value;
 }
 
 /** Minutes since midnight in the given IANA timezone for a Unix ms timestamp. */
 export function minSinceMidnightInTz(nowMs: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(nowMs);
+  if (minSinceMidnightCache && minSinceMidnightCache.ms === nowMs && minSinceMidnightCache.tz === timeZone) {
+    return minSinceMidnightCache.value;
+  }
+  const parts = minSinceMidnightFormatter(timeZone).formatToParts(nowMs);
   const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
   const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
-  return h * 60 + m;
+  const value = h * 60 + m;
+  minSinceMidnightCache = { ms: nowMs, tz: timeZone, value };
+  return value;
 }
 
 /** Day-of-week in the given IANA timezone for a Unix ms timestamp.
  *  Returns 0..6 with 0 = Sunday — same convention as `Date.getDay()`. */
 export function dayOfWeekInTz(nowMs: number, timeZone: string): number {
-  const wd = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    weekday: 'short',
-  }).format(nowMs);
+  if (dayOfWeekCache && dayOfWeekCache.ms === nowMs && dayOfWeekCache.tz === timeZone) {
+    return dayOfWeekCache.value;
+  }
+  const wd = dayOfWeekFormatter(timeZone).format(nowMs);
   // Intl returns 'Sun' | 'Mon' | … in the en-US locale.
   const idx = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(wd);
-  return idx >= 0 ? idx : 0;
+  const value = idx >= 0 ? idx : 0;
+  dayOfWeekCache = { ms: nowMs, tz: timeZone, value };
+  return value;
 }
+
+// === Intl.DateTimeFormat caching ==========================================
+// Hot-path optimisation. `new Intl.DateTimeFormat(...)` is expensive
+// (~0.5–2 ms per construction on Safari/V8); `formatToParts()` on a cached
+// instance is O(µs). Pre-fix profiling (2026-06-30) saw
+// `minSinceMidnightInTz` at 5113 ms self-time across one ~6 s recording —
+// `pickWalkKmh` in predictPosition.ts calls it inside the GPS
+// dead-reckoning loop, once per GPS-only vehicle per reactive cycle.
+//
+// Two layers:
+//   1. Formatter cache keyed by timeZone — one Intl instance per (function, tz).
+//   2. Single-entry result cache keyed by (nowMs, timeZone) — the hot caller
+//      passes the same nowMs for every iteration in a batch, so the very
+//      next call after a hit returns instantly without touching Intl.
+
+const dateKeyFormatters = new Map<string, Intl.DateTimeFormat>();
+function dateKeyFormatter(tz: string): Intl.DateTimeFormat {
+  let f = dateKeyFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dateKeyFormatters.set(tz, f);
+  }
+  return f;
+}
+
+const minSinceMidnightFormatters = new Map<string, Intl.DateTimeFormat>();
+function minSinceMidnightFormatter(tz: string): Intl.DateTimeFormat {
+  let f = minSinceMidnightFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    minSinceMidnightFormatters.set(tz, f);
+  }
+  return f;
+}
+
+const dayOfWeekFormatters = new Map<string, Intl.DateTimeFormat>();
+function dayOfWeekFormatter(tz: string): Intl.DateTimeFormat {
+  let f = dayOfWeekFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' });
+    dayOfWeekFormatters.set(tz, f);
+  }
+  return f;
+}
+
+let dateKeyCache: { ms: number; tz: string; value: string } | null = null;
+let minSinceMidnightCache: { ms: number; tz: string; value: number } | null = null;
+let dayOfWeekCache: { ms: number; tz: string; value: number } | null = null;
 
 /** A day-window query against the GTFS schedule: which calendar day,
  *  what cutoff (minutes since local midnight), how far ahead to look. */
