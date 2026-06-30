@@ -15,20 +15,15 @@
     Box, Card, CardContent, NoFeedState, Spinner, Stack, StationCard, Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import { syncTripShapeCache } from '$lib/data/gtfs/tripShapeCache';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
-  import { assembleLiveBoardMemo, routesFromVehicles } from '$lib/domain/stationBoard';
+  import { createStationBoardsController } from '$lib/data/stationBoardsController.svelte';
+  import type { StationBoardInput } from '$lib/data/stationBoardsController.svelte';
   import { selectBoardsForView } from '$lib/domain/stationSelection';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
   import { isPositionInFeedBbox, distanceToFeedBboxKm } from '$lib/domain/feedCoverage';
-  import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
-  import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -76,9 +71,7 @@
     Math.round((locationStore.position?.coords.longitude ?? FALLBACK_LON) * 1e4) / 1e4,
   );
 
-  let boards = $state<{ stop: StopWithDistance; vehicles: Vehicle[] }[] | null>(null);
-  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
-  let stopDistancesByTrip = $state<Record<string, number[]>>({});
+  let boards = $state<StationBoardInput[] | null>(null);
   let boardsError = $state<string | null>(null);
   let expandedStopId = $state<number | null>(null);
   // Per-stop route filter — click a route badge on a StationCard to scope
@@ -90,10 +83,13 @@
     routeFilters[stopId] = routeFilters[stopId] === routeId ? null : routeId;
   }
 
-// Feed tz + wall clock both live in shared stores (feedsStore /
-  // nowTicker) so every consumer pages on a single source. See those
-  // files for the rationale.
-  const feedTimezone = $derived(feedsStore.activeTimezone);
+  // Shared controller owns shapes cache, the shape-sync $effect, and the
+  // per-board assembly. We just hand it the boards we select and the
+  // per-stop route filter getter; it exposes `assembled` + totals.
+  const boardsController = createStationBoardsController({
+    routeFilterFor: (stopId) => routeFilters[stopId] ?? null,
+  });
+  $effect(() => { boardsController.setBoards(boards); });
 
   // Surface GPS state on the global StatusBar instead of a page-level
   // card — the StatusBar already exists for cross-cutting loading info
@@ -117,10 +113,6 @@
       }
     });
   });
-
-  // Wall clock for ETA/bucket recompute — single shared ticker, see
-  // nowTicker.svelte.ts.
-  const nowMs = $derived(nowTicker.ms);
 
   $effect(() => {
     // Wait until the worker has actually been bound to the user's chosen
@@ -163,76 +155,6 @@
       }
     })();
   });
-
-  // Single owner of `shapes` / `stopDistancesByTrip`. Reacts to either
-  // the boards refresh or new live-only observations, computes the
-  // union of (scheduled trip_ids on visible boards) + (gps-only orphan
-  // trip_ids on visible routes), and diff-fetches via the shared cache
-  // helper. Previously this lived in two effects with two different
-  // ideas of "visible", and each effect's prune step kept undoing the
-  // other's add — observable as ~1 Hz vehicle bucket-flicker (see git
-  // log 5f368df for the cache-stability half of the fix).
-  //
-  // Reads of `shapes` / `stopDistancesByTrip` are wrapped in untrack
-  // so the effect cannot depend on its own writes; the cache helper
-  // also returns prev verbatim on a no-op, so even the assignment is
-  // a reference-equality no-op when nothing changed.
-  $effect(() => {
-    if (!boards) return;
-    const visibleRouteIds = new Set<string>();
-    const tripIds = new Set<string>();
-    for (const b of boards) {
-      for (const v of b.vehicles) visibleRouteIds.add(v.route.id);
-      for (const tid of tripIdsFromVehicles(b.vehicles)) tripIds.add(tid);
-    }
-    for (const v of reconciledVehiclesStore.vehicles) {
-      if (v.kind !== 'gps-only') continue;
-      if (v.tripId == null) continue;
-      if (!visibleRouteIds.has(v.route.id)) continue;
-      tripIds.add(v.tripId);
-    }
-    (async () => {
-      try {
-        const repo = getGtfsRepo();
-        const prev = untrack(() => ({ shapes, stopDistances: stopDistancesByTrip }));
-        const next = await syncTripShapeCache(repo, tripIds, prev);
-        if (next.shapes !== prev.shapes) shapes = next.shapes;
-        if (next.stopDistances !== prev.stopDistances) stopDistancesByTrip = next.stopDistances;
-      } catch {
-        // Soft-fail: ETAs fall back to the sibling shape via
-        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
-      }
-    })();
-  });
-
-  // Single owner of the per-board assembly. One `$derived.by` runs
-  // the heavy pipeline (mergeReconciledIntoStationBoard → applyGpsEta
-  // → assembleStationBoard) once per board per dependency change, with
-  // assembleLiveBoardMemo's WeakMap giving per-board reuse when only
-  // one stop's filter changed. Replaces two inline `{@const}` call
-  // sites in the template (count banner + StationCard render) that
-  // previously duplicated the same 8-field input bag.
-  const assembledBoards = $derived.by(() => {
-    if (!boards) return [];
-    return boards.map(({ stop, vehicles }) => ({
-      stop,
-      vehicles,
-      rows: assembleLiveBoardMemo({
-        vehicles,
-        stop,
-        reconciledVehicles: reconciledVehiclesStore.vehicles,
-        shapes,
-        stopDistancesByTrip,
-        prefs: userPrefs,
-        nowMs,
-        timezone: feedTimezone,
-        routeFilterId: routeFilters[stop.id] ?? null,
-      }),
-      allRoutes: routesFromVehicles(vehicles),
-    }));
-  });
-  const rawTotal = $derived(assembledBoards.reduce((n, b) => n + b.vehicles.length, 0));
-  const filteredTotal = $derived(assembledBoards.reduce((n, b) => n + b.rows.length, 0));
 </script>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
@@ -300,14 +222,14 @@
           </Stack>
         </Box>
       {/if}
-      {#if rawTotal > 0 && filteredTotal === 0}
+      {#if boardsController.rawTotal > 0 && boardsController.filteredTotal === 0}
         <Box class="px-2 py-1 text-xs text-[color:var(--color-warning)]">
-          {rawTotal} vehicles found but all hidden by your filters
+          {boardsController.rawTotal} vehicles found but all hidden by your filters
           (check Settings → Display: drop-off-only, schedule-only,
           departed).
         </Box>
       {/if}
-      {#each assembledBoards as { stop, vehicles, rows, allRoutes } (stop.id)}
+      {#each boardsController.assembled as { stop, vehicles, rows, allRoutes } (stop.id)}
         <StationCard
           station={{ id: stop.id, name: stop.name, distance: stop.distance, lat: stop.lat, lon: stop.lon }}
           rows={rows}

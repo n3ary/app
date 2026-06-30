@@ -8,23 +8,17 @@
   flow exactly as on /.
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
   import { page } from '$app/state';
   import {
     Card, CardContent, NoFeedState, Spinner, Stack, StationCard, Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import { syncTripShapeCache } from '$lib/data/gtfs/tripShapeCache';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
-  import { assembleLiveBoardMemo, routesFromVehicles } from '$lib/domain/stationBoard';
+  import { createStationBoardsController } from '$lib/data/stationBoardsController.svelte';
+  import type { StationBoardInput } from '$lib/data/stationBoardsController.svelte';
   import { DEFAULT_CONFIG } from '$lib/domain/config';
-  import { tripIdsFromVehicles } from '$lib/domain/tripIdsFromVehicles';
-  import type { Vehicle } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
 
@@ -36,18 +30,20 @@
   const stopId = $derived(Number(page.params.id));
   const stopIdValid = $derived(Number.isFinite(stopId) && stopId > 0);
 
-  let board = $state<{ stop: StopWithDistance; vehicles: Vehicle[] } | null>(null);
-  let shapes = $state<Record<string, Array<{ lat: number; lon: number }>>>({});
-  let stopDistancesByTrip = $state<Record<string, number[]>>({});
+  let board = $state<StationBoardInput | null>(null);
   let originRouteIds = $state<Set<string>>(new Set());
   let error = $state<string | null>(null);
   let notFound = $state(false);
   let routeFilter = $state<string | null>(null);
 
-  // Feed tz + wall clock both live in shared stores (feedsStore /
-  // nowTicker) so every consumer pages on a single source.
-  const feedTimezone = $derived(feedsStore.activeTimezone);
-  const nowMs = $derived(nowTicker.ms);
+  // Shared controller — same shape as /+page.svelte. We feed it a
+  // single-element array when board is loaded; it owns shape cache +
+  // assembly. routeFilterFor closes over the single-board routeFilter.
+  const boardsController = createStationBoardsController({
+    routeFilterFor: () => routeFilter,
+  });
+  $effect(() => { boardsController.setBoards(board ? [board] : null); });
+  const assembled = $derived(boardsController.assembled[0] ?? null);
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;
@@ -74,60 +70,6 @@
         error = e instanceof Error ? e.message : String(e);
       }
     })();
-  });
-
-  // Single owner of `shapes` / `stopDistancesByTrip`. Reacts to either
-  // the board refresh or new live-only observations, computes the
-  // union of (scheduled trip_ids on this board) + (gps-only orphan
-  // trip_ids on visible routes), and diff-fetches via the shared cache
-  // helper. See routes/+page.svelte for the matching pattern and git
-  // log 5f368df for why splitting these across two effects caused a
-  // bucket-flicker feedback loop.
-  $effect(() => {
-    if (!board) return;
-    const visibleRouteIds = new Set<string>();
-    const tripIds = new Set<string>();
-    for (const v of board.vehicles) visibleRouteIds.add(v.route.id);
-    for (const tid of tripIdsFromVehicles(board.vehicles)) tripIds.add(tid);
-    for (const v of reconciledVehiclesStore.vehicles) {
-      if (v.kind !== 'gps-only') continue;
-      if (v.tripId == null) continue;
-      if (!visibleRouteIds.has(v.route.id)) continue;
-      tripIds.add(v.tripId);
-    }
-    (async () => {
-      try {
-        const repo = getGtfsRepo();
-        const prev = untrack(() => ({ shapes, stopDistances: stopDistancesByTrip }));
-        const next = await syncTripShapeCache(repo, tripIds, prev);
-        if (next.shapes !== prev.shapes) shapes = next.shapes;
-        if (next.stopDistances !== prev.stopDistances) stopDistancesByTrip = next.stopDistances;
-      } catch {
-        // Soft-fail: ETAs fall back to the sibling shape via
-        // assembleLiveBoard's shapesByRouteDir, or stay as "Live".
-      }
-    })();
-  });
-
-  // Single owner of the assembled board. Mirrors the pattern in
-  // routes/+page.svelte: heavy pipeline runs once per dependency
-  // change behind a $derived.by; template just consumes the result.
-  const assembled = $derived.by(() => {
-    if (!board) return null;
-    return {
-      rows: assembleLiveBoardMemo({
-        vehicles: board.vehicles,
-        stop: board.stop,
-        reconciledVehicles: reconciledVehiclesStore.vehicles,
-        shapes,
-        stopDistancesByTrip,
-        prefs: userPrefs,
-        nowMs,
-        timezone: feedTimezone,
-        routeFilterId: routeFilter,
-      }),
-      allRoutes: routesFromVehicles(board.vehicles),
-    };
   });
 </script>
 
