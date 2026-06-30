@@ -19,6 +19,8 @@ import * as Comlink from 'comlink';
 import type { ReconciledSnapshot } from '$lib/data/gtfs/types';
 import { fetchVehiclePositions } from '$lib/data/live/gtfsRtClient';
 import { DEFAULT_CONFIG } from '$lib/domain/config';
+import { enrichObservations } from '$lib/domain/enrichObservations';
+import { quirksForFeed } from '$lib/domain/feedQuirks';
 import { reconcileWithLive } from '$lib/domain/reconcile';
 import { measurePolyline, type MeasuredPolyline } from '$lib/domain/shapeProjection';
 import type { Vehicle } from '$lib/domain/types';
@@ -101,8 +103,14 @@ export async function tickLive(): Promise<void> {
       LIVE_RECONCILE_LOOKBACK_MIN,
       LIVE_RECONCILE_LOOKAHEAD_MIN,
     );
+    // Enrich observations with authoritative static-feed direction +
+    // start_time (SQL-backed lookup against `active`); fall back to
+    // per-feed trip_id quirks only for observations whose trip isn't
+    // in the static set (~10-40 orphans per tick for Cluj). See
+    // domain/enrichObservations.ts for the layered fallback.
+    const observations = enrichObservations(snap.vehicles, active, quirksForFeed(feedId));
     const shapesByCohort = buildShapesByCohort(db, active);
-    const { vehicles, stats } = reconcileWithLive(active, snap.vehicles, {
+    const { vehicles, stats } = reconcileWithLive(active, observations, {
       nowMs,
       timezone: tz,
       shapesByCohort,

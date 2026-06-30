@@ -18,13 +18,6 @@
 // we actually read.
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 
-import {
-  deriveDirection,
-  deriveStartTime,
-  quirksForFeed,
-  type FeedRtQuirks,
-} from '../../domain/feedQuirks';
-
 const { FeedMessage } = GtfsRealtimeBindings.transit_realtime;
 
 /** A single live observation of one vehicle at one point in time.
@@ -73,10 +66,11 @@ export interface VehiclePositionsSnapshot {
   vehicles: LiveVehicleObservation[];
 }
 
-/** Fetch + parse the latest VehiclePositions for a feed. Per-feed
- *  quirks (`src/lib/domain/feedQuirks.ts`) are applied at parse time,
- *  so downstream consumers see only canonical `startTime` and
- *  `directionId` fields. */
+/** Fetch + parse the latest VehiclePositions for a feed. The parser
+ *  is intentionally I/O only — direction + start_time enrichment
+ *  (per-feed quirks, SQL fallback) lives in
+ *  `domain/enrichObservations.ts` so it can prefer authoritative
+ *  static-feed data when available. */
 export async function fetchVehiclePositions(feedId: string): Promise<VehiclePositionsSnapshot> {
   const url = `/api/rt/${encodeURIComponent(feedId)}/vehiclePositions`;
   const res = await fetch(url, { cache: 'no-store' });
@@ -84,39 +78,28 @@ export async function fetchVehiclePositions(feedId: string): Promise<VehiclePosi
     throw new Error(`GTFS-RT fetch failed for ${feedId}: HTTP ${res.status}`);
   }
   const buf = new Uint8Array(await res.arrayBuffer());
-  return parseVehiclePositions(buf, quirksForFeed(feedId));
+  return parseVehiclePositions(buf);
 }
 
 /** Pure parser — separated so tests can hand it a fixture buffer.
- *  Quirks default to empty (no derivations) so feeds whose canonical
- *  fields are already correct don't need a quirks entry. */
-export function parseVehiclePositions(
-  buf: Uint8Array,
-  quirks: FeedRtQuirks = {},
-): VehiclePositionsSnapshot {
+ *  Surfaces the GTFS-RT canonical fields verbatim; the enrichment
+ *  pass downstream may overwrite `directionId` / `startTime` with
+ *  authoritative static-feed values or per-feed quirks. */
+export function parseVehiclePositions(buf: Uint8Array): VehiclePositionsSnapshot {
   const msg = FeedMessage.decode(buf);
   const feedTimestampMs = (Number(msg.header?.timestamp ?? 0) || 0) * 1000;
   const vehicles: LiveVehicleObservation[] = [];
   for (const entity of msg.entity ?? []) {
     const v = entity.vehicle;
     if (!v || !v.position) continue;
-    const tripId = v.trip?.tripId ?? '';
-    // Apply quirks to upgrade the canonical fields. If a quirk
-    // produces a value we use it; otherwise we trust whatever the
-    // feed provided. Downstream code reads only the canonical fields
-    // — no trip_id parsing past this point.
-    const derivedDir = deriveDirection(quirks, tripId);
     const claimedDir = v.trip?.directionId ?? null;
-    const directionId = derivedDir ?? (claimedDir === 0 || claimedDir === 1 ? claimedDir : -1);
-    const derivedStart = deriveStartTime(quirks, tripId);
-    const startTime = (v.trip?.startTime || derivedStart) ?? '';
     vehicles.push({
       source: 'gtfs-rt',
       vehicleId: v.vehicle?.id ?? entity.id ?? '',
-      tripId,
+      tripId: v.trip?.tripId ?? '',
       routeId: v.trip?.routeId ?? '',
-      directionId,
-      startTime,
+      directionId: claimedDir === 0 || claimedDir === 1 ? claimedDir : -1,
+      startTime: v.trip?.startTime ?? '',
       lat: v.position.latitude ?? 0,
       lon: v.position.longitude ?? 0,
       bearing: v.position.bearing ?? null,

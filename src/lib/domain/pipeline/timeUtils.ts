@@ -16,6 +16,17 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
+/** Inverse of `timeToMinutes`. Formats `min` (minutes since midnight,
+ *  may exceed 1440 for past-midnight trips) as "HH:MM:00" — the seconds
+ *  field is always 00 because GTFS schedules are minute-precision.
+ *  Returns empty string on garbage input. */
+export function minutesToTime(min: number): string {
+  if (!Number.isFinite(min) || min < 0) return '';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+}
+
 /** Format a `Date` (system-local) as GTFS calendar key "YYYYMMDD". */
 export function localDateKey(d: Date): string {
   const y = d.getFullYear();
