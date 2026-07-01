@@ -32,10 +32,7 @@ export function getStopsNear(
   const candidates = selectStopsWithParent(
     db,
     `WHERE s.stop_lat BETWEEN ? AND ?
-       AND s.stop_lon BETWEEN ? AND ?
-       AND EXISTS (
-         SELECT 1 FROM stop_times st WHERE st.stop_id = s.stop_id LIMIT 1
-       )`,
+       AND s.stop_lon BETWEEN ? AND ?`,
     [lat - dLat, lat + dLat, lon - dLon, lon + dLon],
   );
   return rollupByParent(candidates)
@@ -94,9 +91,10 @@ export function searchStops(
 
   const candidates = selectStopsWithParent(
     db,
-    `WHERE EXISTS (
-       SELECT 1 FROM stop_times st WHERE st.stop_id = s.stop_id LIMIT 1
-     )`,
+    // Match ALL schedule-bearing stops; caller filters by text below.
+    // Trailing `AND 1=1` keeps the shared query's `AND EXISTS (...)`
+    // grammar intact (needs at least one boolean on the WHERE side).
+    `WHERE 1=1`,
     [],
   );
   const rolled = rollupByParent(candidates);
@@ -144,11 +142,23 @@ function selectStopsWithParent(
 ): StopRowWithParent[] {
   return selectAll<StopRowWithParent>(
     db,
+    // The EXISTS clause requires a stop_time with a non-empty
+    // arrival_time. Feeds like Cluj carry NT-fallback trips whose
+    // stop_times have arrival_time = '' -- surface those as stops
+    // with active routes = false. Matches routesWithSchedule.ts's
+    // definition of "route has schedule".
     `SELECT s.stop_id, s.stop_name, s.stop_lat, s.stop_lon, s.parent_station,
             p.stop_name AS parent_name, p.stop_lat AS parent_lat, p.stop_lon AS parent_lon
      FROM stops s
      LEFT JOIN stops p ON p.stop_id = s.parent_station
-     ${whereClause};`,
+     ${whereClause}
+       AND EXISTS (
+         SELECT 1 FROM stop_times st
+         WHERE st.stop_id = s.stop_id
+           AND st.arrival_time IS NOT NULL
+           AND st.arrival_time != ''
+         LIMIT 1
+       );`,
     params,
   );
 }

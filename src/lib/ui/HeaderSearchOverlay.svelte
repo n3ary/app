@@ -1,27 +1,41 @@
 <!--
-  HeaderSearchOverlay — full-screen station search dialog opened from the
-  header icon. Self-contained: reads the active feed center + the GPS
-  position directly so the host (Header) only owns open/close state.
+  HeaderSearchOverlay — global search dialog opened from the header icon.
+  Combines stops + routes in one result list so the rider can jump to
+  either a station or a route without switching UIs.
 
-  Empty input → 25 nearest stops to the current anchor (GPS if available,
-  otherwise the feed's published center). Non-empty input → diacritic-
-  insensitive substring match on stop_name, sorted by distance from the
-  same anchor. Debounced 150 ms either way.
+  Empty query:
+    - Nearby: up to 2 nearest stations (when GPS is enabled)
+    - Your favorites: every favorited route with a schedule
+    - Fallback message when both are empty
 
-  Backdrop click + Escape dismiss via bits-ui Dialog.
+  Typed query:
+    - Matching routes (short_name + long_name, diacritic-insensitive)
+    - Matching stops (name, diacritic-insensitive)
+
+  Only surfaces stops with at least one non-empty arrival_time and
+  routes with `hasSchedule !== false` — a search hit should be
+  actionable, not a dead-end.
+
+  Backdrop click + Escape dismiss via bits-ui Dialog. Self-contained:
+  reads locationStore, feedsStore, favoritesStore directly.
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { Dialog as Bits } from 'bits-ui';
-  import { MapPin, Search, X } from 'lucide-svelte';
+  import { Calendar, Heart, MapPin, Search, X } from 'lucide-svelte';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
+  import type { Route } from '$lib/domain/types';
+  import { compareRouteShortName, vehicleTypeLabel } from '$lib/domain/types';
+  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
+  import { cn } from './cn';
+  import { iconButtonClass } from './iconButtonClass';
+  import RouteBadge from './RouteBadge.svelte';
   import Spinner from './Spinner.svelte';
   import Stack from './Stack.svelte';
   import Typography from './Typography.svelte';
-  import { cn } from './cn';
 
   type Props = {
     open: boolean;
@@ -32,7 +46,12 @@
 
   let query = $state('');
   let debouncedQuery = $state('');
-  let results = $state<StopWithDistance[] | null>(null);
+  // Route catalogue for the bound feed, fetched once per feed. Small
+  // (~200-800 routes) so we filter in JS -- no need for a separate SQL
+  // search query.
+  let allRoutes = $state<Route[] | null>(null);
+  let stopResults = $state<StopWithDistance[] | null>(null);
+  let routeResults = $state<Route[] | null>(null);
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
   let inputEl = $state<HTMLInputElement | null>(null);
@@ -43,17 +62,11 @@
     const feed = feedsStore.byId(feedsStore.boundFeedId);
     return feed?.center ?? null;
   });
-  // When the user hasn't enabled GPS, distance from the feed centroid
-  // is noise — sort alphabetically and hide the distance column.
   const hasGps = $derived(locationStore.position != null);
   const sortMode = $derived<'distance' | 'name'>(hasGps ? 'distance' : 'name');
-  // With name-sort the user is scanning the alphabet, so a larger
-  // page is friendlier than the GPS-sorted "top 25".
-  const resultLimit = $derived(hasGps ? 25 : 100);
 
   // 150 ms debounce on the input so each keystroke doesn't kick off a
-  // worker round-trip. Reset when the overlay closes so a re-open starts
-  // with a clean state.
+  // worker round-trip.
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const q = query;
@@ -72,32 +85,84 @@
     if (open) {
       query = '';
       debouncedQuery = '';
-      results = null;
+      stopResults = null;
+      routeResults = null;
       errorMsg = null;
       queueMicrotask(() => inputEl?.focus());
     }
   });
 
-  // Run the search whenever the debounced query or anchor changes while
-  // the overlay is open. `untrack` not needed — assignments to results /
-  // loading don't re-feed the effect's read set.
+  // Invalidate the route catalogue when the feed changes so the next
+  // open re-fetches for the new feed.
+  $effect(() => {
+    feedsStore.boundFeedId; // subscribe
+    allRoutes = null;
+  });
+
+  // Fetch the route catalogue on demand: when the overlay opens and
+  // we don't have one cached for the current feed.
   $effect(() => {
     if (!open) return;
+    const fid = feedsStore.boundFeedId;
+    if (!fid) return;
+    if (allRoutes != null) return;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        allRoutes = await repo.getRoutes();
+      } catch (e) {
+        errorMsg = e instanceof Error ? e.message : String(e);
+      }
+    })();
+  });
+
+  // Main search effect. Runs when open + debounced query + anchor +
+  // catalogue change. Two branches:
+  //   1. text typed: filter routes (by short/long name) + stops (via
+  //      worker). Show mixed results, routes first.
+  //   2. empty text: nearest 2 stops (if GPS) + all favorited routes.
+  $effect(() => {
+    if (!open) return;
+    const routes = allRoutes;
+    if (routes == null) return; // wait for catalogue
     const a = anchor;
-    if (!a) {
-      results = [];
-      return;
-    }
-    const text = debouncedQuery;
-    const limit = resultLimit;
-    const mode = sortMode;
+    const q = debouncedQuery;
+    const needle = normalizeForSearch(q);
+
+    // Filter to routes with schedule: NT-fallback routes on Cluj don't
+    // belong in results since tapping them would open an empty schedule.
+    const scheduledRoutes = routes.filter((r) => r.hasSchedule !== false);
+
     loading = true;
     errorMsg = null;
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const r = await repo.searchStops(text, a.lat, a.lon, limit, mode);
-        results = r;
+        if (needle) {
+          // Typed mode. Match route short_name OR long_name.
+          const matchingRoutes = scheduledRoutes
+            .filter((r) =>
+              normalizeForSearch(r.shortName).includes(needle) ||
+              (r.longName != null && normalizeForSearch(r.longName).includes(needle))
+            )
+            .sort((x, y) => compareRouteShortName(x.shortName, y.shortName))
+            .slice(0, 12);
+          const stops = a
+            ? await repo.searchStops(q, a.lat, a.lon, 15, sortMode)
+            : [];
+          routeResults = matchingRoutes;
+          stopResults = stops;
+        } else {
+          // Empty mode. Nearest 2 stops (GPS only) + favorites.
+          const nearby = hasGps && a
+            ? await repo.searchStops('', a.lat, a.lon, 2, 'distance')
+            : [];
+          const favs = scheduledRoutes
+            .filter((r) => favoritesStore.has(r.id))
+            .sort((x, y) => compareRouteShortName(x.shortName, y.shortName));
+          stopResults = nearby;
+          routeResults = favs;
+        }
       } catch (e) {
         errorMsg = e instanceof Error ? e.message : String(e);
       } finally {
@@ -106,15 +171,34 @@
     })();
   });
 
+  const isTyping = $derived(debouncedQuery.length > 0);
+  const noResults = $derived(
+    !loading &&
+      !errorMsg &&
+      stopResults != null &&
+      routeResults != null &&
+      stopResults.length === 0 &&
+      routeResults.length === 0,
+  );
+
   function selectStop(id: string) {
     onclose();
     goto(`/station/${id}`);
   }
-
+  function openRouteSchedule(route: Route) {
+    onclose();
+    goto(`/schedule/route/${route.id}_0`);
+  }
+  function toggleFavorite(route: Route) {
+    favoritesStore.toggle(route.id);
+  }
   function formatDistance(m: number | undefined): string {
     if (m == null) return '';
     if (m < 1000) return `${Math.round(m)} m`;
     return `${(m / 1000).toFixed(1)} km`;
+  }
+  function normalizeForSearch(s: string): string {
+    return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
   }
 </script>
 
@@ -126,12 +210,12 @@
     <Bits.Content
       class={cn(
         'fixed z-50 outline-none',
-        'left-1/2 -translate-x-1/2 top-[15svh] w-[min(calc(100vw-2rem),32rem)]',
+        'left-1/2 -translate-x-1/2 top-[10svh] w-[min(calc(100vw-2rem),36rem)]',
         'flex flex-col gap-2',
         'data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95',
       )}
     >
-      <Bits.Title class="sr-only">Search stations</Bits.Title>
+      <Bits.Title class="sr-only">Search stations and routes</Bits.Title>
 
       <div
         class="relative bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] rounded-lg shadow-xl"
@@ -143,8 +227,8 @@
             bind:value={query}
             type="search"
             inputmode="search"
-            placeholder="Search stations…"
-            aria-label="Search stations"
+            placeholder="Search stations or routes…"
+            aria-label="Search stations and routes"
             class="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-[color:var(--color-fg-muted)]"
           />
           <button
@@ -157,53 +241,156 @@
           </button>
         </div>
 
-        <div class="max-h-[60svh] overflow-y-auto">
+        <div class="max-h-[70svh] overflow-y-auto px-2 py-2 space-y-1.5">
           {#if errorMsg}
-            <Typography variant="caption" class="block px-3 py-2 text-[color:var(--color-danger)]">
+            <Typography variant="caption" class="block px-2 py-1 text-[color:var(--color-danger)]">
               {errorMsg}
             </Typography>
-          {:else if anchor == null}
-            <Typography variant="caption" class="block px-3 py-2 text-[color:var(--color-fg-muted)]">
-              Pick a feed in Settings to search stations.
+          {:else if anchor == null && stopResults == null}
+            <Typography variant="caption" class="block px-2 py-1 text-[color:var(--color-fg-muted)]">
+              Pick a feed in Settings to search stations and routes.
             </Typography>
-          {:else if loading && results == null}
-            <Stack direction="row" spacing={1} align="center" class="px-3 py-2">
+          {:else if loading && stopResults == null && routeResults == null}
+            <Stack direction="row" spacing={1} align="center" class="px-2 py-1">
               <Spinner size={14} />
               <Typography variant="caption">Searching…</Typography>
             </Stack>
-          {:else if results != null && results.length === 0}
-            <Typography variant="caption" class="block px-3 py-2 text-[color:var(--color-fg-muted)]">
-              {debouncedQuery ? 'No matching stations.' : 'No nearby stations.'}
+          {:else if noResults && isTyping}
+            <Typography variant="caption" class="block px-2 py-2 text-[color:var(--color-fg-muted)]">
+              Nothing matches “{debouncedQuery}”. Try a different name, route number, or destination.
             </Typography>
-          {:else if results != null}
-            <ul class="py-1">
-              {#each results as stop (stop.id)}
-                <li>
-                  <button
-                    type="button"
-                    onclick={() => selectStop(stop.id)}
-                    class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[color:var(--color-border)]/30 focus-visible:outline-none focus-visible:bg-[color:var(--color-border)]/30"
-                  >
-                    <MapPin size={14} class="shrink-0 text-[color:var(--color-fg-muted)]" />
-                    <span class="flex-1 min-w-0 text-sm truncate">{stop.name}</span>
-                    {#if hasGps}
-                      <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
-                        {formatDistance(stop.distance)}
-                      </span>
-                    {/if}
-                  </button>
-                </li>
+          {:else if noResults}
+            <Typography variant="caption" class="block px-2 py-2 text-[color:var(--color-fg-muted)]">
+              No favorite routes yet and no nearby stops available. Type a station name or a route
+              number above to find something.
+            </Typography>
+          {:else}
+            {#if routeResults && routeResults.length > 0}
+              <Typography variant="caption" class="block px-2 pt-1 text-[color:var(--color-fg-muted)]">
+                {isTyping ? 'Routes' : 'Your favorites'}
+              </Typography>
+              {#each routeResults as route (route.id)}
+                {@const isFav = favoritesStore.has(route.id)}
+                {@const type = route.type ?? 'unknown'}
+                {@const typeLabel = vehicleTypeLabel(type)}
+                {@const primaryLabel = route.longName ?? typeLabel}
+                {@render routeCard(route, isFav, primaryLabel, typeLabel)}
               {/each}
-            </ul>
+            {/if}
+
+            {#if stopResults && stopResults.length > 0}
+              <Typography variant="caption" class="block px-2 pt-2 text-[color:var(--color-fg-muted)]">
+                {isTyping ? 'Stations' : 'Nearby'}
+              </Typography>
+              {#each stopResults as stop (stop.id)}
+                {@render stopCard(stop)}
+              {/each}
+            {/if}
           {/if}
         </div>
       </div>
 
       {#if anchor && !hasGps}
         <Typography variant="caption" class="block text-center text-[color:var(--color-fg-muted)]">
-          Enable location to sort results by distance.
+          Enable location to sort stations by distance.
         </Typography>
       {/if}
     </Bits.Content>
   </Bits.Portal>
 </Bits.Root>
+
+{#snippet routeCard(route: Route, isFav: boolean, primaryLabel: string, typeLabel: string)}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    role="button"
+    tabindex={0}
+    onclick={(e) => {
+      // Bail when the click came from an inner anchor/button so the
+      // badge (map), calendar (schedule), and heart (favorite) taps
+      // don't also fire the card's default open-schedule action.
+      if ((e.target as Element | null)?.closest('a, button')) return;
+      openRouteSchedule(route);
+    }}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if ((e.target as Element | null)?.closest('a, button')) return;
+        e.preventDefault();
+        openRouteSchedule(route);
+      }
+    }}
+    class={cn(
+      'flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
+      'border-[color:var(--color-border)] cursor-pointer',
+      'hover:bg-[color:var(--color-border)]/30',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
+    )}
+  >
+    <a
+      href={`/map/route/${route.id}_0`}
+      onclick={onclose}
+      aria-label={`Open map for ${typeLabel.toLowerCase()} ${route.shortName}`}
+      title="Open route map"
+      class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
+    >
+      <RouteBadge {route} size="medium" class="min-w-14" />
+    </a>
+    <div class="min-w-0 flex-1">
+      <div class="text-sm font-medium truncate">{primaryLabel}</div>
+      {#if route.description}
+        <div class="text-xs truncate text-[color:var(--color-fg-muted)]">{route.description}</div>
+      {/if}
+    </div>
+    <div class="flex items-center gap-1 shrink-0">
+      <a
+        href={`/schedule/route/${route.id}_0`}
+        onclick={onclose}
+        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+        title="Open route schedule"
+        class={iconButtonClass}
+      >
+        <Calendar size={16} strokeWidth={2.25} />
+      </a>
+      <button
+        type="button"
+        aria-label={`${isFav ? 'Unfavorite' : 'Favorite'} ${typeLabel.toLowerCase()} ${route.shortName}`}
+        aria-pressed={isFav}
+        onclick={(e) => { e.stopPropagation(); toggleFavorite(route); }}
+        class={iconButtonClass}
+      >
+        <Heart
+          size={16}
+          strokeWidth={2.25}
+          fill={isFav ? 'currentColor' : 'none'}
+          class={isFav ? 'text-[color:var(--color-danger)]' : 'text-[color:var(--color-fg-muted)]'}
+        />
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+{#snippet stopCard(stop: StopWithDistance)}
+  <button
+    type="button"
+    onclick={() => selectStop(stop.id)}
+    class={cn(
+      'w-full flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
+      'border-[color:var(--color-border)] cursor-pointer text-left',
+      'hover:bg-[color:var(--color-border)]/30',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
+    )}
+  >
+    <span
+      class="shrink-0 inline-flex items-center justify-center w-14 h-9 rounded-md bg-[color:var(--color-border)]/20 text-[color:var(--color-fg-muted)]"
+      aria-hidden="true"
+    >
+      <MapPin size={16} />
+    </span>
+    <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
+    {#if hasGps && stop.distance != null}
+      <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
+        {formatDistance(stop.distance)}
+      </span>
+    {/if}
+  </button>
+{/snippet}
