@@ -204,11 +204,16 @@
         const repo = getGtfsRepo();
         const routes = await repo.getRoutesForStops(ids);
         // Guard against out-of-order resolution: only apply if the
-        // current stopResults still contains these ids.
+        // current stopResults still contains these ids. Also drop
+        // routes without a schedule -- consistent with the top-level
+        // route-search filter, and keeps the chip row honest (a badge
+        // that opens a dead-end schedule is worse than no badge).
         const currentIds = new Set((stopResults ?? []).map((s) => s.id));
         const filtered: Record<string, Route[]> = {};
         for (const id of Object.keys(routes)) {
-          if (currentIds.has(id)) filtered[id] = routes[id];
+          if (!currentIds.has(id)) continue;
+          const scheduled = routes[id].filter((r) => r.hasSchedule !== false);
+          if (scheduled.length > 0) filtered[id] = scheduled;
         }
         stopRoutes = filtered;
       } catch {
