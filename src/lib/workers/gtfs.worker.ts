@@ -37,7 +37,7 @@ import { getRouteDirectionEndpoints } from './gtfs/queries/routeEndpoints';
 import { getRouteMapView } from './gtfs/queries/routeMapView';
 import { getRouteSchedule } from './gtfs/queries/routeSchedule';
 import { getStopsAlongTrip } from './gtfs/queries/routeStops';
-import { getRouteById, getRoutes, getRoutesForStop } from './gtfs/queries/routes';
+import { getRouteById, getRoutes, getRoutesForStop, getRoutesForStops } from './gtfs/queries/routes';
 import { getNetworks } from './gtfs/queries/networks';
 import { getFeedConfig } from './gtfs/queries/feedConfig';
 import { getStationBoard, getStationBoardsNear } from './gtfs/queries/stationBoards';
@@ -107,6 +107,9 @@ const api: GtfsRepo = {
   },
   async getRoutesForStop(stopId: string) {
     return getRoutesForStop(await ensureDb(), stopId);
+  },
+  async getRoutesForStops(stopIds: readonly string[]) {
+    return getRoutesForStops(await ensureDb(), stopIds);
   },
 
   // ── Stops ───────────────────────────────────────────────────────────

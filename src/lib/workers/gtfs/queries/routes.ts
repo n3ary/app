@@ -119,3 +119,40 @@ export function getRoutesForStop(db: Database, stopId: string): Route[] {
   );
   return rows.map((r) => rowToRoute(r, withSchedule));
 }
+
+/** Batched variant of {@link getRoutesForStop} — one SQL round-trip
+ *  for many stops. Used by the header search overlay to fetch route
+ *  chips for every result row without N Comlink hops. Returns an
+ *  object keyed by stop_id; stops with no routes are omitted (callers
+ *  should treat missing keys as an empty list). */
+export function getRoutesForStops(
+  db: Database,
+  stopIds: readonly string[],
+): Record<string, Route[]> {
+  if (stopIds.length === 0) return {};
+  const withSchedule = getRoutesWithSchedule(db);
+  const desc = routeDescExpr(db);
+  const descCol = desc === 'route_desc' ? 'r.route_desc' : 'NULL AS route_desc';
+  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
+  const ph = stopIds.map(() => '?').join(',');
+  const rows = selectAll<RouteRow & { stop_id: string }>(
+    db,
+    `SELECT st.stop_id, r.route_id, r.route_short_name, r.route_long_name, ${descCol},
+            r.route_color, r.route_text_color, r.route_type,
+            ${netSelect}
+     FROM stop_times st
+     JOIN trips t ON t.trip_id = st.trip_id
+     JOIN routes r ON r.route_id = t.route_id
+     ${netJoin}
+     WHERE st.stop_id IN (${ph})
+     GROUP BY st.stop_id, r.route_id
+     ORDER BY st.stop_id, CAST(r.route_short_name AS INTEGER), r.route_short_name;`,
+    [...stopIds],
+  );
+  const grouped: Record<string, Route[]> = {};
+  for (const r of rows) {
+    if (!grouped[r.stop_id]) grouped[r.stop_id] = [];
+    grouped[r.stop_id].push(rowToRoute(r, withSchedule));
+  }
+  return grouped;
+}

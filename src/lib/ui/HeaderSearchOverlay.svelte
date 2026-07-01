@@ -53,6 +53,10 @@
   let allRoutes = $state<Route[] | null>(null);
   let stopResults = $state<StopWithDistance[] | null>(null);
   let routeResults = $state<Route[] | null>(null);
+  // Routes serving each result stop, fetched in one batched call after
+  // stops resolve. Keyed by stop_id; empty for stops with no scheduled
+  // routes (shouldn't happen after the arrival_time filter but guarded).
+  let stopRoutes = $state<Record<string, Route[]>>({});
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
   let inputEl = $state<HTMLInputElement | null>(null);
@@ -88,6 +92,7 @@
       debouncedQuery = '';
       stopResults = null;
       routeResults = null;
+      stopRoutes = {};
       errorMsg = null;
       queueMicrotask(() => inputEl?.focus());
     }
@@ -181,6 +186,37 @@
       stopResults.length === 0 &&
       routeResults.length === 0,
   );
+
+  // After each search settles, fetch the route chips for every result
+  // stop in one batched worker round-trip. Cleared between searches so
+  // stale chips don't paint while the next fetch is in flight.
+  $effect(() => {
+    if (!open) return;
+    const stops = stopResults;
+    if (stops == null) return;
+    if (stops.length === 0) {
+      stopRoutes = {};
+      return;
+    }
+    const ids = stops.map((s) => s.id);
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const routes = await repo.getRoutesForStops(ids);
+        // Guard against out-of-order resolution: only apply if the
+        // current stopResults still contains these ids.
+        const currentIds = new Set((stopResults ?? []).map((s) => s.id));
+        const filtered: Record<string, Route[]> = {};
+        for (const id of Object.keys(routes)) {
+          if (currentIds.has(id)) filtered[id] = routes[id];
+        }
+        stopRoutes = filtered;
+      } catch {
+        // Silent -- badge chips are supplementary; failure to fetch
+        // them shouldn't tear down the search results themselves.
+      }
+    })();
+  });
 
   function selectStop(id: string) {
     onclose();
@@ -371,6 +407,10 @@
 {/snippet}
 
 {#snippet stopCard(stop: StopWithDistance)}
+  {@const routes = stopRoutes[stop.id] ?? []}
+  {@const VISIBLE = 6}
+  {@const visibleRoutes = routes.slice(0, VISIBLE)}
+  {@const hiddenCount = Math.max(0, routes.length - VISIBLE)}
   <button
     type="button"
     onclick={() => selectStop(stop.id)}
@@ -387,11 +427,33 @@
     <Avatar variant="square" class="w-10 h-10 shrink-0">
       <Bus size={20} />
     </Avatar>
-    <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
-    {#if hasGps && stop.distance != null}
-      <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
-        {formatDistance(stop.distance)}
-      </span>
-    {/if}
+    <div class="min-w-0 flex-1 flex flex-col gap-1">
+      <div class="flex items-center gap-2">
+        <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
+        {#if hasGps && stop.distance != null}
+          <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
+            {formatDistance(stop.distance)}
+          </span>
+        {/if}
+      </div>
+      {#if visibleRoutes.length > 0}
+        <!-- Route chips row. Fixed height, no wrap: badges overflow
+             beyond VISIBLE roll into a "+N" chip rather than growing
+             the card. -->
+        <div class="flex items-center gap-1 min-w-0 h-6 overflow-hidden">
+          {#each visibleRoutes as route (route.id)}
+            <RouteBadge {route} size="small" class="shrink-0" />
+          {/each}
+          {#if hiddenCount > 0}
+            <span
+              class="shrink-0 inline-flex items-center justify-center h-6 min-w-6 px-1.5 text-xs font-medium rounded-md border border-[color:var(--color-border)] text-[color:var(--color-fg-muted)]"
+              aria-label={`${hiddenCount} more route${hiddenCount === 1 ? '' : 's'}`}
+            >
+              +{hiddenCount}
+            </span>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </button>
 {/snippet}

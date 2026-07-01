@@ -214,6 +214,14 @@ export interface GtfsRepo {
   getRoutesForStop(stopId: string): Promise<Route[]>;
 
   /**
+   * Batched variant of {@link GtfsRepo.getRoutesForStop} — one worker
+   * round-trip for many stops. Result keyed by stop_id; stops with no
+   * routes are absent (callers treat as empty). Used by the header
+   * search overlay to render route chips on every result row.
+   */
+  getRoutesForStops(stopIds: readonly string[]): Promise<Record<string, Route[]>>;
+
+  /**
    * Route ids for which `stopId` is the first stop (origin) of at least one trip.
    * Used to show the isStart ▶ marker on route badges in the station view.
    */
