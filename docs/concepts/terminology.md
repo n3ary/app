@@ -12,6 +12,7 @@ Canonical names. Use these in code and docs.
 | **trip** | journey, run | GTFS canonical |
 | **headsign** | destination, terminus | GTFS canonical; what the front sign reads |
 | **direction** | inbound/outbound, dir | GTFS `direction_id` (0 or 1) |
+| **circular route** | loop, ring | Route whose first and last stops resolve to the same physical location (identical `stop_id`, or within ~200 m). Direction-of-travel cues are suppressed for circular routes since origin ≈ terminus |
 | **feed** | agency (in v2 UX) | A feed may carry multiple agencies; see [feeds.md](feeds.md) |
 | **ETA** | arrival time, time-to-arrive | "ETA" is short and unambiguous |
 | **bucket** | status, state | Specific term for station-view arrival classification |

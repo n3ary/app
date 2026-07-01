@@ -45,7 +45,7 @@
     type TripShapePlan,
   } from '$lib/domain/predictPosition';
   import { predictArrivalFromGps } from '$lib/domain/predictArrivalAlongShape';
-  import { measurePolyline, projectOnPolyline } from '$lib/domain/shapeProjection';
+  import { bearingBetween, measurePolyline, projectOnPolyline } from '$lib/domain/shapeProjection';
   import { haversineMeters } from '$lib/domain/distance';
   import { clockToBucket } from '$lib/domain/timeOfDay';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
@@ -524,15 +524,7 @@
     if (!view || view.stops.length < 2) return 0;
     const a = view.stops[0];
     const b = view.stops[view.stops.length - 1];
-    const toRad = Math.PI / 180;
-    const f1 = a.lat * toRad;
-    const f2 = b.lat * toRad;
-    const dl = (b.lon - a.lon) * toRad;
-    const y = Math.sin(dl) * Math.cos(f2);
-    const x =
-      Math.cos(f1) * Math.sin(f2) -
-      Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
-    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+    return bearingBetween(a, b);
   });
 
   // ── Title / subtitle ───────────────────────────────────────────────
