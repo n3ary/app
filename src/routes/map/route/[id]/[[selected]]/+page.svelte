@@ -767,6 +767,7 @@
       const originBearing = measuredForBearing
         ? bearingAtDistance(measuredForBearing, 0)
         : 0;
+      const originPlayFg = pickContrastingText(currentView.route.color);
       currentView.stops.forEach((s) => {
         // Both sides are strings (GTFS stop_id is a free-form text id
         // per spec, kept as string end-to-end). Direct === compare.
@@ -776,28 +777,24 @@
           isRouteOrigin && !hasStartVehicle && !isFromStop && measuredForBearing != null;
         const m: import('leaflet').Marker | import('leaflet').CircleMarker = showPlayIcon
           ? Lref.marker([s.lat, s.lon], {
-              // Play triangle scaled a bit larger than a normal stop
-              // circle so it reads as an intentional call-out.
-              // Rotated to the polyline's initial bearing so the tip
-              // points the way trips start moving. White fill +
-              // route-colour outline matches the start-vehicle arrow
-              // so both direction cues share one visual language.
+              // Play-triangle pill matching the vehicle badge: route
+              // colour fill, contrasting glyph inside, white ring,
+              // same corner radius. Only the SVG glyph rotates —
+              // the pill stays upright so it reads as a UI element,
+              // not a rotated stop marker.
               icon: Lref.divIcon({
                 className: 'neary-stop-play',
                 html: `<div style="
-                    transform: rotate(${originBearing.toFixed(1)}deg);
-                    transform-origin: 50% 50%;
-                    width: 28px; height: 28px;
-                    display: flex; align-items: center; justify-content: center;
-                  "><svg width="28" height="28" viewBox="0 0 20 20" aria-hidden="true">
-                    <path d="M10 2 L17 17 L3 17 Z"
-                      fill="#ffffff"
-                      stroke="${currentView.route.color}"
-                      stroke-width="2" stroke-linejoin="round"
-                      style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));" />
+                    display:inline-flex;align-items:center;justify-content:center;
+                    width:24px;height:24px;border-radius:6px;
+                    background:${currentView.route.color};color:${originPlayFg};
+                    box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
+                  "><svg width="14" height="14" viewBox="0 0 20 20"
+                          style="transform:rotate(${originBearing.toFixed(1)}deg);" aria-hidden="true">
+                    <path d="M10 2 L17 17 L3 17 Z" fill="currentColor" />
                   </svg></div>`,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14],
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
               }),
             })
           : Lref.circleMarker([s.lat, s.lon], {
@@ -918,27 +915,28 @@
         if (best && bestDistM < START_VEHICLE_RADIUS_M) {
           const measured = view.shape.length >= 2 ? measurePolyline(view.shape) : null;
           const brg = measured ? bearingAtDistance(measured, 0) : 0;
-          const SIZE = 32;
+          // Rounded pill matching the vehicle badge: route colour
+          // fill, contrasting glyph inside, white ring, same corner
+          // radius. Only the SVG glyph rotates — the pill stays
+          // upright so it reads as a UI element rather than a
+          // free-floating pointer.
+          const SIZE = 24;
           const html = `<div style="
-              transform: rotate(${brg.toFixed(1)}deg);
-              transform-origin: 50% 50%;
-              width: ${SIZE}px; height: ${SIZE}px;
-              display: flex; align-items: center; justify-content: center;
-              pointer-events: none;
-            "><svg width="${SIZE}" height="${SIZE}" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 2 L16 14 L10 11 L4 14 Z"
-                fill="#ffffff"
-                stroke="${routeColor}"
-                stroke-width="2" stroke-linejoin="round"
-                style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));" />
+              display:inline-flex;align-items:center;justify-content:center;
+              width:${SIZE}px;height:${SIZE}px;border-radius:6px;
+              background:${routeColor};color:${labelFg};
+              box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
+              pointer-events:none;
+            "><svg width="14" height="14" viewBox="0 0 20 20"
+                    style="transform:rotate(${brg.toFixed(1)}deg);" aria-hidden="true">
+              <path d="M10 2 L16 14 L10 11 L4 14 Z" fill="currentColor" />
             </svg></div>`;
           const icon = Lref.divIcon({
             className: 'neary-start-vehicle-arrow',
             html,
             iconSize: [SIZE, SIZE],
-            // Anchor placed BELOW the icon so the glyph sits just
-            // above the 28 px-tall vehicle badge: icon bottom edge
-            // lands ~2 px above the badge top.
+            // Anchor placed BELOW the icon so the pill sits just
+            // above the 28 px-tall vehicle badge with a 2 px gap.
             iconAnchor: [SIZE / 2, SIZE + 16],
           });
           Lref.marker([best.lat, best.lon], {
