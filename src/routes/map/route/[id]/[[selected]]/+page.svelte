@@ -45,7 +45,8 @@
     type TripShapePlan,
   } from '$lib/domain/predictPosition';
   import { predictArrivalFromGps } from '$lib/domain/predictArrivalAlongShape';
-  import { bearingAtDistance, measurePolyline, pointAtDistance, projectOnPolyline } from '$lib/domain/shapeProjection';
+  import { bearingAtDistance, measurePolyline, projectOnPolyline } from '$lib/domain/shapeProjection';
+  import { haversineMeters } from '$lib/domain/distance';
   import { clockToBucket } from '$lib/domain/timeOfDay';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
@@ -475,6 +476,26 @@
     return out;
   });
 
+  // True when at least one active vehicle marker sits within
+  // START_VEHICLE_RADIUS_M of the route's origin — the "start
+  // vehicle" that gets a direction arrow next to it. When false,
+  // the origin stop takes over the direction cue via a play icon
+  // (see the stops-render effect). Recomputes on every tick since
+  // `markers` does; boolean output means downstream effects only
+  // re-run on the rare transition edge, not per tick.
+  const START_VEHICLE_RADIUS_M = 200;
+  const hasStartVehicle = $derived.by(() => {
+    if (!view || markers.length === 0) return false;
+    const origin = view.stops[0];
+    if (!origin) return false;
+    for (const m of markers) {
+      if (haversineMeters(origin.lat, origin.lon, m.lat, m.lon) < START_VEHICLE_RADIUS_M) {
+        return true;
+      }
+    }
+    return false;
+  });
+
   // ── Title / subtitle ───────────────────────────────────────────────
   // Mirrors the schedule view: title is the origin station name
   // (i.e. 'departures from here'), subtitle is the headsign —
@@ -585,7 +606,6 @@
   // touched from effects that already track mapInstance + view.
   let mapInstance = $state<import('leaflet').Map | null>(null);
   let shapeLayer: import('leaflet').Polyline | null = null;
-  let directionLayer: import('leaflet').LayerGroup | null = null;
   let stopsLayer: import('leaflet').LayerGroup | null = null;
   let vehiclesLayer: import('leaflet').LayerGroup | null = null;
   let userMarker: import('leaflet').Marker | null = null;
@@ -698,10 +718,6 @@
       shapeLayer.remove();
       shapeLayer = null;
     }
-    if (directionLayer) {
-      directionLayer.remove();
-      directionLayer = null;
-    }
     if (currentView.shape.length >= 2) {
       const latlngs = currentView.shape.map((p) => [p.lat, p.lon] as [number, number]);
       shapeLayer = Lref.polyline(latlngs, {
@@ -720,183 +736,6 @@
         });
         hasFitOnce = true;
       }
-      // Direction-of-travel cue: a short "shadow" copy of the
-      // polyline centred on the middle stop of the route, offset
-      // perpendicular to the shape so it sits well OUTSIDE the line,
-      // capped with a chevron pointing the way trips run. Following
-      // the actual polyline (not a straight segment) makes the
-      // shadow read as "same route, same bends" for curved / L /
-      // circular routes.
-      //
-      // Which side is "outside" is chosen once from the polyline
-      // centroid: for a loop the centroid is inside, so the outward
-      // vector points away from it; for an L-shape the centroid sits
-      // in the concave region, so outward points to the convex flank;
-      // for a straight route both sides are equivalent (side falls
-      // back to the right of travel).
-      //
-      // Non-interactive so it never intercepts stop / vehicle taps.
-      // The shadow polyline lives in overlayPane (z=400) alongside
-      // the main route line; the chevron marker lives in markerPane
-      // (z=600), above stops but below vehicles in nearyVehicles
-      // (z=620).
-      const measured = measurePolyline(currentView.shape);
-      if (
-        measured.totalDistM > 0 &&
-        measured.points.length >= 2 &&
-        currentView.stops.length >= 3
-      ) {
-        const { points, cumDistM, totalDistM } = measured;
-        // Resolve a stop's cumulative distance along the shape.
-        // Prefer the build-time `shape_dist_traveled` value when the
-        // feed carries it; fall back to a live projection otherwise.
-        const stopDistAlong = (s: { lat: number; lon: number; distAlongM?: number }): number => {
-          if (typeof s.distAlongM === 'number' && Number.isFinite(s.distAlongM)) {
-            return Math.max(0, Math.min(totalDistM, s.distAlongM));
-          }
-          return projectOnPolyline({ lat: s.lat, lon: s.lon }, points).distAlongM;
-        };
-        // Shadow spans from the stop before the middle stop to the
-        // stop after it — 2 inter-stop segments, centred on the
-        // route's central station.
-        const midStopIdx = Math.floor(currentView.stops.length / 2);
-        const startStop = currentView.stops[midStopIdx - 1];
-        const endStop = currentView.stops[midStopIdx + 1];
-        let startDist = stopDistAlong(startStop);
-        let endDist = stopDistAlong(endStop);
-        if (endDist < startDist) [startDist, endDist] = [endDist, startDist];
-        // Guard against feeds where the projected stops collapse to
-        // the same point on shape (near-duplicate stops on a loop's
-        // shared segment): fall back to a small window around the
-        // midpoint so we still render a visible cue.
-        if (endDist - startDist < 40) {
-          const midD = (startDist + endDist) / 2;
-          startDist = Math.max(0, midD - 60);
-          endDist = Math.min(totalDistM, midD + 60);
-        }
-        const midDist = (startDist + endDist) / 2;
-        const mid = pointAtDistance(measured, midDist);
-        // Local equirectangular scale factors — good to a few metres
-        // at the sub-kilometre offsets we use here.
-        const M_PER_DEG_LAT = 111320;
-        const cosMidLat = Math.cos((mid.lat * Math.PI) / 180) || 1;
-        // Polyline centroid (arithmetic mean of vertices). Fine for
-        // "which side is outside" — we only need the sign of the dot
-        // product with the local perpendicular, not a geometric
-        // centre of mass.
-        let cLat = 0;
-        let cLon = 0;
-        for (const p of points) {
-          cLat += p.lat;
-          cLon += p.lon;
-        }
-        cLat /= points.length;
-        cLon /= points.length;
-        // Right-of-travel perpendicular at midpoint, in metres (east,
-        // north). Bearing θ from North (CW): right = θ + 90°
-        // → (east, north) = (cos θ, -sin θ).
-        const midBearingRad =
-          (bearingAtDistance(measured, midDist) * Math.PI) / 180;
-        const rightEast = Math.cos(midBearingRad);
-        const rightNorth = -Math.sin(midBearingRad);
-        // Outward vector from centroid to midpoint, in metres.
-        const outEast = (mid.lon - cLon) * M_PER_DEG_LAT * cosMidLat;
-        const outNorth = (mid.lat - cLat) * M_PER_DEG_LAT;
-        // side = +1 → right of travel; -1 → left. Fallback to right
-        // when centroid ≈ midpoint (straight route, both flanks
-        // equivalent).
-        const side =
-          rightEast * outEast + rightNorth * outNorth >= 0 ? 1 : -1;
-        // Bigger offset than the earlier iteration — the shadow must
-        // sit clearly off the route so it reads as an indicator, not
-        // a second route line hugging the first.
-        const OFFSET_M = 130;
-        // Build the middle-chunk vertex list: interpolated point at
-        // startDist, all real shape vertices strictly inside the
-        // range, interpolated point at endDist.
-        type LL = { lat: number; lon: number };
-        const chunk: LL[] = [];
-        chunk.push(pointAtDistance(measured, startDist));
-        for (let i = 0; i < points.length; i++) {
-          const d = cumDistM[i];
-          if (d > startDist && d < endDist) chunk.push(points[i]);
-        }
-        chunk.push(pointAtDistance(measured, endDist));
-        // Bearing from a to b, degrees CW from North. Small-angle
-        // spherical formula — matches bearingAtDistance's convention.
-        const bearingBetween = (a: LL, b: LL): number => {
-          const toRad = Math.PI / 180;
-          const f1 = a.lat * toRad;
-          const f2 = b.lat * toRad;
-          const dl = (b.lon - a.lon) * toRad;
-          const y = Math.sin(dl) * Math.cos(f2);
-          const x =
-            Math.cos(f1) * Math.sin(f2) -
-            Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
-          return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-        };
-        // Offset each vertex along the perpendicular of its local
-        // tangent. For interior vertices the tangent comes from
-        // prev→next (miter-style averaging so gentle bends stay
-        // smooth); endpoints use bearingAtDistance at the chunk
-        // boundary so they line up cleanly with the underlying
-        // polyline direction there.
-        const offsetChunk: LL[] = chunk.map((p, i) => {
-          let brg: number;
-          if (i === 0) brg = bearingAtDistance(measured, startDist);
-          else if (i === chunk.length - 1) brg = bearingAtDistance(measured, endDist);
-          else brg = bearingBetween(chunk[i - 1], chunk[i + 1]);
-          const brgRad = (brg * Math.PI) / 180;
-          const eastM = side * OFFSET_M * Math.cos(brgRad);
-          const northM = side * -OFFSET_M * Math.sin(brgRad);
-          const cosLatI = Math.cos((p.lat * Math.PI) / 180) || 1;
-          return {
-            lat: p.lat + northM / M_PER_DEG_LAT,
-            lon: p.lon + eastM / (M_PER_DEG_LAT * cosLatI),
-          };
-        });
-        directionLayer = Lref.layerGroup().addTo(mapInstance);
-        // Slightly thinner than the main polyline so the two read as
-        // main line + companion, not two overlapping routes. Same
-        // colour so the connection is obvious.
-        Lref.polyline(
-          offsetChunk.map((p) => [p.lat, p.lon] as [number, number]),
-          {
-            color: currentView.route.color,
-            weight: 3.5,
-            opacity: 0.85,
-            interactive: false,
-          },
-        ).addTo(directionLayer);
-        // Chevron at the offset chunk's tail, rotated to the tangent
-        // at endDist so it points the way the vehicle is travelling.
-        const arrowPos = offsetChunk[offsetChunk.length - 1];
-        const arrowBearing = bearingAtDistance(measured, endDist);
-        const SIZE = 28;
-        const html = `<div style="
-          transform: rotate(${arrowBearing.toFixed(1)}deg);
-          transform-origin: 50% 50%;
-          width: ${SIZE}px; height: ${SIZE}px;
-          display: flex; align-items: center; justify-content: center;
-          pointer-events: none;
-        "><svg width="${SIZE}" height="${SIZE}" viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M10 2 L16 14 L10 11 L4 14 Z"
-            fill="${currentView.route.color}"
-            stroke="#fff" stroke-width="1.5" stroke-linejoin="round"
-            style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));" />
-        </svg></div>`;
-        const icon = Lref.divIcon({
-          className: 'neary-direction-arrow',
-          html,
-          iconSize: [SIZE, SIZE],
-          iconAnchor: [SIZE / 2, SIZE / 2],
-        });
-        Lref.marker([arrowPos.lat, arrowPos.lon], {
-          icon,
-          interactive: false,
-          keyboard: false,
-        }).addTo(directionLayer);
-      }
     }
     stopsLayer?.clearLayers();
     const sl = stopsLayer;
@@ -912,30 +751,73 @@
       // success-green colour so the rider can recognise where they
       // were standing. Pure visual marker; no other behavioural
       // change — the popup, hit target, and trip data are identical.
-      const originStopId = fromStopId;
+      //
+      // Second exception: when no vehicle is currently at / near the
+      // route's origin (hasStartVehicle === false), the origin stop
+      // takes over the direction-of-travel cue and renders as a
+      // play triangle rotated to the initial-segment bearing. When
+      // a start vehicle is present, that vehicle gets the arrow (in
+      // the vehicles effect below) and the origin falls back to the
+      // regular circle so the two cues don't stack.
+      const fromStop = fromStopId;
+      const routeOriginId = currentView.stops[0]?.stopId ?? null;
+      const measuredForBearing = currentView.shape.length >= 2
+        ? measurePolyline(currentView.shape)
+        : null;
+      const originBearing = measuredForBearing
+        ? bearingAtDistance(measuredForBearing, 0)
+        : 0;
       currentView.stops.forEach((s) => {
         // Both sides are strings (GTFS stop_id is a free-form text id
         // per spec, kept as string end-to-end). Direct === compare.
-        const isOrigin = originStopId != null && s.stopId === originStopId;
-        const m = Lref.circleMarker([s.lat, s.lon], {
-          // Stops are already drawn ON TOP of the route polyline:
-          // both live in overlayPane, the polyline is added by this
-          // effect FIRST and the stops are appended AFTER, so SVG
-          // insertion order puts the stop circles above the line. No
-          // pane gymnastics needed — earlier attempts to hoist the
-          // origin into markerPane / a custom pane broke the marker
-          // entirely because Leaflet's SVG renderer isn't on
-          // markerPane by default.
-          radius: isOrigin ? 9 : 5,
-          color: '#fff',
-          weight: isOrigin ? 3 : 1.5,
-          // Hardcoded green hex (not var(--color-success)) because
-          // Leaflet's SVG renderer doesn't parse CSS custom properties
-          // or oklch() — keep parity with the GPS-good ring used in
-          // vehicleHtml below.
-          fillColor: isOrigin ? '#22c55e' : currentView.route.color,
-          fillOpacity: 1,
-        });
+        const isFromStop = fromStop != null && s.stopId === fromStop;
+        const isRouteOrigin = routeOriginId != null && s.stopId === routeOriginId;
+        const showPlayIcon =
+          isRouteOrigin && !hasStartVehicle && !isFromStop && measuredForBearing != null;
+        const m: import('leaflet').Marker | import('leaflet').CircleMarker = showPlayIcon
+          ? Lref.marker([s.lat, s.lon], {
+              // Play triangle scaled a bit larger than a normal stop
+              // circle so it reads as an intentional call-out.
+              // Rotated to the polyline's initial bearing so the tip
+              // points the way trips start moving. White stroke +
+              // drop-shadow keeps the glyph legible on both light and
+              // dark tiles.
+              icon: Lref.divIcon({
+                className: 'neary-stop-play',
+                html: `<div style="
+                    transform: rotate(${originBearing.toFixed(1)}deg);
+                    transform-origin: 50% 50%;
+                    width: 24px; height: 24px;
+                    display: flex; align-items: center; justify-content: center;
+                  "><svg width="24" height="24" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M10 2 L17 17 L3 17 Z"
+                      fill="${currentView.route.color}"
+                      stroke="#fff" stroke-width="1.75" stroke-linejoin="round"
+                      style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));" />
+                  </svg></div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
+              }),
+            })
+          : Lref.circleMarker([s.lat, s.lon], {
+              // Stops are already drawn ON TOP of the route polyline:
+              // both live in overlayPane, the polyline is added by this
+              // effect FIRST and the stops are appended AFTER, so SVG
+              // insertion order puts the stop circles above the line. No
+              // pane gymnastics needed — earlier attempts to hoist the
+              // origin into markerPane / a custom pane broke the marker
+              // entirely because Leaflet's SVG renderer isn't on
+              // markerPane by default.
+              radius: isFromStop ? 9 : 5,
+              color: '#fff',
+              weight: isFromStop ? 3 : 1.5,
+              // Hardcoded green hex (not var(--color-success)) because
+              // Leaflet's SVG renderer doesn't parse CSS custom properties
+              // or oklch() — keep parity with the GPS-good ring used in
+              // vehicleHtml below.
+              fillColor: isFromStop ? '#22c55e' : currentView.route.color,
+              fillOpacity: 1,
+            });
         m.bindPopup(stopPopupHtml(s.stopId, s.stopName, currentRoutes.get(s.stopId) ?? []), {
           closeButton: false,
         });
@@ -944,14 +826,14 @@
         // on. Lets the rider compare against the `?from=<id>` query
         // param (and against the station-card stop they came from)
         // when investigating why the from-stop highlight didn't
-        // appear. The origin stop gets a `★` prefix so we can also
-        // see whether the isOrigin check itself is firing — if the
+        // appear. The from-stop gets a `★` prefix so we can also
+        // see whether the isFromStop check itself is firing — if the
         // star appears but the dot is still route-coloured, the
         // match works and it's a rendering bug; if no star appears
         // on the stop you came from, the match itself is failing.
         // Suppressed in production so the map stays readable.
         if (userPrefs.showDebugIds) {
-          m.bindTooltip(`${isOrigin ? '★ ' : ''}${s.stopId}`, {
+          m.bindTooltip(`${isFromStop ? '★ ' : ''}${s.stopId}`, {
             permanent: true,
             direction: 'right',
             offset: [4, 0],
@@ -1009,6 +891,63 @@
         offset: Lref.point(0, -16),
       });
       marker.addTo(vehiclesLayer);
+    }
+
+    // Direction-of-travel cue when a vehicle is at / near the route's
+    // origin: pin a small arrow at that vehicle's position, rotated
+    // to the polyline's initial bearing (vehicle is close to origin,
+    // so the first-segment bearing is a good approximation of the
+    // vehicle's actual heading). Non-interactive so it never steals
+    // taps from the underlying vehicle marker. `iconAnchor` shifts
+    // the arrow just above the 44×28 vehicle badge instead of
+    // covering it. When no vehicle is near origin, the origin STOP
+    // shows a play icon instead (rendered by the stops effect).
+    if (view && markers.length > 0) {
+      const origin = view.stops[0];
+      if (origin) {
+        let best: VehicleMarker | null = null;
+        let bestDistM = Infinity;
+        for (const m of markers) {
+          const d = haversineMeters(origin.lat, origin.lon, m.lat, m.lon);
+          if (d < bestDistM) {
+            bestDistM = d;
+            best = m;
+          }
+        }
+        if (best && bestDistM < START_VEHICLE_RADIUS_M) {
+          const measured = view.shape.length >= 2 ? measurePolyline(view.shape) : null;
+          const brg = measured ? bearingAtDistance(measured, 0) : 0;
+          const SIZE = 20;
+          const html = `<div style="
+              transform: rotate(${brg.toFixed(1)}deg);
+              transform-origin: 50% 50%;
+              width: ${SIZE}px; height: ${SIZE}px;
+              display: flex; align-items: center; justify-content: center;
+              pointer-events: none;
+            "><svg width="${SIZE}" height="${SIZE}" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 2 L16 14 L10 11 L4 14 Z"
+                fill="${routeColor}"
+                stroke="#fff" stroke-width="1.5" stroke-linejoin="round"
+                style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));" />
+            </svg></div>`;
+          const icon = Lref.divIcon({
+            className: 'neary-start-vehicle-arrow',
+            html,
+            iconSize: [SIZE, SIZE],
+            // Anchor 30 px BELOW the SVG's centre so the arrow appears
+            // ~16 px above the vehicle badge's top edge (badge is
+            // 28 px tall, centred on the latlng).
+            iconAnchor: [SIZE / 2, SIZE / 2 + 30],
+          });
+          Lref.marker([best.lat, best.lon], {
+            icon,
+            pane: 'nearyVehicles',
+            zIndexOffset: 1500,
+            interactive: false,
+            keyboard: false,
+          }).addTo(vehiclesLayer);
+        }
+      }
     }
   });
 
