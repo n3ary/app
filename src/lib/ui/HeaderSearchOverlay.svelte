@@ -22,7 +22,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { Dialog as Bits } from 'bits-ui';
-  import { Bus, Calendar, Heart, Search, X } from 'lucide-svelte';
+  import { Calendar, Heart, Search, X } from 'lucide-svelte';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import type { Route } from '$lib/domain/types';
@@ -30,12 +30,12 @@
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/locationStore.svelte';
-  import Avatar from './Avatar.svelte';
   import { cn } from './cn';
   import { iconButtonClass } from './iconButtonClass';
   import RouteBadge from './RouteBadge.svelte';
   import Spinner from './Spinner.svelte';
   import Stack from './Stack.svelte';
+  import StopSearchCard from './StopSearchCard.svelte';
   import Typography from './Typography.svelte';
 
   type Props = {
@@ -234,11 +234,6 @@
   function toggleFavorite(route: Route) {
     favoritesStore.toggle(route.id);
   }
-  function formatDistance(m: number | undefined): string {
-    if (m == null) return '';
-    if (m < 1000) return `${Math.round(m)} m`;
-    return `${(m / 1000).toFixed(1)} km`;
-  }
   function normalizeForSearch(s: string): string {
     return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
   }
@@ -325,7 +320,12 @@
                 {isTyping ? 'Stations' : 'Nearby'}
               </Typography>
               {#each stopResults as stop (stop.id)}
-                {@render stopCard(stop)}
+                <StopSearchCard
+                  {stop}
+                  routes={stopRoutes[stop.id] ?? []}
+                  {hasGps}
+                  onselect={selectStop}
+                />
               {/each}
             {/if}
           {/if}
@@ -409,56 +409,4 @@
       </button>
     </div>
   </div>
-{/snippet}
-
-{#snippet stopCard(stop: StopWithDistance)}
-  {@const routes = stopRoutes[stop.id] ?? []}
-  {@const VISIBLE = 6}
-  {@const visibleRoutes = routes.slice(0, VISIBLE)}
-  {@const hiddenCount = Math.max(0, routes.length - VISIBLE)}
-  <button
-    type="button"
-    onclick={() => selectStop(stop.id)}
-    class={cn(
-      'w-full flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
-      'border-[color:var(--color-border)] cursor-pointer text-left',
-      'hover:bg-[color:var(--color-border)]/30',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
-    )}
-  >
-    <!-- Same station badge as the StationCard header: square Avatar
-         with a Bus glyph. Keeps a rider's mental model consistent
-         across search, favorites, and the station view itself. -->
-    <Avatar variant="square" class="w-10 h-10 shrink-0">
-      <Bus size={20} />
-    </Avatar>
-    <div class="min-w-0 flex-1 flex flex-col gap-1">
-      <div class="flex items-center gap-2">
-        <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
-        {#if hasGps && stop.distance != null}
-          <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
-            {formatDistance(stop.distance)}
-          </span>
-        {/if}
-      </div>
-      {#if visibleRoutes.length > 0}
-        <!-- Route chips row. Fixed height, no wrap: badges overflow
-             beyond VISIBLE roll into a "+N" chip rather than growing
-             the card. -->
-        <div class="flex items-center gap-1 min-w-0 h-6 overflow-hidden">
-          {#each visibleRoutes as route (route.id)}
-            <RouteBadge {route} size="small" class="shrink-0" />
-          {/each}
-          {#if hiddenCount > 0}
-            <span
-              class="shrink-0 inline-flex items-center justify-center h-6 min-w-6 px-1.5 text-xs font-medium rounded-md border border-[color:var(--color-border)] text-[color:var(--color-fg-muted)]"
-              aria-label={`${hiddenCount} more route${hiddenCount === 1 ? '' : 's'}`}
-            >
-              +{hiddenCount}
-            </span>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </button>
 {/snippet}
