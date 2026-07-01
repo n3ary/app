@@ -496,6 +496,22 @@
     return false;
   });
 
+  // Circular route: origin and terminus resolve to the same physical
+  // stop (either identical stop_id, or so close they might as well
+  // be — 200 m catches loops with paired origin / terminus stops on
+  // opposite kerbs). Detected from the shape data alone, no
+  // per-feed hint. Direction-of-travel cues are suppressed for
+  // circular routes since "start" and "end" collapse and a single
+  // arrow at one point on the loop just adds noise.
+  const CIRCULAR_MAX_M = 200;
+  const isCircular = $derived.by(() => {
+    if (!view || view.stops.length < 2) return false;
+    const first = view.stops[0];
+    const last = view.stops[view.stops.length - 1];
+    if (first.stopId === last.stopId) return true;
+    return haversineMeters(first.lat, first.lon, last.lat, last.lon) < CIRCULAR_MAX_M;
+  });
+
   // ── Title / subtitle ───────────────────────────────────────────────
   // Mirrors the schedule view: title is the origin station name
   // (i.e. 'departures from here'), subtitle is the headsign —
@@ -774,7 +790,7 @@
         const isFromStop = fromStop != null && s.stopId === fromStop;
         const isRouteOrigin = routeOriginId != null && s.stopId === routeOriginId;
         const showPlayIcon =
-          isRouteOrigin && !hasStartVehicle && !isFromStop && measuredForBearing != null;
+          isRouteOrigin && !hasStartVehicle && !isFromStop && !isCircular && measuredForBearing != null;
         const m: import('leaflet').Marker | import('leaflet').CircleMarker = showPlayIcon
           ? Lref.marker([s.lat, s.lon], {
               // Play-triangle pill matching the vehicle badge: route
@@ -900,7 +916,9 @@
     // the arrow just above the 44×28 vehicle badge instead of
     // covering it. When no vehicle is near origin, the origin STOP
     // shows a play icon instead (rendered by the stops effect).
-    if (view && markers.length > 0) {
+    // Skipped entirely for circular routes — origin and terminus
+    // collapse, so a single arrow near origin is misleading.
+    if (view && markers.length > 0 && !isCircular) {
       const origin = view.stops[0];
       if (origin) {
         let best: VehicleMarker | null = null;
