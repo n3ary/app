@@ -24,7 +24,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, Bus, Calendar, Maximize2, Minus, Plus } from 'lucide-svelte';
+  import { ArrowRightLeft, Bus, Calendar, Heart, Maximize2, Minus, Plus } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
     Stack, Typography, networkIcon, networkTextColor,
@@ -45,8 +45,10 @@
     type TripShapePlan,
   } from '$lib/domain/predictPosition';
   import { predictArrivalFromGps } from '$lib/domain/predictArrivalAlongShape';
-  import { measurePolyline, projectOnPolyline } from '$lib/domain/shapeProjection';
+  import { bearingBetween, measurePolyline, projectOnPolyline } from '$lib/domain/shapeProjection';
+  import { haversineMeters } from '$lib/domain/distance';
   import { clockToBucket } from '$lib/domain/timeOfDay';
+  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { feedConfigStore } from '$lib/stores/feedConfigStore.svelte';
   import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
@@ -474,6 +476,57 @@
     return out;
   });
 
+  // True when at least one active vehicle marker sits within
+  // START_VEHICLE_RADIUS_M of the route's origin — the "start
+  // vehicle" that gets a direction arrow next to it. When false,
+  // the origin stop takes over the direction cue via a play icon
+  // (see the stops-render effect). Recomputes on every tick since
+  // `markers` does; boolean output means downstream effects only
+  // re-run on the rare transition edge, not per tick.
+  const START_VEHICLE_RADIUS_M = 200;
+  const hasStartVehicle = $derived.by(() => {
+    if (!view || markers.length === 0) return false;
+    const origin = view.stops[0];
+    if (!origin) return false;
+    for (const m of markers) {
+      if (haversineMeters(origin.lat, origin.lon, m.lat, m.lon) < START_VEHICLE_RADIUS_M) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  // Circular route: origin and terminus resolve to the same physical
+  // stop (either identical stop_id, or so close they might as well
+  // be — 200 m catches loops with paired origin / terminus stops on
+  // opposite kerbs). Detected from the shape data alone, no
+  // per-feed hint. Direction-of-travel cues are suppressed for
+  // circular routes since "start" and "end" collapse and a single
+  // arrow at one point on the loop just adds noise.
+  const CIRCULAR_MAX_M = 200;
+  const isCircular = $derived.by(() => {
+    if (!view || view.stops.length < 2) return false;
+    const first = view.stops[0];
+    const last = view.stops[view.stops.length - 1];
+    if (first.stopId === last.stopId) return true;
+    return haversineMeters(first.lat, first.lon, last.lat, last.lon) < CIRCULAR_MAX_M;
+  });
+
+  // Overall direction of travel: initial bearing on the great-circle
+  // from the route's origin stop to its terminus stop. Prefer this
+  // over `bearingAtDistance(measured, 0)` (initial segment) because
+  // the shape often wiggles for the first few metres out of the
+  // terminal — a segment-0 arrow can point 45° off from the way the
+  // route actually heads, which confuses more than it clarifies.
+  // Meaningful only when the route is not circular (endpoints
+  // collapse); the callers gate on `!isCircular` before rendering.
+  const overallBearing = $derived.by(() => {
+    if (!view || view.stops.length < 2) return 0;
+    const a = view.stops[0];
+    const b = view.stops[view.stops.length - 1];
+    return bearingBetween(a, b);
+  });
+
   // ── Title / subtitle ───────────────────────────────────────────────
   // Mirrors the schedule view: title is the origin station name
   // (i.e. 'departures from here'), subtitle is the headsign —
@@ -729,30 +782,65 @@
       // success-green colour so the rider can recognise where they
       // were standing. Pure visual marker; no other behavioural
       // change — the popup, hit target, and trip data are identical.
-      const originStopId = fromStopId;
+      //
+      // Second exception: when no vehicle is currently at / near the
+      // route's origin (hasStartVehicle === false), the origin stop
+      // takes over the direction-of-travel cue and renders as a
+      // play triangle rotated to the initial-segment bearing. When
+      // a start vehicle is present, that vehicle gets the arrow (in
+      // the vehicles effect below) and the origin falls back to the
+      // regular circle so the two cues don't stack.
+      const fromStop = fromStopId;
+      const routeOriginId = currentView.stops[0]?.stopId ?? null;
+      const hasShape = currentView.shape.length >= 2;
       currentView.stops.forEach((s) => {
         // Both sides are strings (GTFS stop_id is a free-form text id
         // per spec, kept as string end-to-end). Direct === compare.
-        const isOrigin = originStopId != null && s.stopId === originStopId;
-        const m = Lref.circleMarker([s.lat, s.lon], {
-          // Stops are already drawn ON TOP of the route polyline:
-          // both live in overlayPane, the polyline is added by this
-          // effect FIRST and the stops are appended AFTER, so SVG
-          // insertion order puts the stop circles above the line. No
-          // pane gymnastics needed — earlier attempts to hoist the
-          // origin into markerPane / a custom pane broke the marker
-          // entirely because Leaflet's SVG renderer isn't on
-          // markerPane by default.
-          radius: isOrigin ? 9 : 5,
-          color: '#fff',
-          weight: isOrigin ? 3 : 1.5,
-          // Hardcoded green hex (not var(--color-success)) because
-          // Leaflet's SVG renderer doesn't parse CSS custom properties
-          // or oklch() — keep parity with the GPS-good ring used in
-          // vehicleHtml below.
-          fillColor: isOrigin ? '#22c55e' : currentView.route.color,
-          fillOpacity: 1,
-        });
+        const isFromStop = fromStop != null && s.stopId === fromStop;
+        const isRouteOrigin = routeOriginId != null && s.stopId === routeOriginId;
+        const showPlayIcon =
+          isRouteOrigin && !hasStartVehicle && !isFromStop && !isCircular && hasShape;
+        const m: import('leaflet').Marker | import('leaflet').CircleMarker = showPlayIcon
+          ? Lref.marker([s.lat, s.lon], {
+              // Play-triangle pill matching the vehicle badge: route
+              // colour fill, contrasting glyph inside, white ring,
+              // same corner radius. Only the SVG glyph rotates —
+              // the pill stays upright so it reads as a UI element,
+              // not a rotated stop marker.
+              icon: Lref.divIcon({
+                className: 'neary-stop-play',
+                html: `<div style="
+                    display:inline-flex;align-items:center;justify-content:center;
+                    width:24px;height:24px;border-radius:6px;
+                    background:${currentView.route.color};color:${pickContrastingText(currentView.route.color)};
+                    box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
+                  "><svg width="14" height="14" viewBox="0 0 20 20"
+                          style="transform:rotate(${overallBearing.toFixed(1)}deg);" aria-hidden="true">
+                    <path d="M10 2 L17 17 L3 17 Z" fill="currentColor" />
+                  </svg></div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
+              }),
+            })
+          : Lref.circleMarker([s.lat, s.lon], {
+              // Stops are already drawn ON TOP of the route polyline:
+              // both live in overlayPane, the polyline is added by this
+              // effect FIRST and the stops are appended AFTER, so SVG
+              // insertion order puts the stop circles above the line. No
+              // pane gymnastics needed — earlier attempts to hoist the
+              // origin into markerPane / a custom pane broke the marker
+              // entirely because Leaflet's SVG renderer isn't on
+              // markerPane by default.
+              radius: isFromStop ? 9 : 5,
+              color: '#fff',
+              weight: isFromStop ? 3 : 1.5,
+              // Hardcoded green hex (not var(--color-success)) because
+              // Leaflet's SVG renderer doesn't parse CSS custom properties
+              // or oklch() — keep parity with the GPS-good ring used in
+              // vehicleHtml below.
+              fillColor: isFromStop ? '#22c55e' : currentView.route.color,
+              fillOpacity: 1,
+            });
         m.bindPopup(stopPopupHtml(s.stopId, s.stopName, currentRoutes.get(s.stopId) ?? []), {
           closeButton: false,
         });
@@ -761,14 +849,14 @@
         // on. Lets the rider compare against the `?from=<id>` query
         // param (and against the station-card stop they came from)
         // when investigating why the from-stop highlight didn't
-        // appear. The origin stop gets a `★` prefix so we can also
-        // see whether the isOrigin check itself is firing — if the
+        // appear. The from-stop gets a `★` prefix so we can also
+        // see whether the isFromStop check itself is firing — if the
         // star appears but the dot is still route-coloured, the
         // match works and it's a rendering bug; if no star appears
         // on the stop you came from, the match itself is failing.
         // Suppressed in production so the map stays readable.
         if (userPrefs.showDebugIds) {
-          m.bindTooltip(`${isOrigin ? '★ ' : ''}${s.stopId}`, {
+          m.bindTooltip(`${isFromStop ? '★ ' : ''}${s.stopId}`, {
             permanent: true,
             direction: 'right',
             offset: [4, 0],
@@ -826,6 +914,77 @@
         offset: Lref.point(0, -16),
       });
       marker.addTo(vehiclesLayer);
+    }
+
+    // Direction-of-travel cue when a vehicle is at / near the route's
+    // origin: pin a small arrow at that vehicle's position, rotated
+    // to the polyline's initial bearing (vehicle is close to origin,
+    // so the first-segment bearing is a good approximation of the
+    // vehicle's actual heading). Non-interactive so it never steals
+    // taps from the underlying vehicle marker. `iconAnchor` shifts
+    // the arrow just above the 44×28 vehicle badge instead of
+    // covering it. When no vehicle is near origin, the origin STOP
+    // shows a play icon instead (rendered by the stops effect).
+    // Skipped entirely for circular routes — origin and terminus
+    // collapse, so a single arrow near origin is misleading.
+    if (view && markers.length > 0 && !isCircular) {
+      const origin = view.stops[0];
+      if (origin) {
+        let best: VehicleMarker | null = null;
+        let bestDistM = Infinity;
+        for (const m of markers) {
+          const d = haversineMeters(origin.lat, origin.lon, m.lat, m.lon);
+          if (d < bestDistM) {
+            bestDistM = d;
+            best = m;
+          }
+        }
+        if (best && bestDistM < START_VEHICLE_RADIUS_M) {
+          const brg = overallBearing;
+          // Rounded pill matching the vehicle badge: route colour
+          // fill, contrasting glyph inside, white ring, same corner
+          // radius. Only the SVG glyph rotates — the pill stays
+          // upright so it reads as a UI element rather than a
+          // free-floating pointer.
+          const SIZE = 24;
+          const html = `<div style="
+              display:inline-flex;align-items:center;justify-content:center;
+              width:${SIZE}px;height:${SIZE}px;border-radius:6px;
+              background:${routeColor};color:${labelFg};
+              box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
+              pointer-events:none;
+            "><svg width="14" height="14" viewBox="0 0 20 20"
+                    style="transform:rotate(${brg.toFixed(1)}deg);" aria-hidden="true">
+              <path d="M10 2 L16 14 L10 11 L4 14 Z" fill="currentColor" />
+            </svg></div>`;
+          // Anchor the pill on the side OPPOSITE the direction of
+          // travel: since the route line extends from origin in the
+          // bearing direction, the opposite flank is off-route, so
+          // the pill doesn't overlap other vehicle badges that stack
+          // near the departure area. Screen-space math: bearing θ
+          // (CW from N) maps to screen direction (sin θ, -cos θ);
+          // pill sits in direction (-sin θ, cos θ). Distance R=40
+          // gives clearance around the 44×28 vehicle badge even at
+          // pure-diagonal bearings.
+          const brgRad = (brg * Math.PI) / 180;
+          const R = 40;
+          const dxCenter = -R * Math.sin(brgRad);
+          const dyCenter = R * Math.cos(brgRad);
+          const icon = Lref.divIcon({
+            className: 'neary-start-vehicle-arrow',
+            html,
+            iconSize: [SIZE, SIZE],
+            iconAnchor: [SIZE / 2 - dxCenter, SIZE / 2 - dyCenter],
+          });
+          Lref.marker([best.lat, best.lon], {
+            icon,
+            pane: 'nearyVehicles',
+            zIndexOffset: 1500,
+            interactive: false,
+            keyboard: false,
+          }).addTo(vehiclesLayer);
+        }
+      }
     }
   });
 
@@ -1035,6 +1194,13 @@
 {#snippet fitIcon()}<Maximize2 size={16} />{/snippet}
 {#snippet busIcon()}<Bus size={16} />{/snippet}
 {#snippet calendarIcon()}<Calendar size={16} />{/snippet}
+{#snippet heartIcon(filled: boolean)}
+  <Heart
+    size={16}
+    fill={filled ? 'currentColor' : 'none'}
+    class={filled ? 'text-[color:var(--color-danger)]' : ''}
+  />
+{/snippet}
 
 <div class="mx-auto max-w-5xl px-4 py-3">
   {#if userPrefs.feedId == null}
@@ -1122,22 +1288,32 @@
           {@render mapControl('Fit route to view', fitIcon, fitToRoute)}
           {@render mapControl('Focus on tracked vehicle', busIcon, focusOnVehicle, !focusOnVehicleEnabled)}
         </div>
-        <!-- Schedule shortcut in the bottom-right corner. Mirrors the
-             top-right zoom/fit cluster's styling so it reads as the
-             same control family, but lives in the opposite corner to
-             avoid clobbering the cluster while keeping a single
-             thumb-reachable destination. Same (route, direction) the
-             page already binds against — no parameter recomputation.
-             Hidden for routes with no usable schedule (the feed's
-             trips ship empty arrival_times) — /schedule/route would
-             have nothing to show. -->
-        {#if view?.route.hasSchedule !== false}
+        <!-- Bottom-right control cluster. Same chrome as the top-right
+             cluster, opposite corner so the two don't crowd each
+             other. Favorite lives ABOVE the schedule shortcut in the
+             flex-column so both stay thumb-reachable. Favorites work
+             even for routes without a usable schedule, so this cluster
+             renders whenever the view is loaded. -->
+        {#if view}
+          {@const isFavorite = favoritesStore.routeIds.has(routeId)}
           <div class="neary-map-controls-bottom">
-            {@render mapControl(
-              'Open schedule for this route',
-              calendarIcon,
-              () => goto(`/schedule/route/${routeId}_${direction}`),
-            )}
+            <IconButton
+              size="small"
+              aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              aria-pressed={isFavorite}
+              class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
+              onclick={() => favoritesStore.toggle(routeId)}
+            >
+              {@render heartIcon(isFavorite)}
+            </IconButton>
+            {#if view.route.hasSchedule !== false}
+              {@render mapControl(
+                'Open schedule for this route',
+                calendarIcon,
+                () => goto(`/schedule/route/${routeId}_${direction}`),
+              )}
+            {/if}
           </div>
         {/if}
       </Card>
