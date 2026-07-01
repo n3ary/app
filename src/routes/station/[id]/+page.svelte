@@ -10,7 +10,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import {
-    Card, CardContent, NoFeedState, Spinner, Stack, StationCard, Typography,
+    Card, CardContent, SelectFeedCard, Spinner, Stack, StationCard, Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
@@ -75,7 +75,7 @@
 
 <div class="mx-auto max-w-3xl px-4 py-6">
   {#if userPrefs.feedId == null}
-    <NoFeedState />
+    <SelectFeedCard />
   {:else if !stopIdValid}
     <Card>
       <CardContent>

@@ -10,7 +10,7 @@
 <script lang="ts">
   import { Calendar, Heart } from 'lucide-svelte';
   import {
-    Card, CardContent, Chip, Collapsible, NoFeedState, RouteBadge, Spinner, Stack,
+    Card, CardContent, Chip, Collapsible, RouteBadge, SelectFeedCard, Spinner, Stack,
     TripStopList, Typography, TypeBadge, cn, iconButtonClass, networkIcon, networkTextColor,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
@@ -298,7 +298,7 @@
 
 <div class="mx-auto max-w-3xl px-4 py-6">
   {#if userPrefs.feedId == null}
-    <NoFeedState message="Pick a feed in Settings to star routes here." />
+    <SelectFeedCard fallbackBody="Pick a feed in Settings to star routes here." />
   {:else if error}
     <Card>
       <CardContent>

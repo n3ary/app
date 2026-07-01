@@ -29,7 +29,7 @@
   import { page } from '$app/state';
   import { ArrowRightLeft, ChevronDown, Map as MapIcon } from 'lucide-svelte';
   import {
-    BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
+    BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
     Stack, ToggleGroup, TripStopList, Typography, networkIcon, networkTextColor,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
@@ -512,7 +512,7 @@
 
 <div class="mx-auto max-w-5xl px-4 py-6">
   {#if userPrefs.feedId == null}
-    <NoFeedState message="Pick a feed in Settings to view route schedules." />
+    <SelectFeedCard fallbackBody="Pick a feed in Settings to view route schedules." />
   {:else if !routeIdValid}
     <Card><CardContent>
       <Typography variant="h6" class="text-[color:var(--color-danger)]">Invalid route id</Typography>

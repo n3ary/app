@@ -1,16 +1,14 @@
 <!--
-  InfoCard — reusable empty/info state card used by views that need to
-  show a one-line title + paragraph + optional action buttons in place
-  of their main content.
-
-  Pattern was duplicated across the Stations view (no-feed, location-
-  needed, wrong-feed, etc.); this consolidates it so the chrome is
-  consistent and copy changes land in one place.
+  InfoCard — reusable empty/info state card. Compact banner used when
+  the card stacks with others (or as a standalone empty state).
 
   Layout:
     [Icon] Title
     Body paragraph (caption-muted)
     [Primary action] [Secondary action]
+
+  Consumers pass the icon at whatever size fits (Lucide's `size` prop
+  on the snippet body); the container tints the icon via `variant`.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

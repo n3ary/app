@@ -8,7 +8,7 @@
   import {
     Avatar, BackButton, Box, Button, Card, CardContent, Chip,
     Collapsible, Dialog, DialogContent, DialogTitle,
-    IconButton, InfoCard, List, ListItem, ListItemText, NoFeedState,
+    IconButton, InfoCard, List, ListItem, ListItemText, SelectFeedCard,
     ProgressBar, RouteBadge, Spinner, Stack, StationCard, StatusDot,
     StopSearchCard, Switch, Tabs, TextField, ToggleGroup, Tooltip, TripStopList,
     Typography, TypeBadge, VehicleCard,
@@ -578,12 +578,13 @@
     </Stack>
 
     <Stack spacing={1}>
-      <Typography variant="body2">NoFeedState — takeover for feed-less routes</Typography>
+      <Typography variant="body2">SelectFeedCard — the "no feed bound" banner used across the app</Typography>
       <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-        Rendered by /favorites, /station/[id], /schedule when userPrefs.feedId is null.
-        The Stations view uses an InfoCard instead so it can stack with other banners.
+        Rendered by the home Stations view, /favorites, /station/[id], /schedule/route,
+        and /map/route. Self-contained: reads location + feed catalogue directly and picks
+        one of three body/action variants (covering / no-coverage / GPS-off).
       </Typography>
-      <NoFeedState message="Neary needs a transit feed to show favorites. Pick one in Settings to get started." />
+      <SelectFeedCard fallbackBody="Pick a feed in Settings to browse routes and schedules." />
     </Stack>
   </section>
 </main>

@@ -13,9 +13,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { AlertTriangle, Bus, MapPin } from 'lucide-svelte';
+  import { AlertTriangle, MapPin } from 'lucide-svelte';
   import {
-    Box, Button, Card, CardContent, InfoCard, Spinner, Stack, StationCard,
+    Box, Button, Card, CardContent, InfoCard, SelectFeedCard, Spinner, Stack, StationCard,
     Typography,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
@@ -188,20 +188,6 @@
     if (!userPos || !feedsStore.feeds) return null;
     return findNearestFeed(userPos, feedsStore.feeds);
   });
-  // When the user's GPS position falls inside a published feed's bbox,
-  // we can suggest that feed with one tap instead of sending them to
-  // the Settings picker. Distance 0 from `findNearestFeed` means the
-  // candidate's bbox covers the user. null when no GPS or no covering
-  // feed exists.
-  const coveringFeed = $derived(
-    nearestFeed && nearestFeed.distanceKm === 0 ? nearestFeed.feed : null,
-  );
-  // True when GPS is on, a feed list is loaded, and NO published feed
-  // covers the user's position. Tells the no-feed banner to soften its
-  // promise (we probably can't help with stops here either).
-  const noFeedCoversUser = $derived(
-    !!userPos && !!feedsStore.feeds && !coveringFeed,
-  );
   // Pre-emptive "wrong feed for your location" warning: fires whenever
   // the user has selected a feed but their GPS position falls outside
   // its bbox. Surfaces earlier than the empty-boards branch because
@@ -291,38 +277,7 @@
     {/if}
 
     {#if userPrefs.feedId == null}
-      <InfoCard variant="primary" title="Select your transit feed">
-        {#snippet icon()}<Bus size={16} />{/snippet}
-        {#snippet body()}
-          {#if coveringFeed}
-            Looks like you're in <strong>{coveringFeed.name}</strong>'s service
-            area. Use it with one tap, or pick a different feed in Settings.
-            The data downloads once and is cached for offline use.
-          {:else if noFeedCoversUser}
-            None of the transit feeds Neary publishes cover your current
-            location, so nearby stops likely won't be available. You can still
-            pick a feed in Settings to browse routes for another city.
-          {:else}
-            Neary needs a transit feed to load schedules and routes for your city.
-            Pick one in Settings to get started — the data downloads once and is cached
-            for offline use, no account needed.
-          {/if}
-        {/snippet}
-        {#snippet actions()}
-          {#if coveringFeed}
-            <Button variant="contained" size="small" onclick={() => switchFeed(coveringFeed.id)}>
-              Use {coveringFeed.name}
-            </Button>
-            <Button variant="text" size="small" onclick={() => goto('/settings')}>
-              Open Settings
-            </Button>
-          {:else}
-            <Button variant="contained" size="small" onclick={() => goto('/settings')}>
-              Open Settings
-            </Button>
-          {/if}
-        {/snippet}
-      </InfoCard>
+      <SelectFeedCard />
     {/if}
 
     {#if wrongFeedFor && activeFeed}

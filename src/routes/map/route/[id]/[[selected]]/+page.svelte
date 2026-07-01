@@ -26,7 +26,7 @@
   import { page } from '$app/state';
   import { ArrowRightLeft, Bus, Calendar, Maximize2, Minus, Plus } from 'lucide-svelte';
   import {
-    BackButton, Card, CardContent, Chip, IconButton, NoFeedState, RouteBadge, Spinner,
+    BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
     Stack, Typography, networkIcon, networkTextColor,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
@@ -1038,7 +1038,7 @@
 
 <div class="mx-auto max-w-5xl px-4 py-3">
   {#if userPrefs.feedId == null}
-    <NoFeedState message="Pick a feed in Settings to view the route map." />
+    <SelectFeedCard fallbackBody="Pick a feed in Settings to view the route map." />
   {:else if direction == null}
     <Card><CardContent>
       <Typography variant="h6" class="text-[color:var(--color-danger)]">Map view needs a direction</Typography>
