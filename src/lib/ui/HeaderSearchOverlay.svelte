@@ -154,9 +154,9 @@
           routeResults = matchingRoutes;
           stopResults = stops;
         } else {
-          // Empty mode. Nearest 2 stops (GPS only) + favorites.
+          // Empty mode. Nearest 4 stops (GPS only) + favorites.
           const nearby = hasGps && a
-            ? await repo.searchStops('', a.lat, a.lon, 2, 'distance')
+            ? await repo.searchStops('', a.lat, a.lon, 4, 'distance')
             : [];
           const favs = scheduledRoutes
             .filter((r) => favoritesStore.has(r.id))
