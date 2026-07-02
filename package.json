@@ -1,7 +1,7 @@
 {
   "name": "neary",
   "private": true,
-  "version": "1.5.61",
+  "version": "1.5.62",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
