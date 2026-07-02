@@ -242,7 +242,9 @@ export async function bootstrap(
     const totalHeader = res.headers.get('content-length');
     const totalBytes = totalHeader ? Number(totalHeader) : null;
 
+    let compressedRead = 0;
     const decompressed = await buildImportStream(res.body, (compressedBytes) => {
+      compressedRead = compressedBytes;
       if (!onProgress) return;
       try { onProgress(compressedBytes, Number.isFinite(totalBytes) ? totalBytes : null); } catch {}
     });
@@ -271,6 +273,23 @@ export async function bootstrap(
     }
     clearDownloadState();
     console.log(`[gtfs.worker] Imported ${imported} bytes into ${opfsFile}`);
+    // Truncation guard. importDb only checks that the total bytes written
+    // is >=512 and a multiple of 512; a short-but-page-aligned read can
+    // therefore slip through and produce an OPFS file that opens cleanly
+    // but has empty data pages (the downstream integrity check catches
+    // this, but only after we've marked the file as available). Compare
+    // what we actually pulled off the wire against Content-Length so we
+    // fail fast, unlink the partial file, and force a fresh re-download.
+    if (
+      totalBytes !== null &&
+      Number.isFinite(totalBytes) &&
+      compressedRead < totalBytes
+    ) {
+      try { poolUtil.unlink(opfsFile); } catch {}
+      throw new Error(
+        `Seed download for feed "${feed.id}" was truncated: received ${compressedRead} of ${totalBytes} compressed bytes`,
+      );
+    }
     // After a successful import, drop any older snapshot of THIS feed
     // so OPFS doesn't fill with one file per upstream rebuild.
     const removed = pruneStaleFeedFiles(poolUtil, feed.id, opfsFile);
