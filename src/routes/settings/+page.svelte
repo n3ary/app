@@ -23,6 +23,16 @@
    *  timestamp on next load. */
   const VERSION_SEEN_KEY = 'neary:version-first-seen';
 
+  const regionNames =
+    typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function'
+      ? new Intl.DisplayNames(undefined, { type: 'region' })
+      : null;
+
+  function feedLocation(f: { country?: string | null; region?: string | null }): string {
+    const country = f.country ? (regionNames?.of(f.country) ?? f.country) : '';
+    return [f.region, country].filter(Boolean).join(', ');
+  }
+
   let versionFirstSeenAt = $state<number | null>(null);
 
   onMount(() => {
@@ -170,6 +180,7 @@
               {@const generatedMs = f.generated_at ? Date.parse(f.generated_at) : NaN}
               {@const updated = Number.isFinite(generatedMs) ? formatWhen(generatedMs) : null}
               {@const size = f.size_bytes?.sqlite_gz ? formatBytes(f.size_bytes.sqlite_gz) : null}
+              {@const location = feedLocation(f)}
               <button
                 type="button"
                 disabled={!hasSqlite}
@@ -194,6 +205,9 @@
                 {/if}
                 <div class="flex-1 min-w-0">
                   <div class="font-medium text-sm">{f.name}</div>
+                  {#if location}
+                    <div class="text-xs text-[color:var(--color-fg-muted)]">{location}</div>
+                  {/if}
                   <div class="text-xs text-[color:var(--color-fg-muted)]">{f.timezone}</div>
                   {#if size || updated}
                     <div class="text-xs text-[color:var(--color-fg-muted)]">
