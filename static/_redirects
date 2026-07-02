@@ -1,10 +1,8 @@
-# Cloudflare Pages redirects — mirrors what netlify.toml used to do,
-# minus the cross-origin API proxies (Pages `_redirects` only supports
-# same-site proxying; external hosts silently fall through to the SPA
-# fallback). Cross-origin proxies live as Pages Functions:
+# Cloudflare Pages redirects — kept only for the SPA fallback. Pages
+# `_redirects` doesn't support cross-origin proxying, so the API
+# proxy lives as a Pages Function:
 #   /api/rt/<feed>/<endpoint>  →  functions/api/rt/[feed]/[[endpoint]].js
-#   /api/tranzy/<path>         →  functions/api/tranzy/[[path]].js
-# Functions run before this file so their routes win.
+# The Function reads the upstream URL from feeds.json.
 # Docs: https://developers.cloudflare.com/pages/configuration/redirects/
 
 # SPA fallback for client-side routing (SvelteKit outputs index.html
