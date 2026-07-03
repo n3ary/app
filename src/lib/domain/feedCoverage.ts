@@ -4,7 +4,8 @@
  *
  * Used by views that surface an empty-state to disambiguate "no stops
  * here yet" from "you picked a feed that doesn't cover your location"
- * (e.g. Bucharest selected while standing in Cluj).
+ * (e.g. one feed's bbox covers you but a different feed is currently
+ * selected). Feed-agnostic — works for any published feed registry.
  */
 
 import type { Feed } from '$lib/data/feeds';

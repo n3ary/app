@@ -247,10 +247,9 @@ export function assembleLiveVehicles(input: AssembleLiveVehiclesInputs): Vehicle
     nowMin,
   });
   // Sibling-shape fallback for orphans whose own trip_id isn't in the
-  // shapes Map (Cluj trip-id drift case ~23%). All trips on a single
-  // (route, direction) share their shape_id in every feed we've seen,
-  // so any scheduled sibling's polyline projects an orphan onto the
-  // correct route geometry.
+  // shapes Map. All trips on a single (route, direction) share their
+  // shape_id in every feed we've seen, so any scheduled sibling's
+  // polyline projects an orphan onto the correct route geometry.
   const shapesByRouteDir = buildShapesByRouteDir(input.perStopVehicles, input.shapes);
   return applyGpsEta(merged, input.shapes, input.stop, shapesByRouteDir, {
     nowMs: input.nowMs,
@@ -473,12 +472,12 @@ export interface ApplyGpsEtaContext {
   /** Feed's IANA timezone. Combined with `nowMs` to compute the
    *  feed-local TOD bucket used by the speed cascade. */
   timezone: string;
-  /** Per-feed speed config. Defaults to the Cluj-tuned defaults; when
-   *  the feed registry eventually publishes `timing` blocks per feed,
+  /** Per-feed speed config. Defaults to the generic defaults; when the
+   *  feed registry eventually publishes `timing` blocks per feed,
    *  callers will pass that through here. */
   feedConfig?: FeedSpeedConfig;
   /** Time-of-day profile (peak/night windows). Defaults to the
-   *  Cluj-tuned profile. */
+   *  generic profile. */
   todProfile?: TodProfile;
   /** Optional trip_id -> ordered stop distances. Enables per-segment
    *  dwell-aware walk in predictArrivalAlongShape. */
@@ -493,12 +492,10 @@ export interface ApplyGpsEtaContext {
  *  derived one via the multi-tier speed cascade, where possible.
  *
  *  Shape lookup is two-step:
- *    1. By the row's own `tripId` (Cluj reconciled rows always
- *       resolve here; ~77% of orphans do too).
+ *    1. By the row's own `tripId` (the common case for reconciled rows).
  *    2. By `(routeId, directionId)` from the sibling-shape fallback
  *       built in `assembleLiveBoard` — handles orphans whose own
- *       trip_id is in the live feed but absent from static (the
- *       remaining ~23% with HHMM/run drift in Cluj).
+ *       trip_id is in the live feed but absent from static.
  *
  *  Skipped at trip origin:
  *   - For reconciled rows: when `v.schedule.isFirstStop === true`.

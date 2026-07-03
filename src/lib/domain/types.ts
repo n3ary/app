@@ -22,16 +22,15 @@
 export interface Route {
   /** GTFS route_id — a free-form text identifier per the GTFS spec.
    *  We keep it as a string everywhere so feeds with non-numeric ids
-   *  (Cluj has '102L') round-trip cleanly through URLs, localStorage,
-   *  and set membership without lossy coercion. */
+   *  (e.g. '102L') round-trip cleanly through URLs, localStorage, and
+   *  set membership without lossy coercion. */
   id: string;
   /** Short marketing identifier (GTFS route_short_name): '24', 'M1',
    *  'B12'. This is what users actually read; never use it as an
    *  identifier. */
   shortName: string;
-  /** Full route name (GTFS route_long_name): "Cluj Napoca — Floresti".
-   *  Optional because the GTFS spec allows it to be empty when
-   *  route_short_name is set. */
+  /** Full route name (GTFS route_long_name). Optional because the GTFS
+   *  spec allows it to be empty when route_short_name is set. */
   longName?: string;
   /** Optional route description (GTFS route_desc): a one-liner about
    *  what the route does ("express to airport", "weekend service").
@@ -78,7 +77,7 @@ export interface Network {
 export interface Station {
   /** GTFS stop_id — a free-form text identifier per the GTFS spec.
    *  Kept as a string everywhere so feeds with non-numeric ids
-   *  (Bucharest's STB has 'PV1_1950', '147102') round-trip cleanly
+   *  (alphanumeric, alphanumeric-prefixed, etc.) round-trip cleanly
    *  through URLs, comparisons, and set membership without lossy
    *  numeric coercion. Same convention as Route.id. */
   id: string;
@@ -388,7 +387,7 @@ export function compareRouteShortName(a: string, b: string): number {
   if (a === b) return 0;
   // Fast path: both pure-digit names (the majority of transit feeds).
   // Avoids the regex tokenisation + array allocation below for the
-  // common case. Cluj's catalog has ~120 of 168 routes hit this path.
+  // common case.
   if (PURE_DIGITS.test(a) && PURE_DIGITS.test(b)) return Number(a) - Number(b);
   const ap = a.match(NATURAL_RUN) ?? [a];
   const bp = b.match(NATURAL_RUN) ?? [b];

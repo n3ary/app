@@ -85,9 +85,9 @@ export async function fetchVehiclePositions(feedId: string): Promise<VehiclePosi
   const url = `/api/rt/${encodeURIComponent(feedId)}/vehiclePositions`;
   const res = await fetch(url, { cache: 'no-store' });
   // 404 from the Pages Function means the proxy explicitly doesn't
-  // route this feed (e.g. Switzerland's upstream needs auth we can't
-  // forward). Treat as "no RT" — the caller stops polling for the
-  // session rather than showing a persistent error.
+  // route this feed (e.g. an upstream whose RT endpoint needs auth
+  // we can't forward). Treat as "no RT" — the caller stops polling
+  // for the session rather than showing a persistent error.
   if (res.status === 404) {
     throw new RtUnavailableError(`No live-data proxy configured for feed "${feedId}"`);
   }

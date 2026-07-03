@@ -225,7 +225,7 @@ export interface GpsPredictedPosition extends PredictedPosition {
 }
 
 /** Optional cascade context for `predictPositionFromGps`. When omitted,
- *  the predictor uses the Cluj-tuned defaults and assumes UTC for
+ *  the predictor uses the generic defaults and assumes UTC for
  *  computing the TOD bucket — fine for tests, but real callers should
  *  pass `{ timezone }` so peak/night windows align with the feed's
  *  local clock. */

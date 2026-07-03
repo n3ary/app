@@ -70,9 +70,9 @@ describe('parseLiveStartMin', () => {
   });
   it('returns null when startTime is empty (trip_id is opaque post-parse)', () => {
     // Producer-side trip_id conventions are resolved upstream at parse
-    // time via feedQuirks; reconcile sees only canonical fields.
-    // Observations whose feed never populates start_time AND have no
-    // matching quirk become unmatched (gps-only orphans downstream).
+    // time; reconcile sees only canonical fields. Observations whose
+    // feed never populates start_time become unmatched (gps-only
+    // orphans downstream).
     expect(parseLiveStartMin(obs({ tripId: '14_1_LV_99_1423' }))).toBeNull();
     expect(parseLiveStartMin(obs({ tripId: 'no-time-here' }))).toBeNull();
   });
@@ -204,13 +204,12 @@ describe('reconcileWithLive (route+direction+startTime match)', () => {
 
   it('does not match observations whose startTime is empty (trip_id is opaque post-parse)', () => {
     // Producer-side trip_id encodings are resolved upstream in the RT
-    // parser via per-feed quirks (`src/lib/domain/feedQuirks.ts`).
-    // The reconciler sees only canonical fields. An observation that
-    // reaches reconcile with an empty startTime — because the feed
-    // didn't populate it and no quirk synthesised one — cannot be
-    // matched. Cluj's live data flows through the quirks layer so
-    // this scenario doesn't happen in production; this test pins the
-    // contract for any future feed wired up without quirks.
+    // parser; the reconciler sees only canonical fields. An
+    // observation that reaches reconcile with an empty startTime —
+    // because the feed didn't populate it — cannot be matched. Feeds
+    // that publish missing `start_time` should be fixed in the producer
+    // (neary-gtfs) before the data reaches the browser; this test pins
+    // the contract that without a populated startTime, no match happens.
     const sched = [scheduled({ tripId: 't-1', tripStartMin: 14 * 60 + 21 })];
     const { stats } = reconcileWithLive(
       sched,

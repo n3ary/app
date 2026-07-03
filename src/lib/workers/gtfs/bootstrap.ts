@@ -121,7 +121,57 @@ export async function getPool() {
 // sirv auto-decompress `.gz` responses; R2 does not), reports progress over
 // the raw compressed bytes, and yields decompressed chunks one at a time so
 // the whole 700-MB-plus uncompressed blob is never held in the JS heap.
+//
+// Granularity tuning: SAH pool's importDb chunked-callback form has a fixed
+// per-callback cost (JS↔WASM crossing + JS function call + await). At the
+// fetch default chunk size (~64 KB) the callback count on a multi-hundred-MB
+// uncompressed blob runs into the tens of thousands, and most of the
+// wall-clock time goes to the callback overhead rather than the actual SAH
+// writes. We coalesce the decompressed stream up to CHUNK_COALESCE_BYTES
+// (~16 MB) before importDb, dropping the callback count by ~3 orders of
+// magnitude. The compressed side gets a higher highWaterMark so
+// DecompressionStream receives compressed inputs in ~1 MB batches (its
+// native block size), gzip-decoding more efficiently. Peak worker heap =
+// one ~16 MB coalesced chunk + DecompressionStream's own small internal
+// buffer (~17 MB total) — still well under iOS Safari's per-tab ceiling
+// and orders of magnitude below what buffering the whole blob would need.
 // ---------------------------------------------------------------------------
+const CHUNK_COALESCE_BYTES = 16 * 1024 * 1024;
+const COMPRESSED_HIGHWATERMARK_BYTES = 1024 * 1024;
+
+function makeChunkCoalescer(
+  maxBytes: number,
+): TransformStream<Uint8Array, Uint8Array> {
+  let pending: Uint8Array[] = [];
+  let pendingBytes = 0;
+  const flush = (controller: TransformStreamDefaultController<Uint8Array>) => {
+    if (pendingBytes === 0) return;
+    if (pending.length === 1) {
+      controller.enqueue(pending[0]);
+    } else {
+      const merged = new Uint8Array(pendingBytes);
+      let off = 0;
+      for (const c of pending) {
+        merged.set(c, off);
+        off += c.byteLength;
+      }
+      controller.enqueue(merged);
+    }
+    pending = [];
+    pendingBytes = 0;
+  };
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      pending.push(chunk);
+      pendingBytes += chunk.byteLength;
+      if (pendingBytes >= maxBytes) flush(controller);
+    },
+    flush(controller) {
+      flush(controller);
+    },
+  });
+}
+
 async function buildImportStream(
   body: ReadableStream<Uint8Array>,
   reportBytes: (compressedBytesRead: number) => void,
@@ -148,27 +198,39 @@ async function buildImportStream(
   };
   maybeReport(true);
 
-  const rebuilt = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(firstChunk);
+  const rebuilt = new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        controller.enqueue(firstChunk);
+      },
+      async pull(controller) {
+        const { done, value } = await src.read();
+        if (done) {
+          maybeReport(true);
+          controller.close();
+          return;
+        }
+        compressedTally += value.byteLength;
+        maybeReport();
+        controller.enqueue(value);
+      },
+      async cancel(reason) {
+        try {
+          await src.cancel(reason);
+        } catch {}
+      },
     },
-    async pull(controller) {
-      const { done, value } = await src.read();
-      if (done) {
-        maybeReport(true);
-        controller.close();
-        return;
-      }
-      compressedTally += value.byteLength;
-      maybeReport();
-      controller.enqueue(value);
+    {
+      // Byte-based highWaterMark so DecompressionStream sees compressed
+      // input in ~1 MB batches instead of one fetch chunk (~64 KB) at a
+      // time — gzip's deflate blocks work best on bigger windows.
+      highWaterMark: COMPRESSED_HIGHWATERMARK_BYTES,
+      size: (chunk) => chunk.byteLength,
     },
-    async cancel(reason) {
-      try { await src.cancel(reason); } catch {}
-    },
-  });
+  );
 
-  if (!isGzip) return rebuilt;
+  const coalescer = makeChunkCoalescer(CHUNK_COALESCE_BYTES);
+  if (!isGzip) return rebuilt.pipeThrough(coalescer);
   // The DOM lib types DecompressionStream's writable as
   // WritableStream<BufferSource>, which TS refuses to unify with our
   // ReadableStream<Uint8Array<ArrayBuffer>>. The runtime does accept
@@ -177,7 +239,7 @@ async function buildImportStream(
     readable: ReadableStream<Uint8Array>;
     writable: WritableStream<Uint8Array>;
   };
-  return rebuilt.pipeThrough(decompressor);
+  return rebuilt.pipeThrough(decompressor).pipeThrough(coalescer);
 }
 
 export async function bootstrap(
@@ -190,10 +252,11 @@ export async function bootstrap(
   if (!poolUtil.getFileNames().includes(opfsFile)) {
     const url = seedUrlFor(feed);
     console.log(`[gtfs.worker] Seeding OPFS for feed ${feed.id} from`, url);
-    // 10-minute hard timeout: covers the ~122 MB Swiss feed on a slow
-    // connection with headroom. Without this, a stalled fetch would
-    // hang forever with no user-visible signal — precisely the class
-    // of failure that made large feeds appear "silently empty".
+    // 10-minute hard timeout: covers the largest published sqlite_gz
+    // (currently ~120 MB compressed) on a slow connection with
+    // headroom. Without this, a stalled fetch would hang forever with
+    // no user-visible signal — precisely the class of failure that
+    // made large feeds appear "silently empty".
     //
     // The controller is also stored on `state.currentDownloadAbort`
     // so `closeCurrent()` can cancel an in-flight download when the
@@ -231,14 +294,15 @@ export async function bootstrap(
       throw new Error(`Seed download for feed "${feed.id}" failed (HTTP ${res.status})`);
     }
 
-    // The uncompressed Swiss sqlite is ~778 MB. Buffering it in the
-    // worker heap before calling importDb pushes iOS Safari past its
-    // per-tab ceiling and the tab is killed. Instead: pipe fetch →
-    // (optional) DecompressionStream → importDb's chunked-callback
-    // form, so at any moment we only hold one stream chunk (~64 KB)
-    // beyond what SQLite writes to the SAH file. Content-Length comes
-    // from R2's response; progress is reported over compressed bytes
-    // (matches the UI's byte-count convention).
+    // The largest published feeds uncompress to multi-hundred-MB sqlite
+    // blobs. Buffering the full blob in the worker heap before calling
+    // importDb pushes iOS Safari past its per-tab ceiling and the tab is
+    // killed. Instead: pipe fetch → (optional) DecompressionStream →
+    // importDb's chunked-callback form, so at any moment we only hold
+    // one stream chunk (~64 KB) beyond what SQLite writes to the SAH
+    // file. Content-Length comes from R2's response; progress is
+    // reported over compressed bytes (matches the UI's byte-count
+    // convention).
     const totalHeader = res.headers.get('content-length');
     const totalBytes = totalHeader ? Number(totalHeader) : null;
 
@@ -318,6 +382,36 @@ export async function bootstrap(
     throw new Error(`Feed "${feed.id}" failed integrity check: ${(e as Error).message}`);
   }
   return db;
+}
+
+/** Cache-introspection helpers — list / delete the OPFS files belonging
+ *  to a feed without booting it. Drives the trash button on the
+ *  Settings feed picker; intentionally cheap so the UI can poll after
+ *  each delete + feed-registry refresh.
+ *
+ *  Naming intentionally matches `pruneStaleFeedFiles`'s
+ *  legacy + versioned match rule so deleting and then re-adding a
+ *  feed on the same id can't strand files we don't recognise. */
+export async function getCachedFeedIds(feeds: readonly Feed[]): Promise<string[]> {
+  const poolUtil = await getPool();
+  const names = new Set(poolUtil.getFileNames());
+  const ids: string[] = [];
+  for (const feed of feeds) {
+    if (names.has(opfsFileFor(feed))) ids.push(feed.id);
+  }
+  return ids;
+}
+
+/** Remove every OPFS file belonging to `feed.id` (legacy + every
+ *  hash-versioned snapshot). Returns the number of files removed.
+ *  If the feed is the active one, `closeCurrent()` runs first so
+ *  the next call into the worker doesn't try to reopen a file the
+ *  pool has just dropped under it. Safe to call when the feed was
+ *  never bootstrapped — `pruneStaleFeedFiles` is a no-op then. */
+export async function deleteFeedCache(feed: Feed): Promise<number> {
+  if (state.currentFeedId === feed.id) closeCurrent();
+  const poolUtil = await getPool();
+  return pruneStaleFeedFiles(poolUtil, feed.id, '/__never_exists__');
 }
 
 /** Close the currently-open DB, if any. The OPFS file stays put.

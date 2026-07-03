@@ -57,8 +57,8 @@ export interface SelectionInputs<S extends SelectableStop> {
   config: Pick<NearyConfig, 'nearbyRadiusM' | 'pairProximityM' | 'favoriteFallbackRadiusM'>;
   /** Routes the user has favorited. Pass `null` until the favorites
    *  store exists — the favorite-fallback step is a no-op. GTFS
-   *  route_ids are text per the spec (Cluj has '102L'); we store and
-   *  compare them as strings end-to-end. */
+   *  route_ids are text per the spec (some feeds ship '102L'-style
+   *  ids); we store and compare them as strings end-to-end. */
   favoriteRouteIds: ReadonlySet<string> | null;
 }
 

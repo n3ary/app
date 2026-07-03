@@ -36,8 +36,8 @@
   // Estimated pixel width of one RouteBadge (size='small') given its
   // short_name. Matches the badge's `h-6 min-w-6 px-1.5 text-xs`
   // shape: 12px of horizontal padding, minimum 24px total, and ~7px
-  // per additional character at text-xs. Verified against the Cluj
-  // + Bucharest catalogues (short_names up to 5 chars).
+  // per additional character at text-xs. Verified against multi-feed
+  // catalogues (short_names up to 5 chars).
   function badgeWidth(text: string): number {
     return Math.max(24, text.length * 7 + 12);
   }

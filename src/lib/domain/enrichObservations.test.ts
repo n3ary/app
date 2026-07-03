@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { enrichObservations, indexActiveTripsByTripId } from './enrichObservations';
-import { quirksForFeed } from './feedQuirks';
 import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
 import type { Route, Vehicle } from './types';
 
@@ -65,9 +64,9 @@ describe('enrichObservations — static-feed first', () => {
   ];
 
   it("uses static-feed direction + start_time when obs.tripId is in active", () => {
-    // The feed reports direction=0 (Cluj-style broken) and no
-    // start_time; enrichment should overwrite both with authoritative
-    // values from the active set.
+    // The feed reports a (possibly broken) direction and no start_time;
+    // enrichment should overwrite both with authoritative values from
+    // the active set.
     const out = enrichObservations(
       [obs({ tripId: 'A', directionId: 0, startTime: '' })],
       active,
@@ -84,33 +83,12 @@ describe('enrichObservations — static-feed first', () => {
     expect(out[0].directionId).toBe(1);
     expect(out[0].startTime).toBe('14:23:00');
   });
-
-  it('does not call into quirks for matched trips', () => {
-    // Cluj quirks would have derived dir=1 from `A_1_X_Y_1234`, but
-    // here we use static feed instead — and the trip_id has a
-    // mismatched-on-purpose pattern to prove it.
-    const out = enrichObservations(
-      [obs({ tripId: 'A', directionId: 0 })], // tripId 'A' has no quirk-parseable pattern
-      active,
-      quirksForFeed('cluj-napoca'),
-    );
-    expect(out[0].directionId).toBe(1); // from static, not from quirks
-  });
 });
 
-describe('enrichObservations — orphan fallback', () => {
-  it('applies quirks when trip is NOT in active set', () => {
-    // No active trips at all, so every obs goes through the orphan path.
-    const out = enrichObservations(
-      [obs({ tripId: '14_1_LV_99_1423', directionId: 0, startTime: '' })],
-      [],
-      quirksForFeed('cluj-napoca'),
-    );
-    expect(out[0].directionId).toBe(1); // from quirks regex
-    expect(out[0].startTime).toBe('14:23:00');
-  });
-
-  it('without quirks, leaves canonical fields untouched', () => {
+describe('enrichObservations — orphan passthrough', () => {
+  it('leaves canonical fields untouched when trip is NOT in active set', () => {
+    // No active trips, so the observation flows through unchanged.
+    // Downstream (reconciler) will treat it as an unmatched orphan.
     const out = enrichObservations(
       [obs({ tripId: '14_1_LV_99_1423', directionId: 0, startTime: '' })],
       [],
@@ -119,20 +97,9 @@ describe('enrichObservations — orphan fallback', () => {
     expect(out[0].startTime).toBe('');
   });
 
-  it('preserves a feed-provided startTime even when quirks could synthesise one', () => {
-    // If the feed actually provided start_time, trust it over the
-    // quirks-derived value (canonical > derived for any single field).
-    const out = enrichObservations(
-      [obs({ tripId: '14_1_LV_99_1423', startTime: '10:00:00' })],
-      [],
-      quirksForFeed('cluj-napoca'),
-    );
-    expect(out[0].startTime).toBe('10:00:00');
-  });
-
-  it('returns the original obs when no derivation is possible', () => {
+  it('returns the original obs reference when no enrichment happens', () => {
     const o = obs({ tripId: 'opaque-orphan' });
-    const out = enrichObservations([o], [], quirksForFeed('cluj-napoca'));
+    const out = enrichObservations([o], []);
     expect(out[0]).toBe(o); // same reference: no allocation when nothing changed
   });
 });

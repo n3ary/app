@@ -43,8 +43,9 @@ export function localMinSinceMidnight(d: Date): number {
 /**
  * "YYYYMMDD" for a Unix ms timestamp evaluated in a given IANA timezone.
  * Used by the worker so the GTFS calendar query uses the feed's local date
- * (e.g. Europe/Bucharest for Cluj) regardless of where the user's system
- * clock is. Built on Intl.DateTimeFormat so it works in workers.
+ * (the timezone is per-feed, supplied by the worker from the feed's
+ * published IANA tz) regardless of where the user's system clock is.
+ * Built on Intl.DateTimeFormat so it works in workers.
  */
 export function dateKeyInTz(nowMs: number, timeZone: string): string {
   const sec = Math.floor(nowMs / 1000);

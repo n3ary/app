@@ -19,7 +19,7 @@ import { dayKeyCols, selectAll } from '../sqlHelpers';
  *  station row) roll up to their parent: one entry per parent station,
  *  named after the parent, navigation-id pointing at a representative
  *  child. Surface-transit feeds where the producer didn't model parents
- *  (most of Bucharest's STB) pass through unchanged. */
+ *  pass through unchanged. */
 export function getStopsNear(
   db: Database,
   lat: number,
@@ -71,9 +71,9 @@ export function getStopsNear(
  *  SQL `LIKE`: SQLite's `LIKE` is ASCII-only for case folding so
  *  `'piata'` wouldn't match `'Piața'` (ț = U+021B). NFD+strip-marks
  *  normalization on both sides handles the diacritic case cleanly.
- *  Cluj-scale feeds (~2k stops) make the JS pass trivial; for
- *  city-network feeds an order of magnitude larger this can become a
- *  FTS5 virtual table without changing the public signature. */
+ *  Mid-sized city feeds (~2k stops) make the JS pass trivial; for
+ *  large-network feeds an order of magnitude larger this can become
+ *  a FTS5 virtual table without changing the public signature. */
 export function searchStops(
   db: Database,
   text: string,
@@ -143,7 +143,7 @@ function selectStopsWithParent(
   return selectAll<StopRowWithParent>(
     db,
     // The EXISTS clause requires a stop_time with a non-empty
-    // arrival_time. Feeds like Cluj carry NT-fallback trips whose
+    // arrival_time. Some feeds carry NT-fallback (no-time) trips whose
     // stop_times have arrival_time = '' -- surface those as stops
     // with active routes = false. Matches routesWithSchedule.ts's
     // definition of "route has schedule".
