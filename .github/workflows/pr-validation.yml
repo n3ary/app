@@ -30,6 +30,23 @@ jobs:
           repository: n3ary/neary-gtfs
           path: vendor/neary-gtfs
 
+      - name: Setup Node (for vendored neary-gtfs build)
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.0.9
+
+      - name: Build vendored @n3ary/neary-gtfs-spec
+        # The file: dep points at vendor/neary-gtfs/packages/spec which
+        # is a fresh git checkout — src/ exists but dist/ doesn't.
+        # The TypeScript + vite build needs the compiled .d.ts and
+        # .js files. Build them once before npm ci so the dep is
+        # self-contained when symlinked into node_modules.
+        working-directory: vendor/neary-gtfs
+        run: pnpm install --frozen-lockfile --trust-lockfile && pnpm build
+
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
         with:
