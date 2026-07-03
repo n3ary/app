@@ -13,10 +13,6 @@
  * For the current Stations-board use case (one bus → one stop), the
  * single-segment walk delivers most of the win.
  *
- * Closes Stage B of the prediction-v2 roadmap (distilled into
- * docs/concepts/prediction.md); Stage A is producer-side
- * (neary-gtfs#35) and Stage C is #106.
- *
  * Pure. No DOM, no stores, no I/O.
  */
 

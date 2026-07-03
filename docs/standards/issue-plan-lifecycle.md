@@ -130,3 +130,13 @@ Mixing plans and issues is the single biggest source of "where did that idea go"
 - Is anyone working on it? → issue or PR, not plan.
 - Has it shipped? → delete the plan, distill to spec, open follow-up issues.
 - Still being designed? → plan on a branch with active commits, not in `main`.
+
+## Code comment rules
+
+Code comments in `main` follow stricter rules than docs because they outlive plans and ship with the code:
+
+- **Never reference plans.** Plans are short-lived work artifacts on a branch; a comment in `main` that points at a deleted plan is a broken link, and a comment in a feature branch that references a plan-on-that-branch is fine but only on that branch. Aspirational work belongs in issues, not in source code.
+- **Reference issues only when the code is an accepted temporary workaround.** Specifically: the code exists today as a stop-gap that will be deleted when the issue is closed. The comment must name the issue that triggers removal. The TEMP `recoverClujTripFields` block in `src/lib/domain/enrichObservations.ts` is the model — gated on trip_id shape, pointing at the producer-side issue that fixes the upstream.
+- **Describe current behaviour, not aspirational work.** Permanent code's docstring explains what the code does today. "Closes Stage B of the prediction-v2 roadmap" is wrong if Stage B isn't closed yet; the code does what it does. Aspirational "we plan to differentiate this kind" comments belong in issues, not in the code that doesn't differentiate it.
+
+The check: every code-comment reference to a `plan/` file, `roadmap`, `Stage X`, or `item N` is a smell. The check: every code-comment reference to `#NNN` should resolve to a temporary workaround whose removal is the issue's resolution. If you can't justify it with one of those, drop the reference.

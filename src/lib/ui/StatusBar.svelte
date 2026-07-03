@@ -1,8 +1,8 @@
 <!--
   StatusBar — single-line strip pinned below the header. Replaces toasts AND
-  per-view loading spinners (plan §4). Driven by a small reactive store
-  (statusBus) so any module can post an entry and have it surfaced
-  consistently. Concurrent loading entries collapse into one line.
+  per-view loading spinners. Driven by a small reactive store (statusBus) so
+  any module can post an entry and have it surfaced consistently.
+  Concurrent loading entries collapse into one line.
 
   Visual rules:
     error          : red,    no dismiss timer

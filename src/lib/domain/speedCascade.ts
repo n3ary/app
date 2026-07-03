@@ -1,7 +1,8 @@
 /*
  * speedCascade — per-segment speed estimator powering the multi-tier
- * ETA pipeline (item 2 / Stage A–C of the prediction-v2 roadmap;
- * distilled into docs/concepts/prediction.md).
+ * ETA pipeline. Each segment of the trip asks the cascade for a speed
+ * (first tier that returns wins); the walk accumulates the resulting
+ * segment times into a per-stop arrival plan.
  *
  * Cascade (per segment, first tier that returns wins):
  *

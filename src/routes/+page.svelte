@@ -102,8 +102,8 @@
 
   // Surface GPS state on the global StatusBar instead of a page-level
   // card — the StatusBar already exists for cross-cutting loading info
-  // (per plan §4) and the schedule-bind effect in +layout.svelte uses
-  // the same channel. KISS / DRY.
+  // and the schedule-bind effect in +layout.svelte uses the same channel.
+  // KISS / DRY.
   //
   // `untrack` is required around the bus calls because `push` reads
   // `entries` (findIndex for dedupe), so without it the effect would

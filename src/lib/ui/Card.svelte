@@ -1,7 +1,7 @@
 <!--
   Card — surface container. Tokenized via CSS variables so theme.css fully
   controls the look. variant adds a small accent stripe used by the unified
-  Station / Route / Vehicle cards (plan §4).
+  Station / Route / Vehicle cards.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

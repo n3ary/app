@@ -1,6 +1,6 @@
 <!--
-  VehicleCard — single component covering the 4-state vehicle taxonomy
-  (plan §4). The visual encoding (solid / dashed / dotted / 50% opacity,
+  VehicleCard — single component covering the 4-state vehicle taxonomy.
+  The visual encoding (solid / dashed / dotted / 50% opacity,
   badge icon, accent color) is mechanical from `vehicle.kind`, so every
   surface that renders a vehicle (list, schedule board, map popup) reads
   identically.
@@ -53,9 +53,7 @@
 
   // Per-kind state dot. Two colors only: green = GPS-backed
   // (`gps-only` / `tracked` / `verified`), grey = schedule-derived
-  // (`scheduled`). Tooltip carries the specific kind. A darker-green
-  // variant for `verified` (multi-source agreement) is planned but
-  // not yet differentiated — gated on multi-source live data landing.
+  // (`scheduled`). Tooltip carries the specific kind.
   const KIND = $derived({
     verified:    { label: 'Verified',  dotBg: 'bg-[color:var(--color-success)]' },
     tracked:     { label: 'Tracked',   dotBg: 'bg-[color:var(--color-success)]' },
