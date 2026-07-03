@@ -75,6 +75,165 @@ boundary, not the repo boundary.
 neary-gtfs/                                # monorepo root
 ├── .github/
 │   ├── workflows/
+│   │   ├── static-build.yml              # daily cron — runs packages/gtfs-static
+│   │   ├── rt-adapter.yml                # build + deploy adapter to Hetzner
+│   │   └── shared-checks.yml             # PR checks (lint, test, schema validate)
+│   └── dependabot.yml
+├── packages/
+│   ├── shared/                           # library — used by both pipelines
+│   │   ├── package.json
+│   │   ├── src/
+│   │   │   ├── gtfs/
+│   │   │   │   ├── csv-parser.ts         # csv-parse wrapper for GTFS CSVs
+│   │   │   │   ├── sqlite-writer.ts      # better-sqlite3 → GTFS-shaped tables
+│   │   │   │   └── schema.ts             # GTFS table column types
+│   │   │   ├── rt/
+│   │   │   │   ├── proto-decode.ts       # gtfs-realtime-bindings wrapper
+│   │   │   │   └── proto-encode.ts
+│   │   │   ├── feeds-json/
+│   │   │   │   ├── schema.ts             # zod schema for the manifest
+│   │   │   │   └── emitter.ts            # write feeds.json manifest
+│   │   │   └── r2/
+│   │   │       └── client.ts             # S3-compatible wrapper for R2
+│   │   └── tests/
+│   ├── gtfs-static/                      # offline pipeline (cron)
+│   │   ├── package.json
+│   │   ├── src/
+│   │   │   ├── pipeline.ts               # main entry: fetch upstream → build → emit
+│   │   │   └── feed-registry.ts          # which feeds to build + from where
+│   │   └── tests/
+│   │       └── test_pipeline.ts
+│   └── gtfs-rt/                          # live RT adapter (always-on)
+│       ├── package.json
+│       ├── src/
+│       │   ├── adapter.ts                # Fastify HTTP server: serves /rt/<feed>/<endpoint>
+│       │   ├── poller.ts                 # upstream fetch on interval
+│       │   ├── merge.ts                  # multi-source merge + dedupe
+│       │   ├── quirks/                   # PER-FEED CLEANUP LIVES HERE
+│       │   │   ├── index.ts
+│       │   │   ├── base.ts                # shared cleanup helpers
+│       │   │   ├── cluj.ts               # Cluj: fix direction_id + start_time
+│       │   │   ├── swiss.ts              # Swiss SBB (auth proxy / 404 normalisation)
+│       │   │   └── generic.ts            # field-by-field patcher from config
+│       │   └── cache.ts                  # in-memory + R2 read-through cache
+│       ├── Dockerfile
+│       └── tests/
+│           ├── test_cluj_quirks.ts
+│           └── test_adapter.ts
+├── config/
+│   ├── feeds.example.yaml                # per-feed config (upstream URLs,
+│   │                                   # quirk modules to apply, poll cadence)
+│   └── feeds.local.yaml.example
+├── ops/
+│   ├── terraform/                        # optional — Hetzner + R2 + DNS
+│   │   └── hcloud/
+│   │       ├── main.tf
+│   │       └── variables.tf
+│   └── systemd/
+│       └── neary-gtfs-rt.service         # systemd unit for the adapter
+├── docs/
+│   ├── README.md                          # monorepo overview
+│   ├── architecture.md                    # how static + rt interact (data flow)
+│   ├── quirks-guide.md                    # how to add a new feed's quirks
+│   └── ops/
+│       ├── deployment.md                  # how to deploy to Hetzner + CF
+│       └── runbook.md                     # common incidents + fixes
+├── .gitignore
+├── package.json                          # workspace root (pnpm/npm/yarn workspaces)
+├── pnpm-workspace.yaml                   # or package.json "workspaces" field
+├── pnpm-lock.yaml
+├── README.md
+└── LICENSE
+```
+
+### Why this shape
+
+- **`packages/shared`** — every per-feed detail (e.g. the `cluj.ts`
+  quirks module) sits in `gtfs-rt/quirks/`, not in the consumer. The
+  consumer never branches on `feed.id` again. `packages/shared` exists
+  so static + rt can share the protobuf decode/encode and the
+  `feeds.json` schema/emit logic without duplication.
+- **Two CI workflows, one source tree** — `static-build.yml` is a
+  GitHub Actions cron that runs `packages/gtfs-static` and pushes
+  results to R2. `rt-adapter.yml` builds the Docker image and deploys
+  it to Hetzner. Both share `packages/shared`; changes to one workflow
+  can ship through the other without coordination.
+- **No tests for `gtfs-static` beyond the pipeline glue** — the static
+  build is mostly orchestration. Heavy lifting (CSV parse, sqlite
+  write) lives in `packages/shared` and gets tested there. The static
+  pipeline itself gets one or two smoke tests against a fixture feed.
+- **`ops/`** — terraform for Hetzner provisioning lives next to the
+  service it provisions; systemd unit file lives with the adapter it
+  runs. Keeps ops next to the code that owns it.
+
+### Why Node
+
+- **The cost driver is the live RT adapter** (always-on VM), not the
+  static pipeline (daily cron). Node wins on the cost-relevant axes
+  for an always-on service: smaller Docker image (~50 MB vs ~80 MB),
+  faster cold-start (~50 ms vs ~200-500 ms with pandas), lower idle
+  RAM (~30-50 MB vs ~80-120 MB).
+- **The static pipeline is fine on GitHub Actions free tier** even
+  with Node — a 5-min build for the daily cron is well within the
+  2,000 min/month allowance. CSV-parse speed matters; even a slow
+  Node parse is under 2 min for the largest feeds, so the 2-3×
+  pandas advantage is academic here.
+- **Consistency with the consumer repo** — this `neary` app is JS/TS.
+  One language, one linter, one test runner, one set of CI conventions
+  across both repos. The producer's contract with the consumer is a
+  wire format (protobuf + sqlite + feeds.json), not source code, so
+  there's no real "code sharing" benefit to a Python producer.
+- **GTFS-RT tooling parity** — this repo already uses
+  `gtfs-realtime-bindings` (Google's protobuf). Same lib works on the
+  producer. For the static side, `csv-parse` + `better-sqlite3` is
+  the equivalent of pandas + sqlite3 in ~200 lines of glue — no
+  GTFS-specific magic needed since the spec is just a bag of CSVs.
+
+### What about Python
+
+If you ever need it: `pandas` + `gtfs-kit` would be the equivalent
+stack. The trade is ~3× faster CSV parsing (which doesn't matter
+for a daily cron) for a much larger runtime + slower cold-start
+(which does matter for an always-on service). Keep Python in your back
+pocket for data-exploration scripts, but the deployable monorepo is
+Node.
+
+## Deploy shape
+
+```
+                ┌─────────────────────────────────────────┐
+                │ Hetzner CX22 (€4.50/mo, fixed)         │
+                │                                         │
+                │   packages/gtfs-rt                      │
+                │   ┌──────────────┐                      │
+                │   │ adapter.ts   │                      │
+                │   │ (Fastify)    │◀──── polls upstream  │
+                │   └──────┬───────┘     every 15–30 s    │
+                │          │                              │
+                │          ▼                              │
+                │   ┌──────────────┐                      │
+                │   │ cache.ts     │                      │
+                │   │ (R2 cache    │                      │
+                │   │  read-through│                      │
+                │   └──────────────┘                      │
+                └────────────┬────────────────────────────┘
+                             │ cache miss only
+                             ▼
+                ┌─────────────────────────────────────────┐
+                │ Cloudflare (free CDN egress)            │
+                │                                         │
+                │   Worker on edge POP                    │
+                │     ├─ cache hit   → serve (~free)       │
+                │     └─ cache miss  → fetch from Hetzner │
+                │                          (cold path)    │
+                └────────────┬────────────────────────────┘
+                             │
+                             ▼
+                       User (every 15 s)
+```
+neary-gtfs/                                # monorepo root
+├── .github/
+│   ├── workflows/
 │   │   ├── static-build.yml              # daily cron — runs gtfs-static
 │   │   ├── rt-adapter.yml                # build + deploy adapter to Hetzner
 │   │   └── shared-checks.yml             # PR checks (lint, test, schema validate)
@@ -168,24 +327,37 @@ neary-gtfs/                                # monorepo root
   service it provisions; systemd unit file lives with the adapter it
   runs. Keeps ops next to the code that owns it.
 
-### Why Python
+### Why Node
 
-- Better ecosystem for GTFS work (`gtfs-kit`, `partridge`, pandas,
-  protobuf tooling).
-- Static pipeline is mostly I/O + transforms — fits pandas / polars
-  cleanly.
-- Adapter server uses `fastapi` + `uvicorn` (or just `aiohttp`); both
-  are first-class for protobuf streaming.
-- This consumer repo stays in JS; producer can be Python without any
-  cross-repo coupling (the contract is the wire format).
+- **The cost driver is the live RT adapter** (always-on VM), not the
+  static pipeline (daily cron). Node wins on the cost-relevant axes
+  for an always-on service: smaller Docker image (~50 MB vs ~80 MB),
+  faster cold-start (~50 ms vs ~200-500 ms with pandas), lower idle
+  RAM (~30-50 MB vs ~80-120 MB).
+- **The static pipeline is fine on GitHub Actions free tier** even
+  with Node — a 5-min build for the daily cron is well within the
+  2,000 min/month allowance. CSV-parse speed matters; even a slow
+  Node parse is under 2 min for the largest feeds, so the 2-3×
+  pandas advantage is academic here.
+- **Consistency with the consumer repo** — this `neary` app is JS/TS.
+  One language, one linter, one test runner, one set of CI conventions
+  across both repos. The producer's contract with the consumer is a
+  wire format (protobuf + sqlite + feeds.json), not source code, so
+  there's no real "code sharing" benefit to a Python producer.
+- **GTFS-RT tooling parity** — this repo already uses
+  `gtfs-realtime-bindings` (Google's protobuf). Same lib works on the
+  producer. For the static side, `csv-parse` + `better-sqlite3` is
+  the equivalent of pandas + sqlite3 in ~200 lines of glue — no
+  GTFS-specific magic needed since the spec is just a bag of CSVs.
 
-### Why not Node
+### What about Python
 
-- Would work but doesn't pull its weight here. The adapter's "merge
-  multiple RT sources" step is way easier with pandas-style dataframes
-  than JS arrays.
-- Static pipeline is also easier with pandas (multi-feed CSVs in one
-  pass).
+If you ever need it: `pandas` + `gtfs-kit` would be the equivalent
+stack. The trade is ~3× faster CSV parsing (which doesn't matter
+for a daily cron) for a much larger runtime + slower cold-start
+(which does matter for an always-on service). Keep Python in your back
+pocket for data-exploration scripts, but the deployable monorepo is
+Node.
 
 ## Deploy shape
 
@@ -280,9 +452,10 @@ Order matters. Each step is independently shippable.
 
 ## Open questions
 
-- **Language**: I'm proposing Python. If you'd rather keep this repo's
-  tooling (Node/TS) or use Go (Hetzner is famously Go-friendly),
-  that's a bigger conversation — say the word.
+- **Language**: Node + TypeScript for the whole monorepo. Rationale
+  in "Why Node" above. Kept here as a question only so it's explicit
+  that this is the decision; flip back to Python only if you change
+  your mind about the cost framing.
 - **Hetzner vs alternatives**: this plan assumes Hetzner for the
   always-on VM. Alternatives if Hetzner pricing changes or you want
   more edge presence: Deno Deploy ($/req), Fly.io (similar shape to
