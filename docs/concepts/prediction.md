@@ -25,14 +25,6 @@ Distilled from the prediction-v2 plan (now deleted; tracked across issues on `ne
 - **Reconciliation matches by route order, not per-obs greedy.** Same `(route, dir)` cohort pairs bus with scheduled trip by sorted position, not by closest-match independently (which can swap two adjacent buses on a high-frequency line).
 - **Cross-repo math sharing is deferred.** `neary-gtfs` already maintains a manual vendored copy of polyline math and it has held up fine. No mirror tooling until the duplication actually hurts.
 
-## The three stages
-
-| Stage | Where | What | Tracked at |
-|---|---|---|---|
-| A | build-time, in `neary-gtfs` | Empirical per-segment speed capture + ship in SQLite as `segment_speeds` table | [neary-gtfs#35](https://github.com/ciotlosm/neary-gtfs/issues/35) |
-| B | runtime, no GPS | Consume `shape_dist_traveled` to collapse `buildTripShapePlan` cost | [#162](#162) |
-| C | runtime, with GPS | Per-segment speed cascade, eventually collapsing to empirical baseline × live-correction multiplier | [#106](#106) |
-
 ## Three loops
 
 The app runs three independent loops; the manual refresh button fires all three for ~150 ms end-to-end responsiveness:
@@ -42,8 +34,6 @@ The app runs three independent loops; the manual refresh button fires all three 
 | L1 — live poll | 15 s | GTFS-RT vehicle positions |
 | L2 — UI tick | 15 s | Re-evaluate ETAs / buckets against new wall-clock |
 | L3 — manual refresh | on tap | User-triggered L1 + L2 |
-
-Next-tick smoothness work (predictable refresh latency): [#163](#163).
 
 ## Confidence interaction
 
