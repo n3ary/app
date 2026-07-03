@@ -8,8 +8,8 @@
  * trip_id equality is NOT used as a fast-path. Some operators publish
  * static GTFS and GTFS-RT from independent build pipelines that happen
  * to share the same `route_dir_service_run_HHMM` schema but populate
- * `<run>_<HHMM>` from independent dispatch databases. Cluj sampling
- * 2026-06-27 showed ~23% of live trip_ids drifted from their static
+ * `<run>_<HHMM>` from independent dispatch databases. Sampling has
+ * shown a meaningful fraction of live trip_ids drift from their static
  * counterparts by ±1 run number and/or ±a few minutes in HHMM. Strict
  * trip_id matching would silently lose those buses.
  *
@@ -301,8 +301,8 @@ export function reconcileWithLive(
 /** Parse the live observation's scheduled start time into minutes
  *  since local midnight. Reads only the canonical
  *  `TripDescriptor.start_time` ("HH:MM:SS") field — any per-feed
- *  trip_id encoding has already been resolved into `obs.startTime`
- *  upstream at parse time (see `src/lib/domain/feedQuirks.ts`).
+ *  trip_id encoding is expected to be resolved into `obs.startTime`
+ *  upstream at parse time (see `src/lib/domain/enrichObservations.ts`).
  *  Returns null when the field is absent or unparseable; the
  *  reconciler treats those observations as unmatched. */
 export function parseLiveStartMin(obs: LiveVehicleObservation): number | null {

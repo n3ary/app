@@ -19,6 +19,16 @@ class FeedsStore {
    *  after `repo.setFeed(...)` resolves). Consumers gate their queries
    *  on this rather than `userPrefs.feedId` to avoid racing the bind. */
   boundFeedId = $state<string | null>(null);
+  /** Id of the feed whose `setFeed` is currently in flight (between the
+   *  worker kickoff and the success / failure resolve). Distinct from
+   *  `boundFeedId` so the settings row can render a spinner during the
+   *  download without falsely claiming "already bound" to queries. */
+  bindingFeedId = $state<string | null>(null);
+  /** Best-effort download progress (0-100) for `bindingFeedId`. Null
+   *  before the first progress event. Reads from the same onProgress
+   *  byte-counter that powers StatusBar, so Settings + StatusBar
+   *  stay in lockstep. */
+  bindingProgress = $state<number | null>(null);
 
   /** Idempotent — safe to call from multiple effects. */
   async load(): Promise<void> {

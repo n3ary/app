@@ -20,7 +20,6 @@ import type { ReconciledSnapshot } from '$lib/data/gtfs/types';
 import { fetchVehiclePositions, RtUnavailableError } from '$lib/data/live/gtfsRtClient';
 import { DEFAULT_CONFIG } from '$lib/domain/config';
 import { enrichObservations } from '$lib/domain/enrichObservations';
-import { quirksForFeed } from '$lib/domain/feedQuirks';
 import { reconcileWithLive } from '$lib/domain/reconcile';
 import { measurePolyline, type MeasuredPolyline } from '$lib/domain/shapeProjection';
 import type { Vehicle } from '$lib/domain/types';
@@ -35,7 +34,7 @@ import { ensureDb, state } from './state';
 //
 // LOOKBACK_MIN  — how far back to include trips that started in the past
 //                 and may still be running. 120 min comfortably covers
-//                 Cluj's longest schedules (≤90 min) plus operator delay.
+//                 typical end-to-end runtimes plus operator delay.
 // LOOKAHEAD_MIN — how far forward to include trips parked at origin
 //                 that haven't departed yet. 30 min catches the next
 //                 service window without growing the cohort excessively.
@@ -112,11 +111,11 @@ export async function tickLive(): Promise<void> {
       LIVE_RECONCILE_LOOKAHEAD_MIN,
     );
     // Enrich observations with authoritative static-feed direction +
-    // start_time (SQL-backed lookup against `active`); fall back to
-    // per-feed trip_id quirks only for observations whose trip isn't
-    // in the static set (~10-40 orphans per tick for Cluj). See
-    // domain/enrichObservations.ts for the layered fallback.
-    const observations = enrichObservations(snap.vehicles, active, quirksForFeed(feedId));
+    // start_time via a SQL-backed lookup against `active`. Observations
+    // whose tripId isn't in the active set flow through unchanged; the
+    // reconciler treats them as orphans. See domain/enrichObservations.ts
+    // for the full layering.
+    const observations = enrichObservations(snap.vehicles, active);
     const shapesByCohort = buildShapesByCohort(db, active);
     const { vehicles, stats } = reconcileWithLive(active, observations, {
       nowMs,
@@ -206,8 +205,8 @@ export function getReconciledSnapshot(): ReconciledSnapshot | null {
  *
  *  Caching: `MeasuredPolyline` could be cached per `shape_id` too, but
  *  the per-poll cost of `measurePolyline` (one Haversine per vertex) is
- *  ~µs even for the longest Cluj shapes. Skip the optimisation until
- *  measurement says otherwise. */
+ *  sub-millisecond on the largest polylines we've measured. Skip the
+ *  optimisation until measurement says otherwise. */
 function buildShapesByCohort(
   db: Awaited<ReturnType<typeof ensureDb>>,
   active: readonly Vehicle[],

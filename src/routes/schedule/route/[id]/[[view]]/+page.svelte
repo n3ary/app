@@ -13,7 +13,7 @@
   dev WebSocket suspension on iOS Safari and because deep links read
   cleanly without the extra punctuation. The trailing _0/_1 suffix on
   the id segment is a pragmatic compromise: GTFS allows any text in
-  route_id, but the Cluj feed (and most agencies) don't use underscores
+  route_id, but most agencies don't use underscores
   in ids. If a feed ever does, we'll switch the separator.
 
   Tabs:

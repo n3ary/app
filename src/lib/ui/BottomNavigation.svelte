@@ -6,6 +6,10 @@
   Items are declared via the `items` prop (data) rather than children
   components so we don't pay a slot-collection round-trip on every nav
   render. Active tab is whichever `value` matches an item's `value` prop.
+
+  Position uses `left-0 right-0` (not `inset-inline`) for max iOS Safari
+  compatibility, and the safe-area inset is read via `env()` directly
+  (not the CSS var) so the fallback is explicit at paint time.
 -->
 <script lang="ts" generics="T extends string | number">
   import type { Snippet } from 'svelte';
@@ -30,9 +34,9 @@
 
 <nav
   class={cn(
-    'fixed inset-x-0 bottom-0 z-30 flex bg-[color:var(--color-surface)]',
+    'fixed left-0 right-0 bottom-0 z-30 flex bg-[color:var(--color-surface)]',
     'border-t border-[color:var(--color-border)]',
-    'pb-[var(--space-safe-bottom)]',
+    'pb-[env(safe-area-inset-bottom,0px)]',
     className,
   )}
 >

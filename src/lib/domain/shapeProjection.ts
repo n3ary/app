@@ -42,8 +42,8 @@ export interface PolylineProjection {
  *  Per-segment math uses an equirectangular linearization around the
  *  segment so we can use plain 2-D vector arithmetic. The earth's
  *  curvature is irrelevant for the few-hundred-meter segments that
- *  GTFS shapes are composed of (typical Cluj route: ~150-500 m per
- *  segment, ~50-150 segments total).
+ *  GTFS shapes are composed of (urban bus routes typically run
+ *  150-500 m per segment, 50-150 segments total).
  *
  *  Throws on an empty polyline — callers must validate upstream
  *  (the worker only emits shapes that have ≥2 points). */

@@ -546,10 +546,10 @@
   const headerSubtitle = $derived(headsign ? `→ ${headsign}` : null);
 
   // ── Navigation helpers ─────────────────────────────────────────────
-  // Does the opposite direction even exist on this route? Some Cluj
-  // lines are one-way loops (no dir 1 trips at all) so the swap
-  // button should grey out instead of taking the user to an empty
-  // map. Shared probe with the schedule view — see
+  // Does the opposite direction even exist on this route? Some lines
+  // are one-way loops (no dir 1 trips at all) so the swap button should
+  // grey out instead of taking the user to an empty map. Shared probe
+  // with the schedule view — see
   // lib/data/gtfs/otherDirectionExists.svelte.ts.
   const otherDirection = useOtherDirectionExists(
     () => routeId,

@@ -64,9 +64,9 @@ export interface GtfsRepo {
    * `onProgress`, when passed, is invoked from inside the worker with the
    * running download counter. Wrap it with `Comlink.proxy()` on the caller
    * side so Comlink marshals it back across the worker boundary. Fires at
-   * most every ~250 ms so a 122 MB Swiss feed on a slow link doesn't spam
-   * postMessages. `totalBytes` is `null` when the upstream doesn't send
-   * Content-Length.
+   * most every ~250 ms so a multi-hundred-MB sqlite_gz on a slow link
+   * doesn't spam postMessages. `totalBytes` is `null` when the upstream
+   * doesn't send Content-Length.
    *
    * Throws (rejects) with a descriptive message when the seed download or
    * open fails — the caller (typically the +layout effect) surfaces it via
@@ -302,6 +302,28 @@ export interface GtfsRepo {
     initialStopIds: readonly string[],
     cb: (payload: StationBoardPush) => void,
   ): Promise<StationBoardsSubscription>;
+
+  /**
+   * Return the subset of `feeds` whose sqlite snapshot currently lives
+   * in OPFS (i.e. downloaded at least once and not subsequently
+   * deleted). Backs the Settings feed-picker's cache indicator —
+   * cheap (one OPFS dir listing + a hash-map probe per feed) so the
+   * page can call it after every registry refresh + after every delete
+   * without worrying about redrawing the UI mid-flight.
+   */
+  listCachedFeeds(feeds: readonly Feed[]): Promise<string[]>;
+
+  /**
+   * Remove every OPFS file belonging to `feed.id` (legacy and every
+   * hash-versioned snapshot). If the feed is the currently bound one
+   * the worker's DB handle is closed first so the pool doesn't try
+   * to reopen a file it has just dropped. No-op when nothing was
+   * cached.
+   *
+   * Returns the number of files actually removed so the caller can
+   * report a meaningful success / no-op status.
+   */
+  deleteFeedCache(feed: Feed): Promise<number>;
 }
 
 /** Per-stop assembled vehicles, as pushed by `subscribeStationBoards`.
@@ -369,10 +391,10 @@ export interface ScheduleTripStop {
   stopSequence: number;
   /** GTFS `shape_dist_traveled` — cumulative distance along the trip's
    *  shape from origin to this stop, in metres. Populated at build time
-   *  by feeds whose stop_times have the column (Cluj does via
-   *  neary-gtfs#12; mirrored Transitous feeds may or may not). When
-   *  present, runtime predictors can skip per-stop polyline projection;
-   *  when absent (undefined), `buildTripShapePlan` falls back to
+   *  by feeds whose stop_times carry the column (per-feed opt-in via
+   *  the producer pipeline). When present, runtime predictors can
+   *  skip per-stop polyline projection; when absent (undefined),
+   *  `buildTripShapePlan` falls back to
    *  projecting on the client. */
   distAlongM?: number;
 }

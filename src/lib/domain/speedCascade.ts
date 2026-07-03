@@ -19,12 +19,12 @@
  *      at `centre_radius_km`. Confidence: low.
  *   5. Static `kmh_offpeak` fallback. Confidence: low.
  *
- * Cluj-tuned defaults live in `DEFAULT_FEED_SPEED_CONFIG` (no
- * `city_centre` baked in — that's per-city, opt-in via per-feed
- * override). Per-feed override via the optional `Feed.timing` field
- * (see `data/feeds.ts`) — when neary-gtfs eventually publishes timing
- * to `feeds.json` (option-A future work), this module picks it up
- * with no API change.
+ * Generic defaults live in `DEFAULT_FEED_SPEED_CONFIG` (no
+ * `city_centre` baked in — that's per-feed, opt-in via the feed
+ * config's `timing.city_centre` block). Per-feed override via the
+ * optional `Feed.timing` field (see `data/feeds.ts`) — when neary-gtfs
+ * publishes timing to `feeds.json`, this module picks it up with no
+ * API change.
  *
  * Pure. No DOM, no stores, no I/O.
  */
@@ -77,8 +77,8 @@ export interface FeedSpeedConfig {
 
 /** Generic fallback used when a feed's blob has no `_neary_config` table
  *  or no `timing` key. Values approximate a typical European urban bus
- *  network — not tuned to any specific city. Feed-specific values always
- *  win and are written by the neary-gtfs pipeline into `_neary_config`. */
+ *  network. Feed-specific values always win and are written by the
+ *  neary-gtfs pipeline into `_neary_config`. */
 export const DEFAULT_FEED_SPEED_CONFIG: FeedSpeedConfig = {
   kmh_peak: 15,
   kmh_offpeak: 25,

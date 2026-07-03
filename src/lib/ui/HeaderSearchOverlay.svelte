@@ -135,7 +135,7 @@
     const q = debouncedQuery;
     const needle = normalizeForSearch(q);
 
-    // Filter to routes with schedule: NT-fallback routes on Cluj don't
+    // Filter to routes with schedule: NT-fallback (no-time) routes don't
     // belong in results since tapping them would open an empty schedule.
     const scheduledRoutes = routes.filter((r) => r.hasSchedule !== false);
 
@@ -146,9 +146,8 @@
         const repo = getGtfsRepo();
         if (needle) {
           // Typed mode. Match route short_name only -- long_name is
-          // usually the origin/terminus pair ('Cluj-Napoca Gara -
-          // Piata Mihai Viteazul') and matches too broadly, drowning
-          // the exact-number match a rider actually wanted.
+          // usually the origin/terminus pair and matches too broadly,
+          // drowning the exact-number match a rider actually wanted.
           const matchingRoutes = scheduledRoutes
             .filter((r) => normalizeForSearch(r.shortName).includes(needle))
             .sort((x, y) => compareRouteShortName(x.shortName, y.shortName))

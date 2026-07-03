@@ -42,7 +42,7 @@
   // built-in location override. Always installed (cheap, no harm in
   // production) so internal users can exercise different neighborhoods.
   //
-  //   neary.setLocation(46.7712, 23.6236)   // Pia\u021ba Mihai Viteazul, Cluj
+  //   neary.setLocation(<lat>, <lon>)        // pin a mock GPS fix
   //   neary.clearLocation()                  // resume real GPS
   $effect(() => {
     if (typeof window === 'undefined') return;
@@ -93,7 +93,17 @@
   });
   $effect(() => {
     const id = userPrefs.feedId;
-    if (id == null) return;
+    if (id == null) {
+      // User deselected (e.g. deleted the active feed from Settings).
+      // closeCurrent() ran in the worker but feedsStore.boundFeedId is
+      // still the previous truthy id — any page that gates queries on
+      // it would fire them against a worker with currentDb=null and
+      // throw "GTFS worker not bound to a feed yet". Clear it here so
+      // page effects stay in their loading state until the user picks
+      // a new feed (which resets lastBoundFeedKey and rebinds).
+      feedsStore.boundFeedId = null;
+      return;
+    }
     const feed = feedsStore.byId(id);
     if (!feed) return; // registry not loaded yet; effect will re-fire when it is
     // Key by (id, hash) so a new hash on the same id triggers re-bind.
@@ -102,8 +112,19 @@
     // computes a new filename, bootstrap() downloads the new blob.
     const key = `${id}@${feed.hash ?? ''}`;
     if (key === lastBoundFeedKey) return;
+    // Same defensive clear as the deselect branch — if we're switching
+    // to a different feed (or a new hash on the same id) the previous
+    // bind is no longer authoritative. The page-level $effect that
+    // watches boundFeedId needs to see null until the new setFeed
+    // resolves, otherwise it fires queries during the bind window.
+    feedsStore.boundFeedId = null;
     lastBoundFeedKey = key;
     const repo = getGtfsRepo();
+    // Mark this feed as in-flight so the Settings feed row can render
+    // a download spinner instead of a (false) "delete local data"
+    // affordance. Cleared on success and failure below.
+    feedsStore.bindingFeedId = feed.id;
+    feedsStore.bindingProgress = 0;
     // statusBus.push reads `entries` (findIndex for dedupe), so calls
     // from inside a $effect must be wrapped in untrack to avoid
     // effect_update_depth loops. Matches the pattern at
@@ -124,15 +145,19 @@
     // its last determinate value rather than jumping around.
     const onProgress = Comlink.proxy((bytes: number, total: number | null) => {
       if (total && total > 0) {
+        const pct = Math.min(100, Math.round((bytes / total) * 100));
         untrack(() => {
-          statusBus.progress('gtfs-bind', Math.min(100, Math.round((bytes / total) * 100)));
+          statusBus.progress('gtfs-bind', pct);
         });
+        feedsStore.bindingProgress = pct;
       }
     });
     repo
       .setFeed($state.snapshot(feed) as typeof feed, onProgress)
       .then(() => {
         feedsStore.boundFeedId = feed.id;
+        feedsStore.bindingFeedId = null;
+        feedsStore.bindingProgress = null;
         // Subscribe to the worker's reconciliation broadcast. The worker
         // owns the live poll loop (started in setFeed); this just wires
         // the main-thread store to receive every tick. Idempotent across
@@ -147,6 +172,8 @@
         });
       })
       .catch((e: Error) => {
+        feedsStore.bindingFeedId = null;
+        feedsStore.bindingProgress = null;
         untrack(() => {
           statusBus.push({
             id: 'gtfs-bind',

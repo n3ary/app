@@ -1,9 +1,15 @@
 # Live data pipeline
 
-Reasoning behind the worker-side live pipeline, reconciler, and the
-feed-specific workarounds. The code itself ([src/lib/data/live/](../../src/lib/data/live/),
+Reasoning behind the worker-side live pipeline, reconciler, and
+consumer-side behaviour. The code itself
+([src/lib/data/live/](../../src/lib/data/live/),
 [src/lib/domain/reconcile.ts](../../src/lib/domain/reconcile.ts)) is the
 implementation; this doc captures the **why** that isn't there.
+
+For the **producer/consumer split** on per-feed RT cleanup (who
+recovers broken `direction_id`, who merges multi-source feeds), see
+[gtfs-rt-contract.md](gtfs-rt-contract.md). This doc covers what
+the consumer does given a clean, spec-compliant RT feed.
 
 ## Where it runs
 
@@ -126,22 +132,13 @@ Future direction: see [../plan/prediction-v2.md](../plan/prediction-v2.md).
 
 ## Direction-id resolution
 
-The Cluj GTFS-RT feed (`cluj-rt-feed.gtfs.ro`) sets
-`TripDescriptor.direction_id = 0` for every vehicle regardless of the
-actual run. The real direction is encoded in the `trip_id` second segment:
-
-```
-13_0_LV_79_1504  → dir 0
-13_1_LV_70_1448  → dir 1
-```
-
-`resolveDirectionId(claimed, tripId)` in
-[gtfsRtClient.ts](../../src/lib/data/live/gtfsRtClient.ts) prefers the
-trip_id-encoded value when the trip_id matches the canonical
-`<route>_<dir>_...` pattern, falls back to the claimed value otherwise.
-
-Feed-agnostic: a feed whose `trip_id` doesn't carry a direction segment
-hits the fallback path and keeps the original behavior. No allowlist needed.
+The consumer treats `direction_id` as authoritative. Per
+[gtfs-rt-contract.md](gtfs-rt-contract.md), the producer's adapter is
+responsible for populating `direction_id` correctly (including
+synthesising it from operator-internal encodings when the upstream
+publishes `direction_id=0` for every vehicle). The consumer does not
+fall back to `trip_id` parsing — that would put per-feed knowledge back
+into the consumer.
 
 ## Timezone discipline
 

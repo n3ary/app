@@ -21,6 +21,7 @@
   import type { Route } from '$lib/domain/types';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
+  import { userPrefs } from '$lib/stores/userPrefs.svelte';
   import {
     Box, Card, CardContent, Chip, List, ListItem, ListItemText,
     RouteBadge, Stack, Typography,
@@ -28,13 +29,16 @@
   } from '$lib/ui';
   import { MapPin } from 'lucide-svelte';
 
-  // Demo "user location" — Piața Mihai Viteazul, central Cluj.
+  // Demo "user location" — a central European city centre. Generic
+  // coordinates; the page is feed-agnostic.
   const userLat = 46.7712;
   const userLon = 23.6236;
 
-  // /data-test is feed-agnostic in design; force-bind cluj-napoca since
-  // that's the one with known stops near (userLat, userLon).
-  const DEMO_FEED_ID = 'cluj-napoca';
+  // /data-test is feed-agnostic: picks whichever feed appears first
+  // in the published registry. To test a different feed, switch to it
+  // in /settings before loading this page (it'll be picked up via the
+  // user's currently selected feed id).
+  const DEMO_FEED_ID = null; // sentinel: use the user's currently selected feed
 
   let feed = $state<Feed | null>(null);
   let routes = $state<Route[] | null>(null);
@@ -47,8 +51,12 @@
     statusBus.push({ id: 'gtfs-boot', kind: 'loading', message: 'Loading GTFS database…' });
     try {
       await feedsStore.load();
-      const f = feedsStore.byId(DEMO_FEED_ID);
-      if (!f) throw new Error(`Feed "${DEMO_FEED_ID}" not in registry`);
+      // Pick the user's currently selected feed; fall back to the
+      // first entry in the registry when nothing's selected.
+      const targetId = DEMO_FEED_ID ?? userPrefs.feedId ?? feedsStore.feeds?.[0]?.id ?? null;
+      if (!targetId) throw new Error('No feed available — check the registry');
+      const f = feedsStore.byId(targetId);
+      if (!f) throw new Error(`Feed "${targetId}" not in registry`);
       feed = f;
       await repo.setFeed($state.snapshot(f) as typeof f);
       routes = await repo.getRoutes();
@@ -84,10 +92,10 @@
   <header>
     <Typography variant="h2">GTFS pipeline test</Typography>
     <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-      First-launch: downloads <code>{DEMO_FEED_ID}.sqlite3.gz</code> from
-      the neary-gtfs <code>binaries</code> branch on GitHub, decompresses,
-      imports into OPFS via SAH pool, runs real
-      GTFS queries in a Web Worker. Subsequent visits skip the download.
+      First-launch: downloads the selected feed's <code>sqlite3.gz</code>
+      from <code>gtfs.n3ary.com</code>, decompresses, imports into OPFS via
+      SAH pool, runs real GTFS queries in a Web Worker. Subsequent visits
+      skip the download.
     </Typography>
   </header>
 

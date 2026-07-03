@@ -24,7 +24,7 @@ import * as Comlink from 'comlink';
 import type { Feed } from '$lib/data/feeds';
 import type { GtfsRepo } from '$lib/data/gtfs/types';
 
-import { bootstrap, closeCurrent } from './gtfs/bootstrap';
+import { bootstrap, closeCurrent, deleteFeedCache, getCachedFeedIds } from './gtfs/bootstrap';
 import {
   ensureLiveTimer,
   subscribeReconciled,
@@ -199,6 +199,22 @@ const api: GtfsRepo = {
   },
   async subscribeStationBoards(initialStopIds, cb) {
     return subscribeStationBoards(initialStopIds, cb);
+  },
+
+
+  // ── Cache introspection / deletion ──────────────────────────────────
+  //
+  // Backs the Settings feed-picker trash button. Pairs with
+  // opfsFileFor + pruneStaleFeedFiles in bootstrap so the worker
+  // owns the only legitimate path into OPFS (page module can't
+  // import sqlite3InitModule directly without duplicating bootstrap's
+  // pool init, so going through the Comlink proxy keeps ownership
+  // clear).
+  async listCachedFeeds(feeds: readonly Feed[]) {
+    return getCachedFeedIds(feeds);
+  },
+  async deleteFeedCache(feed: Feed) {
+    return deleteFeedCache(feed);
   },
 };
 
