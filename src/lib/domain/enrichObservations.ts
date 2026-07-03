@@ -8,18 +8,10 @@
  *      hot path — when the RT feed publishes the same trip_id space
  *      as the static feed, the lookup fires for the vast majority of
  *      observations.
- *   2. Otherwise (orphan, deadhead, build skew, fix-up run) leave the
- *      canonical RT fields as-is. Downstream the observation becomes
- *      unmatched / gps-only.
- *
- * Historical note: an earlier pass kept a per-feed trip_id parser here
- * as a fallback for RT feeds whose operators publish broken `direction_id`
- * or missing `start_time`. That fallback was feed-specific (keyed by
- * `feed.id`) and so violated this repo's feed-agnostic standard
- * (`docs/standards/feed-agnostic.md`). The proper home for those
- * recovers is the producer (neary-gtfs): if it can pre-resolve
- * `direction_id` / `start_time` upstream before they hit the browser,
- * every consumer gets them for free and this module stays generic.
+ *   2. Otherwise (orphan, deadhead, build skew, fix-up run) try the
+ *      TEMP cluj trip_id recovery below.
+ *   3. If neither path fires, leave the canonical RT fields as-is.
+ *      Downstream the observation becomes unmatched / gps-only.
  *
  * Pure function: no IO, no DB access. Caller owns the active-trips
  * snapshot (already fetched per tick by `livePipeline.tickLive` for
@@ -70,5 +62,40 @@ function enrichOne(
       startTime: minutesToTime(sched.tripStartMin),
     };
   }
+  const cluj = recoverClujTripFields(obs);
+  if (cluj) {
+    return { ...obs, directionId: cluj.directionId, startTime: cluj.startTime };
+  }
   return obs;
+}
+
+// TEMP: cluj-napoca trip_id recovery — REMOVE THIS ENTIRE BLOCK when
+// the producer's `packages/gtfs-rt` adapter ships canonical
+// `direction_id` + `start_time` for Cluj upstream. See
+// `docs/plan/producer-monorepo.md` (step 3 deploys the adapter,
+// step 4 then merges the consumer-side `feedQuirks.ts` deletion).
+// Until that lands, this is the only thing keeping Cluj observations
+// from collapsing to gps-only orphans.
+//
+// Branching is on the trip_id SHAPE (regex below), not on `feed.id` /
+// agency / city — so it stays compatible with
+// `docs/standards/feed-agnostic.md` ("branch on capability or shape,
+// never on feed.id, agency name, city, or any feed-specific token").
+//
+// Cluj RT audit: direction_id is always 0 (broken) and start_time is
+// always empty, but trip_id carries the real values in a stable shape:
+//   ^<route>_<dir>_<service>_<run>_<HHMM>
+const CLUJ_TRIP_ID = /^([^_]+)_([01])_[^_]+_[^_]+_(\d{4})$/;
+function recoverClujTripFields(
+  obs: LiveVehicleObservation,
+): { directionId: 0 | 1; startTime: string } | null {
+  if (!obs.tripId || obs.startTime) return null;
+  const m = CLUJ_TRIP_ID.exec(obs.tripId);
+  if (!m) return null;
+  const hh = Number(m[3].slice(0, 2));
+  const mm = Number(m[3].slice(2, 4));
+  return {
+    directionId: Number(m[2]) as 0 | 1,
+    startTime: minutesToTime(hh * 60 + mm),
+  };
 }
