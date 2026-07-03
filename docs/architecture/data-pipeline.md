@@ -71,7 +71,7 @@ Lifecycle details (eviction, pinning, offline behavior) live in
 | Manual refresh (L3) | on tap | Refresh button forces L1 + L2 immediately |
 
 The three loops are decoupled. Refresh button reasoning: see
-[../plan/prediction-v2.md §6.5](../plan/prediction-v2.md).
+[../concepts/prediction.md](../concepts/prediction.md) and issue #163.
 
 ## ETA inputs shared by station + map
 

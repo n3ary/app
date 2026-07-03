@@ -71,11 +71,11 @@ function enrichOne(
 
 // TEMP: cluj-napoca trip_id recovery — REMOVE THIS ENTIRE BLOCK when
 // the producer's `packages/gtfs-rt` adapter ships canonical
-// `direction_id` + `start_time` for Cluj upstream. See
-// `docs/plan/producer-monorepo.md` (step 3 deploys the adapter,
-// step 4 then merges the consumer-side `feedQuirks.ts` deletion).
-// Until that lands, this is the only thing keeping Cluj observations
-// from collapsing to gps-only orphans.
+// `direction_id` + `start_time` for Cluj upstream. Tracked at
+// https://github.com/ciotlosm/neary-gtfs/issues/36 (producer-side
+// fix) and https://github.com/ciotlosm/neary/issues/161 (consumer-side
+// removal trigger). Until the adapter lands, this is the only thing
+// keeping Cluj observations from collapsing to gps-only orphans.
 //
 // Branching is on the trip_id SHAPE (regex below), not on `feed.id` /
 // agency / city — so it stays compatible with

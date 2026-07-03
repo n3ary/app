@@ -1,38 +1,28 @@
 # Plan
 
-Future work, in-flight design, and open questions. Short-lived per doc;
-distilled into [../specs/](../specs/) or [../concepts/](../concepts/)
-once shipped.
+Plans are short-lived work artifacts on a feature branch. They do
+**not** live in `main`. Once work is complete, the plan is distilled
+into `../specs/` or `../concepts/` and the unfinished pieces become
+GitHub issues on the repo where the code will be written.
 
-## Active priority
+For the full lifecycle, see [../standards/issue-plan-lifecycle.md](../standards/issue-plan-lifecycle.md).
 
-[prediction-v2.md](prediction-v2.md) is the primary near-term focus. It
-fixes two real pain points in the current app:
+## How to use this directory
 
-1. **Schedule-spine prediction** — regression vs v1; live GPS is only used
-   for reconciliation, not as the spine for position rendering.
-2. **Opaque UI update cycles** — three loops (live poll, UI tick, refresh)
-   are decoupled in ways that aren't obvious; refresh can take up to ~30 s
-   to flip ETA labels. Section 6.5 of the plan spells out the contract.
+If you're starting implementation of a complex idea:
 
-## All plan docs
+1. Create a branch for the work (often the feature branch the work lives on).
+2. Put the plan in `docs/plan/<slug>.md` **on that branch**.
+3. As work proceeds, update the plan to reflect current understanding.
+4. At completion:
+   - Distill decisions into `docs/specs/` or `docs/concepts/`.
+   - Open GitHub issues on the right repos for unfinished work.
+   - Delete the plan file. Do not merge it to `main`.
 
-| Document | Scope |
-|---|---|
-| [prediction-v2.md](prediction-v2.md) | Prediction overhaul — active priority |
-| [producer-monorepo.md](producer-monorepo.md) | Producer monorepo restructure for the live RT adapter — on hold until PR #159 ships |
+If you only have an idea and aren't implementing yet, open a GitHub issue
+instead — that's the long-lived record of intent.
 
-## Where the app is
+## Active plans
 
-The SvelteKit rebuild has reached feature parity with v1 on the core surfaces:
-station board, schedule, map, favorites, settings, multi-feed switching, and
-GTFS-RT reconciliation are all in production. The remaining substantive work
-is prediction (see [prediction-v2.md](prediction-v2.md)). Everything else is
-iterative polish driven by usage — no dedicated plan doc.
-
-## Cross-repo work
-
-The [neary-gtfs](https://github.com/ciotlosm/neary-gtfs) data pipeline lives in
-its own repo with its own roadmap. Some stages of
-[prediction-v2.md](prediction-v2.md) (Stage A — build-time interpolation
-upgrade) ship there, not here.
+None. If you're looking for ongoing work, check the open issues on this
+repo and on the producer / adapter repos.

@@ -193,7 +193,8 @@ breaks down and the bug is easy to re-introduce.
 
 > [!IMPORTANT]
 > Only §5.4 (Cluj direction-id workaround) is wired up; §5.1–5.3 are
-> aspirational design tracked in [../plan/prediction-v2.md](../plan/prediction-v2.md).
+> aspirational design tracked in [../concepts/prediction.md](../concepts/prediction.md)
+> and the open issues #106, #162, #163.
 > The rules below are the **contract** the reconciler must satisfy when
 > live reconciliation lands — if a future PR ships live matching without
 > these, you get the bugs listed.
