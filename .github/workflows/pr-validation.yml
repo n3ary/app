@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout neary-gtfs (provides @n3ary/neary-gtfs-spec for the file: dep)
+      - name: "Checkout neary-gtfs (provides @n3ary/neary-gtfs-spec for the file: dep)"
         uses: actions/checkout@v7
         with:
           repository: n3ary/neary-gtfs

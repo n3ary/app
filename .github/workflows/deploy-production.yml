@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Checkout neary-gtfs (provides @n3ary/neary-gtfs-spec for the file: dep)
+      - name: "Checkout neary-gtfs (provides @n3ary/neary-gtfs-spec for the file: dep)"
         uses: actions/checkout@v7
         with:
           repository: n3ary/neary-gtfs
