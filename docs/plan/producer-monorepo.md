@@ -48,6 +48,124 @@ target wastes the always-on infra on the static build's idle hours, or
 forces the static build to share an always-on VM it doesn't need.
 **They get separate deploy targets but share one source tree.**
 
+## Extract `@ciotlosm/neary-gtfs-core` as a published library
+
+Before either pipeline lands, the GTFS **contract** lives in its own
+npm package — published from this monorepo's `packages/shared/`,
+consumed by both this monorepo's other packages AND by `neary` (the
+consumer). Why:
+
+- **Two repos, one contract.** Both `neary-gtfs` and `neary` currently
+  duplicate GTFS-shape knowledge (types, feeds.json loader, shape
+  projection math). A shared package is the only way to keep them
+  honest — drift in either repo becomes a deliberate version bump of
+  `@ciotlosm/neary-gtfs-core`.
+- **Dependency isolation.** The package's runtime deps are exactly
+  three: `csv-parse`, `gtfs-realtime-bindings`, `zod`. No SQLite
+  driver, no HTTP framework, no language-specific runtime. Works in
+  Node (producer) and the browser (consumer's Web Worker bundle).
+- **Versioned independently.** Producer can ship a v0.2.0 of the
+  shared package adding CSV readers without forcing the consumer to
+  bump anything until the consumer wants to use them.
+
+### What goes in the package
+
+```
+packages/shared/                     ← published as @ciotlosm/neary-gtfs-core
+├── package.json                     ← exports types + JS, both ESM and CJS
+├── tsconfig.json
+├── src/
+│   ├── schema/                      ← GTFS table types (Stop, Route, ...)
+│   │   ├── stops.ts
+│   │   ├── routes.ts
+│   │   ├── trips.ts
+│   │   ├── stop-times.ts
+│   │   ├── shapes.ts
+│   │   ├── calendar.ts
+│   │   └── index.ts
+│   ├── csv/                         ← CSV readers (csv-parse based)
+│   │   ├── stops.ts
+│   │   ├── routes.ts
+│   │   ├── trips.ts
+│   │   ├── stop-times.ts
+│   │   ├── shapes.ts
+│   │   ├── calendar.ts
+│   │   ├── calendar-dates.ts
+│   │   └── index.ts
+│   ├── shapes/                      ← pure shape math, zero deps
+│   │   ├── project-on-polyline.ts
+│   │   ├── measure-polyline.ts
+│   │   └── index.ts
+│   ├── feeds-json/                  ← manifest schema + types (zod)
+│   │   ├── schema.ts
+│   │   ├── types.ts                 ← inferred from zod
+│   │   ├── emitter.ts               ← producer side
+│   │   ├── reader.ts                ← consumer side
+│   │   └── index.ts
+│   ├── proto/                       ← protobuf message types
+│   │   ├── index.ts                 ← re-exports from gtfs-realtime-bindings
+│   │   └── rt.ts
+│   └── sql/                         ← DDL strings (no driver)
+│       ├── ddl.ts
+│       └── index.ts
+└── tests/
+    ├── csv.test.ts
+    ├── shapes.test.ts
+    ├── feeds-json.test.ts
+    └── roundtrip.test.ts            ← CSV → typed → DDL → sqlite: same data
+```
+
+Estimated size: ~1,500 LoC + ~600 LoC tests.
+
+### What stays out (and where it lives instead)
+
+**In the consumer (`neary`):** runtime + reactive + UI
+- `Vehicle`, `ReconciledVehicle`, `StationBoardRow` types — runtime
+  constructs, not GTFS spec
+- Reconciler, station board, live pipeline
+- sqlite-wasm specific SQL queries
+- All stores, Svelte components, routes
+
+**In the producer (`neary-gtfs`):** pipeline + ops
+- `packages/gtfs-static/src/pipeline.ts`, `feed-registry.ts`
+- `packages/gtfs-rt/src/adapter.ts`, `poller.ts`, `merge.ts`, `quirks/`
+- `Dockerfile`, terraform, systemd unit
+
+### Dependency list
+
+```json
+{
+  "dependencies": {
+    "csv-parse": "^5.5.0",
+    "gtfs-realtime-bindings": "^1.1.0",
+    "zod": "^3.22.0"
+  }
+}
+```
+
+Three runtime deps, that's it. The consumer only pays for what it
+imports — `csv-parse` doesn't get pulled into the browser bundle unless
+the consumer imports from `@ciotlosm/neary-gtfs-core/csv` (which it
+won't, since the consumer reads sqlite not CSVs).
+
+### Migration order
+
+1. **Stand up `packages/shared/`** in the new monorepo with the
+   `feeds.json` schema + `schema/` (types) + `shapes/` (math) — the
+   consumer can adopt this surface immediately with no behaviour
+   change.
+2. **Migrate the consumer** to depend on `@ciotlosm/neary-gtfs-core`:
+   replace `src/lib/data/feeds.ts` and `src/lib/data/gtfs/types.ts`
+   (Feed side) with imports from the package. Replace
+   `src/lib/domain/shapeProjection.ts` (the pure-math parts) with
+   imports. ~655 lines of consumer code deleted; behaviour identical.
+3. **Add CSV readers** in v0.2.0 of the package; the producer's
+   `gtfs-static` consumes them.
+4. **Add SQL DDL** in v0.3.0; both producer (writer) and consumer
+   (sqlite-wasm queries) consume the DDL strings.
+5. **Publish story**: monorepo publishes to GitHub Packages on tag;
+   `neary` consumes via `.npmrc` pointing at the GitHub registry.
+
 ## Monorepo vs multi-repo
 
 Three options, in order of preference:
