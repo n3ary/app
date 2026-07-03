@@ -70,20 +70,31 @@ consumer). Why:
 
 ### What goes in the package
 
+The library covers **strictly GTFS spec** — anything that codifies
+the Schedule (CSV) and Realtime (protobuf) specs. Anything that's our
+app's convention or per-feed knowledge stays in the apps.
+
+**Architecture invariant**: the library has zero per-feed knowledge.
+Per-feed quirks (Cluj direction_id recovery, Swiss auth proxy, etc.)
+live in the producer's `packages/gtfs-rt/src/quirks/`, never in the
+library. If a future feed needs new quirk logic, the fix is a new
+module in the producer — never a PR to the library.
+
 ```
 packages/shared/                     ← published as @ciotlosm/neary-gtfs-core
 ├── package.json                     ← exports types + JS, both ESM and CJS
 ├── tsconfig.json
 ├── src/
-│   ├── schema/                      ← GTFS table types (Stop, Route, ...)
-│   │   ├── stops.ts
+│   ├── schema/                      ← GTFS Schedule column types per file
+│   │   ├── stops.ts                 ← stop_id, stop_name, stop_lat, ...
 │   │   ├── routes.ts
-│   │   ├── trips.ts
-│   │   ├── stop-times.ts
+│   │   ├── trips.ts                 ← route_id, service_id, trip_id, direction_id, ...
+│   │   ├── stop-times.ts            ← arrival_time, departure_time, stop_sequence, ...
 │   │   ├── shapes.ts
 │   │   ├── calendar.ts
+│   │   ├── calendar-dates.ts
 │   │   └── index.ts
-│   ├── csv/                         ← CSV readers (csv-parse based)
+│   ├── csv/                         ← one reader per spec file (csv-parse based)
 │   │   ├── stops.ts
 │   │   ├── routes.ts
 │   │   ├── trips.ts
@@ -92,28 +103,38 @@ packages/shared/                     ← published as @ciotlosm/neary-gtfs-core
 │   │   ├── calendar.ts
 │   │   ├── calendar-dates.ts
 │   │   └── index.ts
-│   ├── shapes/                      ← pure shape math, zero deps
+│   ├── shapes/                      ← pure geometry, but used only for GTFS shapes
+│   │   │                              ← stays here for now; split into
+│   │   │                              ← @neary/shape-utils only if a 2nd
+│   │   │                              ← consumer appears
 │   │   ├── project-on-polyline.ts
 │   │   ├── measure-polyline.ts
 │   │   └── index.ts
-│   ├── feeds-json/                  ← manifest schema + types (zod)
-│   │   ├── schema.ts
-│   │   ├── types.ts                 ← inferred from zod
-│   │   ├── emitter.ts               ← producer side
-│   │   ├── reader.ts                ← consumer side
-│   │   └── index.ts
-│   ├── proto/                       ← protobuf message types
+│   ├── proto/                       ← GTFS-RT protobuf types
 │   │   ├── index.ts                 ← re-exports from gtfs-realtime-bindings
 │   │   └── rt.ts
-│   └── sql/                         ← DDL strings (no driver)
-│       ├── ddl.ts
-│       └── index.ts
+│   ├── sql/                         ← canonical GTFS SQLite DDL strings
+│   │   └── ddl.ts                   ← CREATE TABLE stops, routes, ... (per spec)
+│   └── time.ts                      ← HH:MM:SS ↔ minutes; spec's quirky time
+│                                       format (hours can exceed 23 for
+│                                       service-day continuation; DST handling)
 └── tests/
-    ├── csv.test.ts
+    ├── csv.test.ts                  ← spec fixtures round-trip through readers
     ├── shapes.test.ts
-    ├── feeds-json.test.ts
+    ├── proto.test.ts
     └── roundtrip.test.ts            ← CSV → typed → DDL → sqlite: same data
 ```
+
+**What's NOT in the library** (stays in apps):
+
+| thing | where it lives | why it's not GTFS |
+|---|---|---|
+| `feeds.json` manifest format | both apps, separately | our convention; the GTFS spec has no concept of "feed registry" |
+| Per-feed quirks (Cluj, Swiss, etc.) | producer only (`packages/gtfs-rt/src/quirks/`) | per-feed knowledge is the producer's job |
+| OPFS SAH-pool file naming | this consumer | our caching scheme |
+| Reconciler, station board, ETAs | this consumer | our runtime logic |
+| RT adapter HTTP server | producer only | our deployment shape |
+| The cached-clean-RT publishing decision | producer only | our operational policy |
 
 Estimated size: ~1,500 LoC + ~600 LoC tests.
 
@@ -124,11 +145,14 @@ Estimated size: ~1,500 LoC + ~600 LoC tests.
   constructs, not GTFS spec
 - Reconciler, station board, live pipeline
 - sqlite-wasm specific SQL queries
+- `feeds.json` loader — our manifest convention, not GTFS
 - All stores, Svelte components, routes
 
 **In the producer (`neary-gtfs`):** pipeline + ops
 - `packages/gtfs-static/src/pipeline.ts`, `feed-registry.ts`
-- `packages/gtfs-rt/src/adapter.ts`, `poller.ts`, `merge.ts`, `quirks/`
+- `packages/gtfs-rt/src/adapter.ts`, `poller.ts`, `merge.ts`,
+  `quirks/{cluj,swiss,generic,...}.ts`
+- `feeds.json` emitter — our manifest convention
 - `Dockerfile`, terraform, systemd unit
 
 ### Dependency list
@@ -148,21 +172,27 @@ imports — `csv-parse` doesn't get pulled into the browser bundle unless
 the consumer imports from `@ciotlosm/neary-gtfs-core/csv` (which it
 won't, since the consumer reads sqlite not CSVs).
 
+`zod` is used for **GTFS spec validation** (e.g., "stop_times.txt rows
+have `arrival_time` in `HH:MM:SS` format, lat/lon are valid floats in
+range"), not for our app's manifest.
+
 ### Migration order
 
-1. **Stand up `packages/shared/`** in the new monorepo with the
-   `feeds.json` schema + `schema/` (types) + `shapes/` (math) — the
-   consumer can adopt this surface immediately with no behaviour
-   change.
+1. **Stand up `packages/shared/`** in the new monorepo with
+   `schema/` (GTFS types) + `shapes/` (math) + `proto/` (RT re-exports)
+   + `time.ts` — the consumer can adopt this surface immediately with
+   no behaviour change.
 2. **Migrate the consumer** to depend on `@ciotlosm/neary-gtfs-core`:
-   replace `src/lib/data/feeds.ts` and `src/lib/data/gtfs/types.ts`
-   (Feed side) with imports from the package. Replace
-   `src/lib/domain/shapeProjection.ts` (the pure-math parts) with
-   imports. ~655 lines of consumer code deleted; behaviour identical.
+   replace `src/lib/domain/shapeProjection.ts` (the pure-math parts)
+   with imports. ~225 lines of consumer code deleted; behaviour
+   identical. The consumer's own `feeds.json` loader and `Feed` types
+   stay in this repo — they're not GTFS spec.
 3. **Add CSV readers** in v0.2.0 of the package; the producer's
    `gtfs-static` consumes them.
-4. **Add SQL DDL** in v0.3.0; both producer (writer) and consumer
-   (sqlite-wasm queries) consume the DDL strings.
+4. **Add SQL DDL** in v0.3.0; the producer's writer consumes them;
+   the consumer's sqlite-wasm queries can optionally consume them too
+   (the consumer's queries are already correct, so this is a "clean
+   up the source of truth" not a behaviour change).
 5. **Publish story**: monorepo publishes to GitHub Packages on tag;
    `neary` consumes via `.npmrc` pointing at the GitHub registry.
 
@@ -595,7 +625,17 @@ Likely **nothing** once the adapter is shipping clean feeds. The
 existing reconciler handles correctly-populated `direction_id` /
 `start_time` without any quirks module.
 
-The only consumer-side change left after #159 is documentation: add a
+The consumer-side refactor that **can** happen independently of the
+producer work is the `@ciotlosm/neary-gtfs-core` migration: replace
+`src/lib/domain/shapeProjection.ts` (the pure-math parts) with
+imports from the library. ~225 lines deleted, behaviour identical.
+Safe to do alongside PR #159 or as its own follow-up PR.
+
+The consumer's own `feeds.json` loader and `Feed` types stay in this
+repo — they're our manifest convention, not GTFS spec, and don't
+belong in the shared library.
+
+The remaining consumer-side change after #159 is documentation: add a
 note to `docs/specs/` saying "the RT feed is expected to be
 pre-cleaned by the producer; the consumer treats it as
 GTFS-RT-spec-compliant and does not branch on `feed.id` for RT
