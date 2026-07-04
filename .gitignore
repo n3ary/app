@@ -55,9 +55,9 @@ deno.lock
 **/*token*
 
 # User-specific configuration
-.kiro/settings/
-.kiro/user/
-.kiro/cache/
+.kiro/
+.claude/
+.kilo/worktrees/
 
 # Temporary files
 *.tmp
