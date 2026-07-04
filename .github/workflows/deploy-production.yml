@@ -77,4 +77,10 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy build --project-name=neary --branch=main
+          # --commit-dirty=true silences wrangler's "uncommitted changes"
+          # warning. The wrangler-action@v4 auto-runs `pnpm add wrangler@4`
+          # which mutates package.json + pnpm-lock.yaml in the runner's
+          # working tree; wrangler then sees the dirty tree. The mutation
+          # is ephemeral (the runner is fresh per deploy) and never
+          # touches the real repo, so just acknowledge it.
+          command: pages deploy build --project-name=neary --branch=main --commit-dirty=true
