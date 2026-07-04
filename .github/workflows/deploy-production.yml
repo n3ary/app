@@ -44,9 +44,17 @@ jobs:
         # The @n3ary scope maps to GitHub Packages (see .npmrc).
         # NPM_TOKEN is an org token with read:packages on @n3ary/gtfs-spec.
         # Set via the repo's secrets in GitHub web UI.
+        #
+        # pnpm 11 refuses to expand env vars in project .npmrc (it
+        # considers the file committed and could leak the secret to
+        # an attacker-controlled registry). Use `pnpm config set`
+        # to write the credential to user-level ~/.npmrc at install
+        # time — that's an untracked, per-run path.
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm config set //npm.pkg.github.com/:_authToken "$NPM_TOKEN"
+          pnpm install --frozen-lockfile
 
       - name: Build production bundle
         run: pnpm run build

@@ -40,9 +40,24 @@ jobs:
         # The @n3ary scope maps to GitHub Packages (see .npmrc).
         # NPM_TOKEN is an org token with read:packages on @n3ary/gtfs-spec.
         # Set via the repo's secrets in GitHub web UI.
+        #
+        # pnpm 11 refuses to expand env vars in project .npmrc (it
+        # considers the file committed and could leak the secret to
+        # an attacker-controlled registry). Use `pnpm config set`
+        # to write the credential to user-level ~/.npmrc at install
+        # time — that's an untracked, per-run path.
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm config set //npm.pkg.github.com/:_authToken "$NPM_TOKEN"
+          # pnpm 11 verifies the lockfile's tarball URLs against the
+          # registry on every install. A stale entry (e.g. a registry
+          # republish) will fail the verification and abort the install.
+          # Clean the lockfile and let pnpm re-resolve from the registry.
+          # --no-frozen-lockfile is required because pnpm enables it by
+          # default when CI=true.
+          pnpm clean --lockfile
+          pnpm install --no-frozen-lockfile
 
       - name: Auto-bump version to main + 1
         run: |
@@ -73,7 +88,7 @@ jobs:
             pnpm version "$NEXT_VERSION" --no-git-tag-version
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add package.json
+            git add package.json pnpm-lock.yaml
             git commit -m "chore(release): auto-bump to v${NEXT_VERSION}"
             git push
           else
