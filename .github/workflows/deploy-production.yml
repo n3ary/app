@@ -64,9 +64,17 @@ jobs:
       # the environment; the token needs the "Cloudflare Pages: Edit"
       # scope. Custom domain (app.n3ary.com) is attached to the project
       # once (out of band); each deploy is picked up automatically.
+      #
+      # The Cloudflare Pages project is still named 'neary' even after
+      # the repo rename. Renaming a Pages project would orphan the
+      # custom-domain binding until re-attached, so we keep the
+      # deploy-time reference as 'neary'. Same rationale as the
+      # OPFS_POOL_NAME='neary-gtfs' + 'neary-gtfs' R2 bucket note in
+      # the rename commit body: published/data artifacts keep their
+      # old names, only the source-side references change.
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy build --project-name=app --branch=main
+          command: pages deploy build --project-name=neary --branch=main
