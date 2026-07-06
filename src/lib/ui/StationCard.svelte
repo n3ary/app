@@ -213,7 +213,7 @@
           : undefined}
         class={cn(
           'flex-1 min-w-0 rounded',
-          interactive && 'cursor-pointer transition-colors hover:bg-[color:var(--color-border)]/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
+          interactive && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
         )}
       >
         <Stack spacing={0.5}>
