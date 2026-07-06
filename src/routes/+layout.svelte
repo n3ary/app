@@ -45,36 +45,12 @@
   //
   //   neary.setLocation(<lat>, <lon>)        // pin a mock GPS fix
   //   neary.clearLocation()                  // resume real GPS
-  //   neary.jitter(10)                       // shift mock GPS by 10 m
-  //                                           // (under the 50 m
-  //                                           // significantMoveM
-  //                                           // threshold - boards
-  //                                           // should NOT re-query)
-  //   neary.jitter(80)                       // shift by 80 m (past
-  //                                           // threshold - boards
-  //                                           // SHOULD re-query)
   $effect(() => {
     if (typeof window === 'undefined') return;
     (window as unknown as { neary?: unknown }).neary = {
       setLocation: (lat: number, lon: number, accuracy = 25) =>
         locationStore.setMockPosition(lat, lon, accuracy),
       clearLocation: () => locationStore.clearMockPosition(),
-      // Dev hook for issue #203. Force a synthetic GPS jitter - sets
-      // the mock position to a slightly-shifted location, lets the
-      // effect re-run, and shows whether the 50 m hysteresis holds.
-      jitter: (meters: number, bearingDeg = 0) => {
-        const pos = locationStore.position;
-        if (!pos) return false;
-        const rad = (bearingDeg * Math.PI) / 180;
-        const dLat = (meters * Math.cos(rad)) / 111_320;
-        const dLon = (meters * Math.sin(rad)) /
-          (111_320 * Math.cos((pos.coords.latitude * Math.PI) / 180));
-        locationStore.setMockPosition(
-          pos.coords.latitude + dLat,
-          pos.coords.longitude + dLon,
-        );
-        return true;
-      },
       stores: {
         locationStore, feedsStore, statusBus, userPrefs, refreshBus,
         reconciledVehiclesStore, favoritesStore, stationsViewStore,
