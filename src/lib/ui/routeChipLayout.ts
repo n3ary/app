@@ -14,18 +14,12 @@ const GAP_PX = 4;
  * constants (24 min, 7 per char, 12 padding) come from the badge's
  * `h-6 min-w-6 px-1.5 text-xs` CSS -- verified against multi-feed
  * catalogues with short_names up to 5 chars. Used by naturalFit to
- * size each badge individually rather than averaging.
+ * size each badge individually rather than averaging; the same
+ * function sizes the "+N" overflow chip via `badgeWidth('+N')`.
  */
 export function badgeWidth(text: string): number {
   return Math.max(24, text.length * 7 + 12);
 }
-
-/**
- * Worst-case width of the "+N" overflow chip. "+9" is 26px, "+99"
- * is 33px. Using the worst case in the fit check keeps the answer
- * honest regardless of how many routes the +N collapses.
- */
-const PLUS_N_WIDTH_PX = 33;
 
 /**
  * Largest N such that N badges + a "+M" overflow chip fits
@@ -71,24 +65,16 @@ export function naturalFit(
   return { visible: 0, hidden: routes.length };
 }
 
-/** Show this fraction of the natural fit. Below 1.0, wide cards
- *  still trigger "+N" instead of painting every badge. */
-const COMFORT_RATIO = 0.7;
-/** Lower clamp: narrow rows always collapse (keeps "+N" meaningful). */
-const MIN_CAP = 2;
-/** Upper clamp: wide rows never stretch past a summary-friendly count. */
-const MAX_CAP = 10;
-
 /**
- * Comfortable cap on visible badges, derived from the natural fit.
- * `floor(naturalFit * ratio)` keeps the row at a comfortable
- * density; the [MIN_CAP, MAX_CAP] clamp handles the edges --
- * narrow rows still show >= 2 badges + "+N", wide rows never
- * paint more than 10 + "+N" regardless of how many badges
- * actually fit. The caller can pass an explicit `maxVisible` to
- * override this for a particular layout.
+ * Visible cap on badges. By default the natural fit is the cap: a
+ * "+N" chip appears only when the catalogue genuinely overflows.
+ * This way the chip row fills the available space -- a stop with
+ * 18 serving routes on a 580px card shows 13 + "+5" (~97% fill),
+ * not 10 + "+8" (~43% fill) under an arbitrary static cap.
+ *
+ * Callers can still override via the `maxVisible` prop for layouts
+ * that need a hard upper bound (e.g. a dense summary view).
  */
 export function comfortableCap(naturalVisible: number): number {
-  const cap = Math.floor(naturalVisible * COMFORT_RATIO);
-  return Math.max(MIN_CAP, Math.min(MAX_CAP, cap));
+  return naturalVisible;
 }
