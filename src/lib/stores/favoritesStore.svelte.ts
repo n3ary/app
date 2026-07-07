@@ -4,6 +4,7 @@
 // so a migrating user doesn't lose their favorites.
 
 import { SvelteSet } from 'svelte/reactivity';
+import { userPrefs } from './userPrefs.svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
 const STORAGE_KEY_STATIONS = 'neary:favoriteStations';
@@ -56,12 +57,14 @@ class FavoritesStore {
     if (this.#routes.has(routeId)) return;
     this.#routes.add(routeId);
     this.#persist(STORAGE_KEY_ROUTES, this.#routes);
+    userPrefs.lastRouteFavoritedAt = Date.now();
   }
 
   addStation(stopId: string): void {
     if (this.#stations.has(stopId)) return;
     this.#stations.add(stopId);
     this.#persist(STORAGE_KEY_STATIONS, this.#stations);
+    userPrefs.lastStationFavoritedAt = Date.now();
   }
 
   removeRoute(routeId: string): void {

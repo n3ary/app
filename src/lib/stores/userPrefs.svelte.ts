@@ -25,6 +25,13 @@ class UserPrefs {
   gpsOptedIn = $state(false);
   /** True once the user has ever called `locationStore.enable()` — even if denied or later disabled. Used by home to suppress the first-time Enable CTA once the user has engaged. */
   hasEverEnabledGPS = $state(false);
+  /** Unix-ms of the user's most recent route favorite toggle. Drives
+   *  the /favorites default tab — whichever kind was favorited more
+   *  recently wins when both sets are non-empty. Null = never. */
+  lastRouteFavoritedAt = $state<number | null>(null);
+  /** Unix-ms of the user's most recent station favorite toggle.
+   *  See `lastRouteFavoritedAt`. */
+  lastStationFavoritedAt = $state<number | null>(null);
 
   constructor() {
     if (typeof localStorage === 'undefined') return;
@@ -41,6 +48,8 @@ class UserPrefs {
         stationBoardMaxRows: number;
         gpsOptedIn: boolean;
         hasEverEnabledGPS: boolean;
+        lastRouteFavoritedAt: number | null;
+        lastStationFavoritedAt: number | null;
       }>;
       if (o.theme === 'auto' || o.theme === 'light' || o.theme === 'dark') this.theme = o.theme;
       if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
@@ -51,6 +60,8 @@ class UserPrefs {
       if (typeof o.stationBoardMaxRows === 'number' && o.stationBoardMaxRows > 0) this.stationBoardMaxRows = o.stationBoardMaxRows;
       if (typeof o.gpsOptedIn === 'boolean') this.gpsOptedIn = o.gpsOptedIn;
       if (typeof o.hasEverEnabledGPS === 'boolean') this.hasEverEnabledGPS = o.hasEverEnabledGPS;
+      if (typeof o.lastRouteFavoritedAt === 'number') this.lastRouteFavoritedAt = o.lastRouteFavoritedAt;
+      if (typeof o.lastStationFavoritedAt === 'number') this.lastStationFavoritedAt = o.lastStationFavoritedAt;
     } catch {
       // Corrupt/unreadable — defaults
     }
@@ -68,6 +79,8 @@ class UserPrefs {
       stationBoardMaxRows: this.stationBoardMaxRows,
       gpsOptedIn: this.gpsOptedIn,
       hasEverEnabledGPS: this.hasEverEnabledGPS,
+      lastRouteFavoritedAt: this.lastRouteFavoritedAt,
+      lastStationFavoritedAt: this.lastStationFavoritedAt,
     };
   }
 }
