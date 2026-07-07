@@ -388,21 +388,10 @@
 
       <!-- Card 1 - Search (primary). startIcon distinguishes this
            from the Enable-location button users just tapped; it
-           opens the existing HeaderSearchOverlay. The icon next to
-           the title is the neary brand mark (monochrome, from
-           n3ary/branding) so the card reads as an entry point into
-           the app, not another system prompt. -->
+           opens the existing HeaderSearchOverlay. -->
       {#snippet searchIcon()}<Search size={16} />{/snippet}
       <InfoCard variant="primary" title="Find a station">
-        {#snippet icon()}
-          <img
-            src="/branding/neary-logo-mono.svg"
-            alt=""
-            width="16"
-            height="16"
-            class="shrink-0"
-          />
-        {/snippet}
+        {#snippet icon()}<MapPin size={16} />{/snippet}
         {#snippet body()}
           Tap to search any station or route by name or number.
         {/snippet}
