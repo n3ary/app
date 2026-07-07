@@ -192,24 +192,10 @@
 
 </script>
 
-<!-- One row-renderer shared by all three route sections + the route
-     row in the home-page favorites card + the search overlay's route
-     results, so the layout stays identical across every surface
-     (#231). Card chrome mirrors `VehicleCard` so the favorites view
-     reads as "rows of route cards" - bordered, padded, distinct -
-     instead of a tight list.
-
-     Tap targets live on `FavoriteRouteRow`:
-
-       - badge anchor (largest target on the row) -> map
-       - row body (when expanded)                  -> toggle stops
-       - Calendar icon (only when route has schedule) -> schedule view
-       - Heart icon                                 -> favorite toggle
-
-     The stops list under the card uses `TripStopList` — same per-stop
-     row component the station card renders below a vehicle. Stops are
+<!-- Per-row wrapper around FavoriteRouteRow that adds the stops-list
+     expansion below the row. The stops list uses TripStopList and is
      fetched lazily on first expand (representative trip of the day in
-     direction 0; see `toggleRouteStops`). Routes shipping no schedule
+     direction 0; see toggleRouteStops). Routes shipping no schedule
      have no representative trip, so the card is non-expandable. -->
 {#snippet routeRow(route: Route)}
   {@const expandable = route.hasSchedule !== false}

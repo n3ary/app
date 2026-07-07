@@ -1,25 +1,17 @@
 /*
  * favoritesStore - persistent set of favorited route + station ids.
- *
- * Single-source for "is this favorited?" reads + writes. Used by:
- *   - RouteBadge (heart pip when favorite)
- *   - StationCard (passes the route set down so each badge knows)
- *   - selectBoardsForView (favorite-route fallback when no stop is nearby)
- *   - /favorites page (lists favorite routes and stations)
- *   - Home page favorites card (lists favorite routes and stations when
- *     GPS is unavailable)
- *   - HeaderSearchOverlay (hearts on every result row, plus favorited
- *     routes + stations in empty-query mode)
+ * Routes and stations are independent sets; both live behind the
+ * same single-source API so a "is this favorited?" check at any call
+ * site reads from the same store.
  *
  * Persistence: localStorage keys `neary:favoriteRoutes` and
- * `neary:favoriteStations`, each stored as a JSON array of GTFS
- * ids (strings, matching `Route.id` and `Stop.id`). Loaded once on
- * construction (browser only), saved on every mutation. SSR-safe
- * (no-ops on the server).
+ * `neary:favoriteStations`, each a JSON array of strings
+ * (Route.id / Stop.id). Loaded once on construction (browser only),
+ * saved on every mutation. SSR-safe (no-ops on the server).
  *
- * `loadInitial` is lenient about legacy entries (numbers from older
- * builds before Route.id was widened to string) and normalises them
- * to strings on read so a migrating user doesn't lose their favorites.
+ * `loadInitial` is lenient about legacy numeric entries (older builds
+ * wrote Route.id as a number) and normalises them to strings on read
+ * so a migrating user doesn't lose their favorites.
  */
 
 import { SvelteSet } from 'svelte/reactivity';
