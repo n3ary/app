@@ -13,10 +13,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { AlertTriangle, Heart, Locate, MapPin, Search, X } from 'lucide-svelte';
+  import { AlertTriangle, Calendar, Heart, Locate, MapPin, Search, X } from 'lucide-svelte';
   import {
     Box, Button, Card, CardContent, IconButton, InfoCard, RouteBadge, SelectFeedCard, Spinner, Stack, StationCard,
-    Typography,
+    Typography, iconButtonClass,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import { getUpcomingStops } from '$lib/data/gtfs/upcomingStops';
@@ -432,24 +432,54 @@
               </Typography>
             {:else}
               {#each favoriteRoutes.slice(0, MAX_INLINE_FAVORITES) as route (route.id)}
+                {@const isFav = favoritesStore.has(route.id)}
                 {@const typeLabel = vehicleTypeLabel(route.type ?? 'unknown')}
                 {@const primaryLabel = route.longName ?? typeLabel}
-                <a
-                  href={`/schedule/route/${route.id}_0`}
-                  aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
-                  class="mt-1 flex items-center gap-3 py-2 px-1 -mx-1 rounded-md
-                         hover:bg-[color:var(--color-border)]/20 transition-colors
-                         focus-visible:outline-none focus-visible:ring-2
-                         focus-visible:ring-[color:var(--color-primary)]"
-                >
-                  <RouteBadge {route} size="medium" class="min-w-14" />
+                {@const hasSchedule = route.hasSchedule !== false}
+                {@const scheduleHref = hasSchedule ? `/schedule/route/${route.id}_0` : null}
+                {@const mapHref = `/map/route/${route.id}_0`}
+                <div class="mt-1 flex items-center gap-3 px-1 py-1.5 -mx-1 rounded-md hover:bg-[color:var(--color-border)]/20 transition-colors">
+                  <a
+                    href={mapHref}
+                    aria-label={`Open map for ${typeLabel.toLowerCase()} ${route.shortName}`}
+                    title="Open route map"
+                    class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]"
+                  >
+                    <RouteBadge {route} size="medium" class="min-w-14" />
+                  </a>
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-medium truncate">{primaryLabel}</div>
                     {#if route.description}
                       <div class="text-xs truncate text-[color:var(--color-fg-muted)]">{route.description}</div>
                     {/if}
                   </div>
-                </a>
+                  <div class="flex items-center gap-1 shrink-0">
+                    {#if scheduleHref}
+                      <a
+                        href={scheduleHref}
+                        aria-label={`Open schedule for ${typeLabel.toLowerCase()} ${route.shortName}`}
+                        title="Open route schedule"
+                        class={iconButtonClass}
+                      >
+                        <Calendar size={16} strokeWidth={2.25} />
+                      </a>
+                    {/if}
+                    <button
+                      type="button"
+                      aria-label={`${isFav ? 'Unfavorite' : 'Favorite'} ${typeLabel.toLowerCase()} ${route.shortName}`}
+                      aria-pressed={isFav}
+                      onclick={(e) => { e.stopPropagation(); favoritesStore.toggle(route.id); }}
+                      class={iconButtonClass}
+                    >
+                      <Heart
+                        size={16}
+                        strokeWidth={2.25}
+                        fill={isFav ? 'currentColor' : 'none'}
+                        class={isFav ? 'text-[color:var(--color-danger)]' : 'text-[color:var(--color-fg-muted)]'}
+                      />
+                    </button>
+                  </div>
+                </div>
               {/each}
               {#if favoritesStore.routeIds.size > MAX_INLINE_FAVORITES}
                 <Stack direction="row" spacing={1} align="center" class="pt-2 border-t border-[color:var(--color-border)] mt-1">
