@@ -6,7 +6,6 @@
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import Avatar from './Avatar.svelte';
   import RouteChipsRow from './RouteChipsRow.svelte';
-  import StationMarkerBadge from './StationMarkerBadge.svelte';
   import StationMarkerDropdown from './StationMarkerDropdown.svelte';
   import { cn } from './cn';
 
@@ -95,9 +94,10 @@
   </Avatar>
   <div class="min-w-0 flex-1 flex flex-col gap-1">
     <div class="flex items-center gap-2">
-      {#if marker}
-        <StationMarkerBadge {marker} size={14} />
-      {/if}
+      <!-- Marker is conveyed by the dropdown trigger on the right;
+           a left-side badge next to the name is redundant in a list
+           row. The dedicated station detail page (/station/[id])
+           renders the badge via StationCard. -->
       <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
       {#if hasGps && distance != null}
         <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
