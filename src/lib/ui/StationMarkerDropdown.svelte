@@ -1,16 +1,18 @@
 <!--
   StationMarkerDropdown: button face that shows the station's current
   marker (filled Heart for favorite, outline for the others, outline
-  Heart for unstarred) and opens a small popover with the four marker
-  options. Picking the active marker removes it; picking a different
-  one reassigns.
+  Heart for unstarred) and opens a small popover with the marker
+  options. The "Normal" entry clears the marker; tapping the same
+  marker a second time also clears (kept as a shortcut).
 
-  Used wherever a station card used to have a single heart toggle.
-  Closes the popover on selection + on outside click.
+  Visual: the active option's icon is rendered in its full color
+  (favorite: --color-danger, others: --color-primary); inactive
+  options render in --color-fg-muted. Replaces an earlier "current"
+  text label which made the row widths jumpy.
 -->
 <script lang="ts">
   import { Popover } from 'bits-ui';
-  import { Briefcase, Heart, Home, Radio } from 'lucide-svelte';
+  import { Briefcase, CircleOff, Heart, Home, Radio } from 'lucide-svelte';
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
@@ -49,17 +51,30 @@
             : Radio,
   );
 
-  function pick(next: StationMarker) {
-    // Same-marker click removes it; different-marker click reassigns.
-    onChange(marker === next ? null : next);
+  function pick(next: StationMarker | null) {
+    // "Normal" (null) always clears. For the four real markers, a
+    // tap on the currently-active marker also clears - kept as a
+    // keyboard / muscle-memory shortcut for users who don't see
+    // the Normal entry. Picking a different marker reassigns.
+    if (next === null || marker === next) {
+      onChange(null);
+    } else {
+      onChange(next);
+    }
   }
 
   type Option = {
-    marker: StationMarker;
+    /** null = the "Normal" / unstarred entry. */
+    marker: StationMarker | null;
     Icon: typeof Heart;
     label: string;
   };
+  // Normal sits at the top: it's the default, the most common pick
+  // when the user opens the dropdown by accident, and the "remove"
+  // escape hatch. The four real markers follow in a fixed order so
+  // muscle memory builds the same way across visits.
   const options: Option[] = [
+    { marker: null, Icon: CircleOff, label: 'Normal' },
     { marker: 'favorite', Icon: Heart, label: 'Favorite' },
     { marker: 'home', Icon: Home, label: 'Home' },
     { marker: 'work', Icon: Briefcase, label: 'Work' },
@@ -98,7 +113,7 @@
       sideOffset={4}
       class="z-[1200] flex flex-col gap-0.5 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-1 shadow-md"
     >
-      {#each options as opt (opt.marker)}
+      {#each options as opt (opt.marker ?? 'normal')}
         {@const selected = opt.marker === marker}
         <button
           type="button"
@@ -113,15 +128,17 @@
             strokeWidth={2.25}
             fill={opt.marker === 'favorite' ? 'currentColor' : 'none'}
             class={cn(
+              // favorite: always the danger color (red) per the
+              // explicit exception. Other options: primary when
+              // selected, muted when not.
               opt.marker === 'favorite'
                 ? 'text-[color:var(--color-danger)]'
-                : 'text-[color:var(--color-primary)]',
+                : selected
+                  ? 'text-[color:var(--color-primary)]'
+                  : 'text-[color:var(--color-fg-muted)] opacity-60',
             )}
           />
           <span>{opt.label}</span>
-          {#if selected}
-            <span class="ml-auto text-xs text-[color:var(--color-fg-muted)]">current</span>
-          {/if}
         </button>
       {/each}
     </Popover.Content>
