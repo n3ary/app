@@ -4,12 +4,17 @@
   `bind:clientWidth` measures the actual layout width at the call
   site, so the fit calculation adapts to whatever container the
   chip row is rendered in (overlay card, picker row, summary card)
-  without hardcoded caps. A `maxVisible` cap kicks in for wide
-  cards where the full route list would otherwise stretch across
-  the entire row and crowd the next stop: at that point the row
-  collapses to `maxVisible - 1` badges + a "+N" chip so the user
-  sees a stable, scannable summary regardless of how many routes
-  serve the stop.
+  without hardcoded caps. A soft `maxVisible` ceiling bounds the
+  visual length of the row: when the catalogue exceeds it, the
+  row collapses to `maxVisible` badges + a "+N" chip so a stop
+  with 18 serving routes still renders a scannable summary.
+
+  Soft cap, not hard: if the fit calculation says fewer than
+  `maxVisible` badges fit on this particular card (e.g. a narrow
+  overlay), the row shows the fitted count and a +N for the rest
+  rather than forcing the cap. The row always shows as many badges
+  as the available space can hold, up to the cap, before resorting
+  to +N.
 
   The visible-badge + +N pattern means the row's width is bounded
   even when the underlying catalogue has dozens of routes for a stop.
@@ -20,17 +25,17 @@
 
   type Props = {
     routes: Route[];
-    /** Hard cap on the number of visible badges. When the catalogue
-     *  exceeds this, the row renders `maxVisible - 1` badges + a
-     *  "+N" chip instead of every route. The full list is still
-     *  available on the stop's detail page. Default 7 — enough
-     *  variety to be scannable, low enough that the +N is
-     *  visible on a typical card width. */
+    /** Soft cap on the number of visible badges. The row shows
+     *  min(fit, maxVisible) badges + a "+N" chip for the rest.
+     *  Default 8 - high enough that a stop with 6-7 routes
+     *  paints every badge on a typical card, low enough that a
+     *  stop with 18+ routes does not crowd the row. The full
+     *  list is still available on the stop's detail page. */
     maxVisible?: number;
     class?: string;
   };
 
-  let { routes, maxVisible = 7, class: className }: Props = $props();
+  let { routes, maxVisible = 8, class: className }: Props = $props();
 
   // Measured badge-row width. `bind:clientWidth` gives us layout size
   // that reflects the actual container bounds, so we don't need to
@@ -48,16 +53,16 @@
   const GAP_PX = 4; // matches Tailwind `gap-1`
 
   const fit = $derived.by(() => {
-    if (routes.length === 0) return { visible: 0, hidden: 0 };
+    if (routes.length === 0) return { visible: 0 };
     // Zero rowWidth means we haven't measured yet - render nothing
     // rather than a first-paint flash of "everything fits, no +N".
-    if (rowWidth <= 0) return { visible: 0, hidden: 0 };
+    if (rowWidth <= 0) return { visible: 0 };
     // First attempt: does the full row fit without an overflow chip?
     let full = 0;
     for (let i = 0; i < routes.length; i++) {
       full += badgeWidth(routes[i].shortName) + (i > 0 ? GAP_PX : 0);
     }
-    if (full <= rowWidth) return { visible: routes.length, hidden: 0 };
+    if (full <= rowWidth) return { visible: routes.length };
     // Otherwise find the largest N such that first N badges + a
     // "+M" chip fits. M = total - N; overflow chip's width grows
     // with M's digits (26px for "+9", 33px for "+99"), so the fit
@@ -71,27 +76,18 @@
       const hidden = routes.length - n;
       const chipWidth = badgeWidth(`+${hidden}`);
       width += (n > 0 ? GAP_PX : 0) + chipWidth;
-      if (width <= rowWidth) return { visible: n, hidden };
+      if (width <= rowWidth) return { visible: n };
     }
-    return { visible: 0, hidden: routes.length };
+    return { visible: 0 };
   });
 
-  // Hard cap path: when the catalogue has more routes than the cap
-  // AND the cap-driven slice would actually fit in the row, prefer
-  // the cap so the chip row stays scannable on wide cards where the
-  // fit-only path would happily dump 18+ badges across the row.
-  // min(2) keeps the +N chip meaningful even at very small caps.
-  const cappedVisible = $derived(Math.max(2, maxVisible) - 1);
-  const visibleRoutes = $derived(
-    routes.length > cappedVisible + 1
-      ? routes.slice(0, cappedVisible)
-      : routes.slice(0, fit.visible),
-  );
-  const hiddenCount = $derived(
-    routes.length > cappedVisible + 1
-      ? routes.length - cappedVisible
-      : fit.hidden,
-  );
+  // Soft cap: show whichever is smaller -- the natural fit or the
+  // cap. This way a narrow card still collapses via +N, and a wide
+  // card with a 20-route stop still gets a +N at the cap, but a
+  // card where 5 routes actually fit shows all 5 (no forced +N).
+  const cappedFit = $derived(Math.max(0, maxVisible));
+  const visibleRoutes = $derived(routes.slice(0, Math.min(fit.visible, cappedFit)));
+  const hiddenCount = $derived(routes.length - visibleRoutes.length);
 </script>
 
 {#if routes.length > 0}

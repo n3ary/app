@@ -5,9 +5,9 @@
     Avatar, BackButton, Box, Button, Card, CardContent, Chip,
     Collapsible, Dialog, DialogContent, DialogTitle,
     IconButton, InfoCard, List, ListItem, ListItemText, SelectFeedCard,
-    ProgressBar, RouteBadge, Spinner, Stack, StationCard, StatusDot,
-    StopSearchCard, Switch, Tabs, TextField, ToggleGroup, Tooltip, TripStopList,
-    Typography, TypeBadge, VehicleCard,
+    ProgressBar, RouteBadge, RouteChipsRow, Spinner, Stack,
+    StationCard, StatusDot, StopSearchCard, Switch, Tabs, TextField,
+    ToggleGroup, Tooltip, TripStopList, Typography, TypeBadge, VehicleCard,
   } from '$lib/ui';
   import type { Route, Station, Vehicle, VehicleType } from '$lib/domain/types';
   import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';
@@ -124,6 +124,23 @@
     { id: 'M26',  shortName: 'M26',  color: '#e53935', hasSchedule: true },
     { id: '25N',  shortName: '25N',  color: '#3949ab', hasSchedule: true },
     { id: '5N',   shortName: '5N',   color: '#5e35b1', hasSchedule: true },
+  ];
+  // Same data, padded to 20 routes so the +N overflow chip is visible
+  // regardless of the card width the showcase renders at.
+  const demoManyRoutes: Route[] = [
+    ...demoSearchRoutes,
+    { id: '1',    shortName: '1',    color: '#e91e63', hasSchedule: true },
+    { id: '6',    shortName: '6',    color: '#3f51b5', hasSchedule: true },
+    { id: '7',    shortName: '7',    color: '#009688', hasSchedule: true },
+    { id: '14',   shortName: '14',   color: '#ff5722', hasSchedule: true },
+    { id: '19',   shortName: '19',   color: '#795548', hasSchedule: true },
+    { id: '22',   shortName: '22',   color: '#607d8b', hasSchedule: true },
+    { id: '24B',  shortName: '24B',  color: '#9c27b0', hasSchedule: true },
+    { id: '29',   shortName: '29',   color: '#673ab7', hasSchedule: true },
+    { id: '30',   shortName: '30',   color: '#4caf50', hasSchedule: true },
+    { id: '42',   shortName: '42',   color: '#ff9800', hasSchedule: true },
+    { id: '52',   shortName: '52',   color: '#03a9f4', hasSchedule: true },
+    { id: '54N',  shortName: '54N',  color: '#e91e63', hasSchedule: true },
   ];
 
   onMount(() => {
@@ -531,6 +548,44 @@
         hasGps
         onselect={(id: string) => statusBus.push({ id: 'sc-click', kind: 'info', message: `Would open /station/${id}` })}
       />
+    </Stack>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">RouteChipsRow — soft cap + measured fit</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Same chip row StopSearchCard and FavoriteStationRow use. Renders
+        min(fit, maxVisible) badges + a +N chip for the rest. Soft cap, not hard:
+        a narrow card collapses via +N regardless of how many badges the catalogue
+        has; a wide card still falls back to +N at the cap (8 by default) so a
+        20-route stop renders a scannable summary. Resize the browser to watch
+        the visible count move between the cap and the actual fit.
+      </Typography>
+      <Stack spacing={1}>
+        <Stack spacing={0.5}>
+          <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+            3 routes (no overflow expected)
+          </Typography>
+          <RouteChipsRow routes={demoSearchRoutes.slice(0, 3)} />
+        </Stack>
+        <Stack spacing={0.5}>
+          <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+            8 routes (soft cap; may overflow on narrow widths)
+          </Typography>
+          <RouteChipsRow routes={demoSearchRoutes} />
+        </Stack>
+        <Stack spacing={0.5}>
+          <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+            20 routes (always overflows; +N chip visible)
+          </Typography>
+          <RouteChipsRow routes={demoManyRoutes} />
+        </Stack>
+        <Stack spacing={0.5}>
+          <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+            20 routes, cap=12 (custom maxVisible)
+          </Typography>
+          <RouteChipsRow routes={demoManyRoutes} maxVisible={12} />
+        </Stack>
+      </Stack>
     </Stack>
 
     <Stack spacing={1}>
