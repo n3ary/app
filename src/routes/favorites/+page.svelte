@@ -297,16 +297,24 @@
 
   $effect(() => {
     // Touch the inputs so the effect re-runs on cascade or anchor change.
+    // The whole body is wrapped in untrack: the writes to
+    // otherStationsPage/Total happen here AND the call to
+    // fetchNextStationsPage — that function synchronously reads
+    // otherStationsPage.length to decide the next offset, so leaving
+    // it inside the tracked run would add otherStationsPage as a dep.
+    // When the async work then writes to otherStationsPage the
+    // effect re-runs, the untrack resets it to [], and we loop
+    // forever fetching page 0.
     const _scope = stationsScope;
     const _anchor = stationAnchor;
+    void _scope;
+    void _anchor;
     untrack(() => {
       otherStationsPage = [];
       otherStationsTotal = 0;
       otherStationsError = null;
+      void fetchNextStationsPage();
     });
-    void _scope;
-    void _anchor;
-    void fetchNextStationsPage();
   });
 
   let sentinelEl = $state<HTMLElement | null>(null);

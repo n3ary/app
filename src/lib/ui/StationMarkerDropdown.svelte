@@ -96,7 +96,7 @@
       side="bottom"
       align="end"
       sideOffset={4}
-      class="z-50 flex flex-col gap-0.5 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-1 shadow-md"
+      class="z-[1200] flex flex-col gap-0.5 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-1 shadow-md"
     >
       {#each options as opt (opt.marker)}
         {@const selected = opt.marker === marker}
