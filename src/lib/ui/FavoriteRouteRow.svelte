@@ -1,26 +1,10 @@
 <!--
-  FavoriteRouteRow - single row for a favorited (or not-yet-favorited)
-  route. Used by:
-    - /favorites page (any-time list of routes, not just the user's favs)
-    - Home page favorites card (routes-only inline list)
-    - HeaderSearchOverlay (every result row)
-
-  The component owns:
-    - badge anchor (left) -> /map/route/<id>_0
-    - primary label + optional description (middle)
-    - Calendar icon anchor (right, only when route has schedule)
-    - Heart icon button (right, always) -> toggleFavorite
-    - body click action: optional. When supplied, the whole row is
-      clickable (with a11y role/tabindex). Inner anchors + the heart
-      button short-circuit the body click via a single guard, so the
-      parent's body handler only fires when the rider tapped empty
-      chrome.
-
-  Two chrome variants:
-    - 'card'   (default) - bordered card chrome, used by /favorites
-      and the search overlay
-    - 'inline' - flat row, used inside an existing Card on the home
-      page; the parent already provides the card chrome
+  FavoriteRouteRow - single source of truth for the favorited-route
+  row layout so a change to the heart, the Calendar icon, or the body
+  tap target propagates to /favorites, the search overlay, and the
+  home page in one edit. Two chrome variants: 'card' (bordered) for
+  standalone use, 'inline' (flat) for embedding inside an existing
+  Card on the home page.
 -->
 <script lang="ts">
   import { Calendar, Heart } from 'lucide-svelte';

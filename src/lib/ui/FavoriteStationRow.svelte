@@ -1,20 +1,10 @@
 <!--
-  FavoriteStationRow - single row for a favorited (or not-yet-favorited)
-  station. Used by:
-    - /favorites page (stations section after routes)
-    - Home page favorites card (inline list, alongside routes)
-    - HeaderSearchOverlay (empty-mode favorited stations)
-
-  Same chrome + a11y patterns as FavoriteRouteRow:
-    - Avatar (square, Bus icon) on the left
-    - Station name (middle); no description in the GTFS spec
-    - Heart icon button (right) -> toggleFavorite
-    - body click action: optional. When supplied, the whole row is
-      clickable and inner controls short-circuit via the same guard.
-
-  Stations have no Calendar equivalent (no per-station "view all
-  schedules" URL - that shape is route-shaped), so the right side is
-  heart-only.
+  FavoriteStationRow - single source of truth for the favorited-station
+  row layout so a change to the heart, the body tap target, or the
+  layout propagates to /favorites, the search overlay, and the home
+  page in one edit. Same chrome + a11y shape as FavoriteRouteRow but
+  heart-only on the right (stations have no per-station "view all
+  schedules" URL - that shape is route-shaped).
 -->
 <script lang="ts">
   import { Bus, Heart } from 'lucide-svelte';
