@@ -310,14 +310,14 @@
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    if (favoritesStore.stationIds.size === 0) {
+    if (favoritesStore.markers.size === 0) {
       favoriteStations = [];
       return;
     }
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const resolved = await repo.getStopsByIds(Array.from(favoritesStore.stationIds));
+        const resolved = await repo.getStopsByIds(Array.from(favoritesStore.markers.keys()));
         favoriteStations = resolved.sort((a, b) => a.name.localeCompare(b.name));
         stationsError = null;
       } catch (e) {
@@ -331,8 +331,9 @@
       .filter((r) => favoritesStore.hasRoute(r.id))
       .sort((a, b) => compareRouteShortName(a.shortName, b.shortName));
   });
+  // Total = routes + any station with a marker (favorite, home, work, cityCenter).
   const totalFavorites = $derived(
-    favoritesStore.routeIds.size + favoritesStore.stationIds.size,
+    favoritesStore.routeIds.size + favoritesStore.markers.size,
   );
 
   // For the "wrong feed" empty state: find the closest published feed

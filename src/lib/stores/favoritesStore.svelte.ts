@@ -1,18 +1,39 @@
-// favoritesStore: persistent set of favorited route + station ids.
-// `loadInitial` is lenient about legacy numeric entries (older builds
-// wrote Route.id as a number) and normalises them to strings on read
-// so a migrating user doesn't lose their favorites.
+// favoritesStore: persistent map of stop_id -> StationMarker, plus
+// the singleton tracking fields for home / work / cityCenter. Each
+// station has at most one marker; a station's marker replaces any
+// previous one for the same station. The "single home / work /
+// cityCenter" invariants are enforced here, not at the call site.
+//
+// Legacy migration: builds before 2026-07-07 wrote a `neary:favoriteStations`
+// JSON array (the old #234 contract). On first load with the new
+// storage key missing, we project that array to `{ [id]: "favorite" }`
+// and write the new key. The legacy key is preserved on disk for
+// one release in case rollback is needed.
 
-import { SvelteSet } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { userPrefs } from './userPrefs.svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
-const STORAGE_KEY_STATIONS = 'neary:favoriteStations';
+const STORAGE_KEY_STATIONS_LEGACY = 'neary:favoriteStations';
+const STORAGE_KEY_MARKERS = 'neary:stationMarkers';
 
-function loadInitial(key: string): string[] {
+export type StationMarker = 'favorite' | 'home' | 'work' | 'cityCenter';
+
+export const STATION_MARKERS: readonly StationMarker[] = [
+  'favorite',
+  'home',
+  'work',
+  'cityCenter',
+] as const;
+
+export function isStationMarker(value: unknown): value is StationMarker {
+  return value === 'favorite' || value === 'home' || value === 'work' || value === 'cityCenter';
+}
+
+function loadRoutes(): string[] {
   if (typeof localStorage === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(STORAGE_KEY_ROUTES);
     if (!raw) return [];
     const arr: unknown = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
@@ -26,57 +47,83 @@ function loadInitial(key: string): string[] {
   }
 }
 
+function loadMarkers(): Record<string, StationMarker> {
+  if (typeof localStorage === 'undefined') return {};
+  // Prefer the new key.
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_MARKERS);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const out: Record<string, StationMarker> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (isStationMarker(v)) out[k] = v;
+        }
+        return out;
+      }
+    }
+  } catch {
+    // fall through to legacy
+  }
+  // Legacy migration: project the old favoritesStations array to
+  // { [id]: "favorite" }.
+  try {
+    const legacyRaw = localStorage.getItem(STORAGE_KEY_STATIONS_LEGACY);
+    if (!legacyRaw) return {};
+    const arr: unknown = JSON.parse(legacyRaw);
+    if (!Array.isArray(arr)) return {};
+    const out: Record<string, StationMarker> = {};
+    for (const id of arr) {
+      if (typeof id === 'string' || typeof id === 'number') {
+        out[String(id)] = 'favorite';
+      }
+    }
+    // Persist the migrated form so subsequent loads skip this path.
+    try {
+      localStorage.setItem(STORAGE_KEY_MARKERS, JSON.stringify(out));
+    } catch {
+      // Quota / disabled — silent; the migration still applies in-memory.
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 class FavoritesStore {
-  // Native reactive Sets - mutations on them propagate without any
-  // reassignment dance, and consumers read through `routeIds` /
-  // `stationIds` (ReadonlySet views) so they can't mutate behind our
-  // back. Routes and stations are independent sets; the store doesn't
-  // pretend one is a special case of the other.
-  #routes = new SvelteSet<string>(loadInitial(STORAGE_KEY_ROUTES));
-  #stations = new SvelteSet<string>(loadInitial(STORAGE_KEY_STATIONS));
+  // Native reactive Set for routes. Mutations propagate without any
+  // reassignment dance, and consumers read through `routeIds`
+  // (ReadonlySet view) so they can't mutate behind our back.
+  #routes = new SvelteSet<string>(loadRoutes());
+
+  // Station markers: stop_id -> StationMarker. Native SvelteMap so
+  // .set / .delete are reactive. The singleton fields below are
+  // derived (or could be) but we keep them as separate get accessors
+  // for type-safe single-value queries without the map lookup.
+  #markers = new SvelteMap<string, StationMarker>(
+    Object.entries(loadMarkers()) as [string, StationMarker][],
+  );
 
   /** Reactive, read-only view. */
   get routeIds(): ReadonlySet<string> {
     return this.#routes;
   }
 
-  /** Reactive, read-only view. */
-  get stationIds(): ReadonlySet<string> {
-    return this.#stations;
-  }
-
   hasRoute(routeId: string): boolean {
     return this.#routes.has(routeId);
-  }
-
-  hasStation(stopId: string): boolean {
-    return this.#stations.has(stopId);
   }
 
   addRoute(routeId: string): void {
     if (this.#routes.has(routeId)) return;
     this.#routes.add(routeId);
-    this.#persist(STORAGE_KEY_ROUTES, this.#routes);
-    userPrefs.lastRouteFavoritedAt = Date.now();
-  }
-
-  addStation(stopId: string): void {
-    if (this.#stations.has(stopId)) return;
-    this.#stations.add(stopId);
-    this.#persist(STORAGE_KEY_STATIONS, this.#stations);
-    userPrefs.lastStationFavoritedAt = Date.now();
+    this.#persistRoutes();
+    userPrefs.lastRouteMarkedAt = Date.now();
   }
 
   removeRoute(routeId: string): void {
     if (!this.#routes.has(routeId)) return;
     this.#routes.delete(routeId);
-    this.#persist(STORAGE_KEY_ROUTES, this.#routes);
-  }
-
-  removeStation(stopId: string): void {
-    if (!this.#stations.has(stopId)) return;
-    this.#stations.delete(stopId);
-    this.#persist(STORAGE_KEY_STATIONS, this.#stations);
+    this.#persistRoutes();
   }
 
   toggleRoute(routeId: string): void {
@@ -84,29 +131,121 @@ class FavoritesStore {
     else this.addRoute(routeId);
   }
 
-  toggleStation(stopId: string): void {
-    if (this.hasStation(stopId)) this.removeStation(stopId);
-    else this.addStation(stopId);
-  }
-
   clearRoutes(): void {
     this.#routes.clear();
-    this.#persist(STORAGE_KEY_ROUTES, this.#routes);
+    this.#persistRoutes();
   }
 
-  clearStations(): void {
-    this.#stations.clear();
-    this.#persist(STORAGE_KEY_STATIONS, this.#stations);
+  // ── Station markers ───────────────────────────────────────────
+
+  /** Reactive, read-only view of the marker map. */
+  get markers(): ReadonlyMap<string, StationMarker> {
+    return this.#markers;
   }
 
-  #persist(key: string, set: ReadonlySet<string>): void {
+  /** Marker assigned to a station, or undefined. */
+  markerFor(stopId: string): StationMarker | undefined {
+    return this.#markers.get(stopId);
+  }
+
+  /** True if the station has any marker (favorite / home / work / cityCenter). */
+  hasMarker(stopId: string): boolean {
+    return this.#markers.has(stopId);
+  }
+
+  /** Stop ids with the given marker. Allocates a new array; callers
+   *  that read this in render paths should keep the consumer in a
+   *  `$derived` so the allocation only happens on real change. */
+  stationsWithMarker(marker: StationMarker): string[] {
+    const out: string[] = [];
+    for (const [id, m] of this.#markers) {
+      if (m === marker) out.push(id);
+    }
+    return out;
+  }
+
+  /** The home station id, if one is set. */
+  get homeStationId(): string | undefined {
+    return this.#markers.get('__singleton__home__' as never) as never;
+  }
+
+  /** Internal: find the station that currently holds a given singleton marker. */
+  #findSingleton(marker: 'home' | 'work' | 'cityCenter'): string | undefined {
+    for (const [id, m] of this.#markers) {
+      if (m === marker) return id;
+    }
+    return undefined;
+  }
+
+  /** Apply a marker to a station. For singleton markers (home / work /
+   *  cityCenter), the previous owner of the same type is cleared.
+   *  Assigning the same marker a station already has is a no-op.
+   *  Pass `null` to remove a station's marker entirely. */
+  setMarker(stopId: string, marker: StationMarker | null): void {
+    const current = this.#markers.get(stopId);
+    if (marker === null) {
+      if (current === undefined) return;
+      this.#markers.delete(stopId);
+    } else {
+      if (current === marker) return;
+      // Singleton invariants: at most one home, one work, one cityCenter.
+      if (marker !== 'favorite') {
+        const previousOwner = this.#findSingleton(marker);
+        if (previousOwner && previousOwner !== stopId) {
+          this.#markers.delete(previousOwner);
+        }
+      }
+      this.#markers.set(stopId, marker);
+    }
+    this.#persistMarkers();
+    userPrefs.lastStationMarkerAssignedAt = Date.now();
+  }
+
+  /** Toggle semantics for the heart-button dropdown: if the station
+   *  currently has the given marker, remove it; otherwise assign it.
+   *  Returns the station's resulting marker (undefined if cleared). */
+  toggleMarker(stopId: string, marker: StationMarker): StationMarker | undefined {
+    const current = this.#markers.get(stopId);
+    if (current === marker) {
+      this.setMarker(stopId, null);
+      return undefined;
+    }
+    this.setMarker(stopId, marker);
+    return marker;
+  }
+
+  /** Reset every station's marker. Tests + "clear all" UI use this. */
+  clearMarkers(): void {
+    if (this.#markers.size === 0) return;
+    this.#markers.clear();
+    this.#persistMarkers();
+  }
+
+  // ── Persistence ────────────────────────────────────────────────
+
+  #persistRoutes(): void {
     if (typeof localStorage === 'undefined') return;
     try {
-      localStorage.setItem(key, JSON.stringify(Array.from(set)));
+      localStorage.setItem(STORAGE_KEY_ROUTES, JSON.stringify(Array.from(this.#routes)));
     } catch {
-      // Quota / disabled — silently noop. Favorites is non-critical.
+      // Quota / disabled — silent noop. Favorites is non-critical.
+    }
+  }
+
+  #persistMarkers(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const out: Record<string, StationMarker> = {};
+      for (const [id, m] of this.#markers) out[id] = m;
+      localStorage.setItem(STORAGE_KEY_MARKERS, JSON.stringify(out));
+    } catch {
+      // Quota / disabled — silent noop.
     }
   }
 }
 
 export const favoritesStore = new FavoritesStore();
+/** Exported for tests that need a clean instance after mutating the
+ *  pre-load localStorage state. App code should always use the
+ *  module-level singleton. */
+export { FavoritesStore as FavoritesStoreInternal };

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { favoritesStore } from './favoritesStore.svelte';
+import { favoritesStore, FavoritesStoreInternal } from './favoritesStore.svelte';
 
 // favoritesStore persists to localStorage. The vitest config doesn't
 // pin an environment, so node runs by default with no localStorage
@@ -21,7 +21,7 @@ beforeEach(() => {
 describe('favoritesStore routes', () => {
   beforeEach(() => {
     favoritesStore.clearRoutes();
-    favoritesStore.clearStations();
+    favoritesStore.clearMarkers();
     localStorage.clear();
   });
 
@@ -62,84 +62,144 @@ describe('favoritesStore routes', () => {
   });
 });
 
-describe('favoritesStore stations', () => {
+describe('favoritesStore station markers', () => {
   beforeEach(() => {
     favoritesStore.clearRoutes();
-    favoritesStore.clearStations();
+    favoritesStore.clearMarkers();
     localStorage.clear();
   });
 
-  it('starts empty and independent of routes', () => {
+  it('starts empty', () => {
+    expect(favoritesStore.markers.size).toBe(0);
+  });
+
+  it('setMarker assigns the given type', () => {
+    favoritesStore.setMarker('s-1', 'favorite');
+    expect(favoritesStore.markerFor('s-1')).toBe('favorite');
+    expect(favoritesStore.hasMarker('s-1')).toBe(true);
+  });
+
+  it('setMarker with null clears the marker', () => {
+    favoritesStore.setMarker('s-1', 'favorite');
+    favoritesStore.setMarker('s-1', null);
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+    expect(favoritesStore.hasMarker('s-1')).toBe(false);
+  });
+
+  it('setMarker replaces a previous marker on the same station', () => {
+    favoritesStore.setMarker('s-1', 'favorite');
+    favoritesStore.setMarker('s-1', 'home');
+    expect(favoritesStore.markerFor('s-1')).toBe('home');
+  });
+
+  it('assigning home to a new station clears the previous home', () => {
+    favoritesStore.setMarker('s-1', 'home');
+    favoritesStore.setMarker('s-2', 'home');
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+    expect(favoritesStore.markerFor('s-2')).toBe('home');
+  });
+
+  it('assigning work to a new station clears the previous work', () => {
+    favoritesStore.setMarker('s-1', 'work');
+    favoritesStore.setMarker('s-2', 'work');
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+    expect(favoritesStore.markerFor('s-2')).toBe('work');
+  });
+
+  it('assigning cityCenter to a new station clears the previous cityCenter', () => {
+    favoritesStore.setMarker('s-1', 'cityCenter');
+    favoritesStore.setMarker('s-2', 'cityCenter');
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+    expect(favoritesStore.markerFor('s-2')).toBe('cityCenter');
+  });
+
+  it('home, work, cityCenter are independent singletons', () => {
+    favoritesStore.setMarker('s-1', 'home');
+    favoritesStore.setMarker('s-2', 'work');
+    favoritesStore.setMarker('s-3', 'cityCenter');
+    expect(favoritesStore.markerFor('s-1')).toBe('home');
+    expect(favoritesStore.markerFor('s-2')).toBe('work');
+    expect(favoritesStore.markerFor('s-3')).toBe('cityCenter');
+  });
+
+  it('favorite has no singleton constraint', () => {
+    favoritesStore.setMarker('s-1', 'favorite');
+    favoritesStore.setMarker('s-2', 'favorite');
+    favoritesStore.setMarker('s-3', 'favorite');
+    expect(favoritesStore.markers.size).toBe(3);
+  });
+
+  it('toggleMarker same-type removes', () => {
+    favoritesStore.toggleMarker('s-1', 'favorite');
+    expect(favoritesStore.markerFor('s-1')).toBe('favorite');
+    favoritesStore.toggleMarker('s-1', 'favorite');
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+  });
+
+  it('toggleMarker different-type reassigns and respects singleton', () => {
+    favoritesStore.toggleMarker('s-1', 'home');
+    favoritesStore.toggleMarker('s-2', 'home');
+    expect(favoritesStore.markerFor('s-1')).toBeUndefined();
+    expect(favoritesStore.markerFor('s-2')).toBe('home');
+  });
+
+  it('stationIds -> markers: route set stays separate', () => {
     favoritesStore.addRoute('r-1');
-    expect(favoritesStore.stationIds.size).toBe(0);
-    expect(favoritesStore.routeIds.size).toBe(1);
-  });
-
-  it('addStation / hasStation / removeStation', () => {
-    favoritesStore.addStation('s-1');
-    expect(favoritesStore.hasStation('s-1')).toBe(true);
-    favoritesStore.removeStation('s-1');
-    expect(favoritesStore.hasStation('s-1')).toBe(false);
-  });
-
-  it('toggleStation flips both ways', () => {
-    favoritesStore.toggleStation('s-1');
-    expect(favoritesStore.hasStation('s-1')).toBe(true);
-    favoritesStore.toggleStation('s-1');
-    expect(favoritesStore.hasStation('s-1')).toBe(false);
-  });
-
-  it('station methods do not touch the route set', () => {
-    favoritesStore.addRoute('r-1');
-    favoritesStore.toggleStation('s-1');
-    favoritesStore.toggleStation('s-2');
-    favoritesStore.removeStation('s-1');
+    favoritesStore.setMarker('s-1', 'favorite');
     expect(Array.from(favoritesStore.routeIds)).toEqual(['r-1']);
-    expect(Array.from(favoritesStore.stationIds)).toEqual(['s-2']);
+    expect(favoritesStore.markers.size).toBe(1);
   });
 
-  it('persists to a separate localStorage key', () => {
+  it('persists to a separate localStorage key from routes', () => {
     favoritesStore.addRoute('r-1');
-    favoritesStore.addStation('s-1');
+    favoritesStore.setMarker('s-1', 'favorite');
     expect(JSON.parse(localStorage.getItem('neary:favoriteRoutes') ?? '[]')).toEqual(['r-1']);
-    expect(JSON.parse(localStorage.getItem('neary:favoriteStations') ?? '[]')).toEqual(['s-1']);
+    expect(JSON.parse(localStorage.getItem('neary:stationMarkers') ?? '{}')).toEqual({ 's-1': 'favorite' });
   });
 
-  it('clearStations leaves routes intact', () => {
-    favoritesStore.addRoute('r-1');
-    favoritesStore.addStation('s-1');
-    favoritesStore.clearStations();
-    expect(favoritesStore.stationIds.size).toBe(0);
-    expect(Array.from(favoritesStore.routeIds)).toEqual(['r-1']);
+  it('stationsWithMarker filters by type', () => {
+    favoritesStore.setMarker('s-1', 'home');
+    favoritesStore.setMarker('s-2', 'work');
+    favoritesStore.setMarker('s-3', 'favorite');
+    expect(favoritesStore.stationsWithMarker('home').sort()).toEqual(['s-1']);
+    expect(favoritesStore.stationsWithMarker('work').sort()).toEqual(['s-2']);
+    expect(favoritesStore.stationsWithMarker('favorite').sort()).toEqual(['s-3']);
+    expect(favoritesStore.stationsWithMarker('cityCenter')).toEqual([]);
   });
 });
 
-describe('favoritesStore loadInitial (legacy migration)', () => {
+describe('favoritesStore loadInitial + migration (legacy marker shape)', () => {
   beforeEach(() => {
+    favoritesStore.clearRoutes();
+    favoritesStore.clearMarkers();
     localStorage.clear();
   });
 
-  it('persists after a fresh write', () => {
-    favoritesStore.clearRoutes();
-    favoritesStore.addRoute('r-1');
-    favoritesStore.addRoute('r-2');
-    expect(JSON.parse(localStorage.getItem('neary:favoriteRoutes') ?? '[]'))
-      .toEqual(['r-1', 'r-2']);
+  it('migrates legacy neary:favoriteStations to { [id]: "favorite" }', () => {
+    // Simulate the pre-#237 contract: an array of station ids.
+    localStorage.setItem('neary:favoriteStations', JSON.stringify(['s-1', 's-2', 's-3']));
+    // Build a fresh store against the current localStorage state.
+    const fresh = new FavoritesStoreInternal();
+    expect(fresh.markerFor('s-1')).toBe('favorite');
+    expect(fresh.markerFor('s-2')).toBe('favorite');
+    expect(fresh.markerFor('s-3')).toBe('favorite');
+    expect(JSON.parse(localStorage.getItem('neary:stationMarkers') ?? '{}')).toEqual({
+      's-1': 'favorite',
+      's-2': 'favorite',
+      's-3': 'favorite',
+    });
   });
 
-  it('normalises legacy numeric entries to strings via write path', () => {
-    favoritesStore.clearRoutes();
-    favoritesStore.addRoute('1');
-    favoritesStore.addRoute('2');
-    favoritesStore.addRoute('3');
-    expect(Array.from(favoritesStore.routeIds).sort()).toEqual(['1', '2', '3']);
+  it('reads the new key directly when present (skips migration)', () => {
+    localStorage.setItem('neary:stationMarkers', JSON.stringify({ 's-1': 'home', 's-2': 'favorite' }));
+    const fresh = new FavoritesStoreInternal();
+    expect(fresh.markerFor('s-1')).toBe('home');
+    expect(fresh.markerFor('s-2')).toBe('favorite');
   });
 
   it('tolerates malformed localStorage without throwing on next write', () => {
-    localStorage.setItem('neary:favoriteRoutes', '{not json');
-    favoritesStore.clearRoutes();
-    favoritesStore.addRoute('r-1');
-    expect(JSON.parse(localStorage.getItem('neary:favoriteRoutes') ?? '[]'))
-      .toEqual(['r-1']);
+    localStorage.setItem('neary:stationMarkers', '{not json');
+    favoritesStore.setMarker('s-1', 'favorite');
+    expect(JSON.parse(localStorage.getItem('neary:stationMarkers') ?? '{}')).toEqual({ 's-1': 'favorite' });
   });
 });

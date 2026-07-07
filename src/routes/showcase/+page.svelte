@@ -549,8 +549,8 @@
         stop={demoSearchStop}
         routes={demoSearchRoutes}
         hasGps
-        isFav={false}
-        onToggleFavorite={() => statusBus.push({ id: 'fsr-fav', kind: 'info', message: 'Toggled favorite (demo)' })}
+        marker={undefined}
+        onChangeMarker={() => statusBus.push({ id: 'fsr-fav', kind: 'info', message: 'Would open marker dropdown' })}
         onbodyclick={() => statusBus.push({ id: 'fsr-click', kind: 'info', message: 'Would open /station/<id>' })}
       />
     </Stack>

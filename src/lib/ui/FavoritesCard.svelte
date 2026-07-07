@@ -6,19 +6,23 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import { Heart } from 'lucide-svelte';
   import type { Route } from '$lib/domain/types';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
+  import { favoritesStore, type StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import {
     Button, Card, CardContent, FavoriteRouteRow, FavoriteStationRow,
     Spinner, Stack, Typography,
   } from '$lib/ui';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
 
   type Props = {
     routes: Route[];
     stations: StopWithDistance[];
+    /** Marker assignments keyed by stop id. Omitted ids default to
+     *  undefined (unstarred). */
+    stationMarkers?: ReadonlyMap<string, StationMarker>;
+    /** Mutate a station's marker. `null` clears. */
+    onChangeStationMarker?: (stopId: string, next: StationMarker | null) => void;
     /** Undefined = show everything. When set, truncates with the
      *  View-all footer (only if `viewAllHref` is also set). */
     limit?: number;
@@ -40,6 +44,8 @@
 
   let {
     routes, stations,
+    stationMarkers,
+    onChangeStationMarker,
     limit,
     viewAllHref,
     routesLoading = false,
@@ -96,16 +102,26 @@
   const showStationsHeader = $derived(
     visibleStations.length > 0 && visibleRoutes.length > 0,
   );
+
+  function defaultChangeMarker(stopId: string, next: StationMarker | null): void {
+    if (next === null) {
+      // Same-marker toggle: clear. Use the store's setMarker to handle
+      // the singleton invariants (home/work/cityCenter clear the prior
+      // owner automatically).
+      const current = favoritesStore.markerFor(stopId);
+      if (current === undefined) return;
+      favoritesStore.setMarker(stopId, null);
+    } else {
+      favoritesStore.setMarker(stopId, next);
+    }
+  }
 </script>
 
 <Card>
   <CardContent>
     <Stack spacing={1}>
       {#if headerStyle === 'compact'}
-        <Stack direction="row" spacing={1} align="center">
-          <Heart size={16} class="shrink-0 text-[color:var(--color-fg-muted)]" />
-          <Typography variant="h6">Your favorites</Typography>
-        </Stack>
+        <Typography variant="h6">Your favorites</Typography>
       {:else}
         <Typography variant="h5">Your favorites</Typography>
       {/if}
@@ -161,11 +177,14 @@
               {@render stationRow({ stop })}
             {:else}
               <FavoriteStationRow
-                {stop}
-                isFav={favoritesStore.hasStation(stop.id)}
-                onToggleFavorite={() => favoritesStore.toggleStation(stop.id)}
+                stop={stop}
+                marker={stationMarkers?.get(stop.id)}
+                onChangeMarker={(next) => onChangeStationMarker
+                  ? onChangeStationMarker(stop.id, next)
+                  : defaultChangeMarker(stop.id, next)}
                 onbodyclick={() => goto(`/station/${stop.id}`)}
                 routes={stopRoutes[stop.id]}
+                hasGps={false}
                 variant="card"
                 class="mt-1"
               />

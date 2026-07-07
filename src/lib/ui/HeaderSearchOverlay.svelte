@@ -101,8 +101,8 @@
     if (!open) return;
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    const ids = favoritesStore.stationIds;
-    if (ids.size === 0) {
+    const ids = Array.from(favoritesStore.markers.keys());
+    if (ids.length === 0) {
       favoriteStations = [];
       return;
     }
@@ -110,7 +110,7 @@
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const resolved = await repo.getStopsByIds(Array.from(ids));
+        const resolved = await repo.getStopsByIds(ids);
         favoriteStations = resolved.sort((a, b) => a.name.localeCompare(b.name));
       } catch (e) {
         errorMsg = e instanceof Error ? e.message : String(e);
@@ -156,7 +156,7 @@
             .sort((x, y) => compareRouteShortName(x.shortName, y.shortName));
           const nearby = hasGps && a
             ? (await repo.searchStops('', a.lat, a.lon, 8, 'distance'))
-                .filter((s) => !favoritesStore.hasStation(s.id))
+                .filter((s) => !favoritesStore.hasMarker(s.id))
                 .slice(0, 4)
             : [];
           routeResults = favs;
@@ -231,8 +231,14 @@
   function toggleFavorite(route: Route) {
     favoritesStore.toggleRoute(route.id);
   }
-  function toggleFavoriteStation(stopId: string) {
-    favoritesStore.toggleStation(stopId);
+  function changeStationMarker(stopId: string, next: 'favorite' | 'home' | 'work' | 'cityCenter' | null) {
+    if (next === null) {
+      const current = favoritesStore.markerFor(stopId);
+      if (current === undefined) return;
+      favoritesStore.setMarker(stopId, null);
+    } else {
+      favoritesStore.setMarker(stopId, next);
+    }
   }
   function normalizeForSearch(s: string): string {
     return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
@@ -324,8 +330,8 @@
               {#each favoriteStations as stop (stop.id)}
                 <FavoriteStationRow
                   {stop}
-                  isFav={favoritesStore.hasStation(stop.id)}
-                  onToggleFavorite={() => toggleFavoriteStation(stop.id)}
+                  marker={favoritesStore.markerFor(stop.id)}
+                  onChangeMarker={(next) => changeStationMarker(stop.id, next)}
                   onbodyclick={() => selectStop(stop.id)}
                   routes={stopRoutes[stop.id]}
                 />
@@ -342,8 +348,8 @@
                   routes={stopRoutes[stop.id] ?? []}
                   {hasGps}
                   onbodyclick={() => selectStop(stop.id)}
-                  isFav={favoritesStore.hasStation(stop.id)}
-                  onToggleFavorite={() => toggleFavoriteStation(stop.id)}
+                  marker={favoritesStore.markerFor(stop.id)}
+                  onChangeMarker={(next) => changeStationMarker(stop.id, next)}
                 />
               {/each}
             {/if}
@@ -358,8 +364,8 @@
                   routes={stopRoutes[stop.id] ?? []}
                   {hasGps}
                   onbodyclick={() => selectStop(stop.id)}
-                  isFav={favoritesStore.hasStation(stop.id)}
-                  onToggleFavorite={() => toggleFavoriteStation(stop.id)}
+                  marker={favoritesStore.markerFor(stop.id)}
+                  onChangeMarker={(next) => changeStationMarker(stop.id, next)}
                 />
               {/each}
             {/if}

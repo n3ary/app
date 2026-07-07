@@ -25,13 +25,13 @@ class UserPrefs {
   gpsOptedIn = $state(false);
   /** True once the user has ever called `locationStore.enable()` — even if denied or later disabled. Used by home to suppress the first-time Enable CTA once the user has engaged. */
   hasEverEnabledGPS = $state(false);
-  /** Unix-ms of the user's most recent route favorite toggle. Drives
-   *  the /favorites default tab — whichever kind was favorited more
-   *  recently wins when both sets are non-empty. Null = never. */
-  lastRouteFavoritedAt = $state<number | null>(null);
-  /** Unix-ms of the user's most recent station favorite toggle.
-   *  See `lastRouteFavoritedAt`. */
-  lastStationFavoritedAt = $state<number | null>(null);
+  /** Unix-ms of the user's most recent route marker assignment. Drives
+   *  the /favorites default tab - whichever kind was marked more
+   *  recently wins when both have entries. Null = never. */
+  lastRouteMarkedAt = $state<number | null>(null);
+  /** Unix-ms of the user's most recent station marker assignment.
+   *  See `lastRouteMarkedAt`. */
+  lastStationMarkerAssignedAt = $state<number | null>(null);
 
   constructor() {
     if (typeof localStorage === 'undefined') return;
@@ -50,6 +50,8 @@ class UserPrefs {
         hasEverEnabledGPS: boolean;
         lastRouteFavoritedAt: number | null;
         lastStationFavoritedAt: number | null;
+        lastRouteMarkedAt: number | null;
+        lastStationMarkerAssignedAt: number | null;
       }>;
       if (o.theme === 'auto' || o.theme === 'light' || o.theme === 'dark') this.theme = o.theme;
       if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
@@ -60,8 +62,13 @@ class UserPrefs {
       if (typeof o.stationBoardMaxRows === 'number' && o.stationBoardMaxRows > 0) this.stationBoardMaxRows = o.stationBoardMaxRows;
       if (typeof o.gpsOptedIn === 'boolean') this.gpsOptedIn = o.gpsOptedIn;
       if (typeof o.hasEverEnabledGPS === 'boolean') this.hasEverEnabledGPS = o.hasEverEnabledGPS;
-      if (typeof o.lastRouteFavoritedAt === 'number') this.lastRouteFavoritedAt = o.lastRouteFavoritedAt;
-      if (typeof o.lastStationFavoritedAt === 'number') this.lastStationFavoritedAt = o.lastStationFavoritedAt;
+      // Prefer the new keys; fall back to the old `last{Favorite,StationFavorited}At`
+      // shape so a build upgrading from the pre-marker spec keeps the
+      // user's last-activity timestamps instead of resetting to null.
+      if (typeof o.lastRouteMarkedAt === 'number') this.lastRouteMarkedAt = o.lastRouteMarkedAt;
+      else if (typeof o.lastRouteFavoritedAt === 'number') this.lastRouteMarkedAt = o.lastRouteFavoritedAt;
+      if (typeof o.lastStationMarkerAssignedAt === 'number') this.lastStationMarkerAssignedAt = o.lastStationMarkerAssignedAt;
+      else if (typeof o.lastStationFavoritedAt === 'number') this.lastStationMarkerAssignedAt = o.lastStationFavoritedAt;
     } catch {
       // Corrupt/unreadable — defaults
     }
@@ -79,8 +86,8 @@ class UserPrefs {
       stationBoardMaxRows: this.stationBoardMaxRows,
       gpsOptedIn: this.gpsOptedIn,
       hasEverEnabledGPS: this.hasEverEnabledGPS,
-      lastRouteFavoritedAt: this.lastRouteFavoritedAt,
-      lastStationFavoritedAt: this.lastStationFavoritedAt,
+      lastRouteMarkedAt: this.lastRouteMarkedAt,
+      lastStationMarkerAssignedAt: this.lastStationMarkerAssignedAt,
     };
   }
 }

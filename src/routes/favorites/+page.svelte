@@ -8,6 +8,11 @@
   with context-aware ordering, and paginates the station catalog so
   national-scale feeds stay performant.
 
+  #237 added a station-marker model (favorite / home / work /
+  cityCenter) — the heart button on each station card is now a
+  dropdown picker; the "Your favorites" card sits above the tabs and
+  shows both routes and stations, each with their marker badges.
+
   Tabs are scoped to /favorites — the search overlay and home
   favorites card keep their merged layout. The active tab persists
   via `?tab=routes|stations` so a deep link or reload lands on the
@@ -22,24 +27,24 @@
   import { Heart } from 'lucide-svelte';
   import {
     Card, CardContent, Chip, Collapsible, FavoriteRouteRow, FavoriteStationRow,
-    SelectFeedCard, Spinner, Stack, Tabs, TripStopList, Typography, TypeBadge,
-    networkIcon, networkTextColor,
+    FavoritesCard, SelectFeedCard, Spinner, Stack, Tabs, TripStopList, Typography,
+    TypeBadge, networkIcon, networkTextColor,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';
   import type { Network, Route, VehicleType } from '$lib/domain/types';
   import { vehicleTypeLabel } from '$lib/domain/types';
+  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { STATIONS_PAGE_SIZE } from '$lib/ui/favoritesListConstants';
   import {
     parseFavoritesTab,
     sortRoutesForPicker,
     sortStationsForPicker,
-    stationsPassingFilter,
     type FavoritesTab,
   } from '$lib/domain/favoritesListLayout';
   import { scheduleWindowFor } from '$lib/domain/pipeline/timeUtils';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import { favoritesStore, STATION_MARKERS } from '$lib/stores/favoritesStore.svelte';
   import { locationStore } from '$lib/stores/gps/locationStore.svelte';
   import { nowTicker } from '$lib/stores/nowTicker.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -47,8 +52,8 @@
   // ── Tab state + URL deep-link ───────────────────────────────────
 
   function defaultTabFromPrefs(): FavoritesTab {
-    const routeTs = userPrefs.lastRouteFavoritedAt;
-    const stationTs = userPrefs.lastStationFavoritedAt;
+    const routeTs = userPrefs.lastRouteMarkedAt;
+    const stationTs = userPrefs.lastStationMarkerAssignedAt;
     if (routeTs == null && stationTs == null) return 'routes';
     if (routeTs == null) return 'stations';
     if (stationTs == null) return 'routes';
@@ -62,7 +67,6 @@
     return fromUrl ?? defaultTabFromPrefs();
   }
 
-  // Keep local state in sync if the URL changes via back/forward.
   $effect(() => {
     const fromUrl = parseFavoritesTab(page.url.searchParams.get('tab'));
     if (fromUrl && fromUrl !== activeTab) {
@@ -77,9 +81,6 @@
     const url = new URL(page.url);
     if (next === 'routes') url.searchParams.delete('tab');
     else url.searchParams.set('tab', next);
-    // replaceState: tab swaps don't grow back-history.
-    // noScroll + keepFocus: SvelteKit must NOT touch scroll or focus
-    // — the per-tab stashed position drives restoration below.
     void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
     requestAnimationFrame(() => restoreScroll(next));
   }
@@ -102,7 +103,6 @@
   let allRoutes = $state<Route[] | null>(null);
   let allNetworks = $state<Network[]>([]);
   let error = $state<string | null>(null);
-  // null = no filter; clicking the active entry deselects.
   let typeFilter = $state<VehicleType | null>(null);
   let networkFilter = $state<string | null>(null);
 
@@ -117,12 +117,7 @@
 
   // ── Routes tab state ────────────────────────────────────────────
 
-  // Routes currently active in a lookahead window (single worker
-  // round-trip — see getActiveRouteIdsInWindow). Recomputed on the
-  // nowTicker; user sees fresh "running right now" each ~60s tick.
   let activeRouteIds = $state<Set<string>>(new Set());
-
-  // Expand-stops state (lifted from the original page; same UX).
   let expandedRouteId = $state<string | null>(null);
   let routeStops = $state<Map<string, ScheduleTripStop[]>>(new Map());
   let loadingRouteId = $state<string | null>(null);
@@ -175,23 +170,29 @@
   let favoriteStationsRoutes = $state<Record<string, Route[]>>({});
   let favoriteStationsError = $state<string | null>(null);
 
-  // Filter-cascade scope: stop_id -> distinct routes serving the stop
-  // through the feed schedule, optionally narrowed by mode + network.
-  // Worker caches keyed by (mode, network) signature; main thread
-  // fetches once per filter change.
   let stationsScope = $state<Record<string, Route[]>>({});
   let stationsScopeError = $state<string | null>(null);
 
-  // Paginated "other stations" (non-favorited). One page at a time;
-  // IntersectionObserver drives prefetch of the next.
   let otherStationsPage = $state<StopWithDistance[]>([]);
   let otherStationsTotal = $state<number>(0);
   let otherStationsLoading = $state<boolean>(false);
   let otherStationsError = $state<string | null>(null);
 
-  // GPS-derived anchor (lat/lon) when available; falls back to the
-  // feed's published center so distance sort is still meaningful on
-  // a feed without GPS opt-in.
+  // Marker-type filter for the Stations tab. Multi-select: a station
+  // is shown if it matches any active marker in the set. The All chip
+  // deselects everything. Client-side only - the marker map is small.
+  let activeMarkerFilter = $state<ReadonlySet<StationMarker>>(new Set());
+
+  function toggleMarkerFilter(m: StationMarker) {
+    const next = new Set(activeMarkerFilter);
+    if (next.has(m)) next.delete(m);
+    else next.add(m);
+    activeMarkerFilter = next;
+  }
+  function clearMarkerFilter() {
+    activeMarkerFilter = new Set();
+  }
+
   const stationAnchor = $derived.by(() => {
     if (locationStore.position) {
       return {
@@ -223,14 +224,12 @@
     })();
   });
 
-  // Favorited stations — independent of the paginated "other stations"
-  // list. Same pattern the previous page used (one batched
-  // getStopsByIds for the favorites).
+  // Stations with any marker (favorite / home / work / cityCenter).
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    const ids = favoritesStore.stationIds;
-    if (ids.size === 0) {
+    const ids = Array.from(favoritesStore.markers.keys());
+    if (ids.length === 0) {
       favoriteStations = [];
       favoriteStationsRoutes = {};
       return;
@@ -238,12 +237,9 @@
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const resolved = await repo.getStopsByIds(Array.from(ids));
+        const resolved = await repo.getStopsByIds(ids);
         favoriteStations = sortStationsForPicker(resolved, stationAnchor);
-        const routes = await repo.getRoutesForStops(Array.from(ids));
-        // Filter to scheduled routes only — chips for routes with no
-        // timetable are dead links (FavoriteStationRow doc says the
-        // same).
+        const routes = await repo.getRoutesForStops(ids);
         const filtered: Record<string, Route[]> = {};
         for (const [k, list] of Object.entries(routes)) {
           const scheduled = list.filter((r) => r.hasSchedule !== false);
@@ -257,9 +253,8 @@
     })();
   });
 
-  // Filter-cascade scope. Recomputed when mode or network filter
-  // changes (the worker's LRU handles the "toggle back and forth"
-  // case for free).
+  // Filter-cascade scope for the Stations tab. Recomputed when
+  // mode or network filter changes.
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
@@ -276,15 +271,10 @@
     })();
   });
 
-  // ── Routes tab: "active right now" refresh ───────────────────────
-
+  // Routes "active right now" set (one worker round-trip).
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    // nowTicker.ms is the dependency; the effect re-runs on every
-    // tick. 60-minute lookahead matches what a rider considers
-    // "running now" — a bus coming in 5 min is in scope, a bus
-    // coming in 2h isn't.
     const now = nowTicker.ms;
     (async () => {
       try {
@@ -298,30 +288,18 @@
         const ids = await repo.getActiveRouteIdsInWindow(qp.localDate, qp.fromMin, 60);
         activeRouteIds = new Set(ids);
       } catch {
-        // Best-effort; ranking just won't have the active-first
-        // boost. We don't surface an error to the user — the page
-        // is still usable.
+        // Best-effort.
       }
     })();
   });
 
   // ── Stations tab: paginated "other stations" ────────────────────
 
-  // Map of "which stations the filter cascade admitted". Lazily
-  // derived from `stationsScope` + the candidate page; computed per
-  // page so we don't ship the entire 5k-station scope through state.
-  let loadedPages = $state<StopWithDistance[][]>([]);
-
-  // Reset pagination when filter or anchor changes (the visible
-  // ordering changes, so a partially-loaded page no longer makes
-  // sense). untrack: don't depend on `loadedPages` / `stationAnchor`
-  // to avoid the obvious loop.
   $effect(() => {
-    // Touch the inputs so the effect re-runs.
+    // Touch the inputs so the effect re-runs on cascade or anchor change.
     const _scope = stationsScope;
     const _anchor = stationAnchor;
     untrack(() => {
-      loadedPages = [];
       otherStationsPage = [];
       otherStationsTotal = 0;
       otherStationsError = null;
@@ -331,10 +309,6 @@
     void fetchNextStationsPage();
   });
 
-  // Sentinel-driven prefetch. When the bottom sentinel enters the
-  // viewport (or comes within ~factor viewports of it), load the
-  // next page. Resets are handled by the filter/anchor effect above
-  // emptying `loadedPages` first.
   let sentinelEl = $state<HTMLElement | null>(null);
   $effect(() => {
     if (!sentinelEl) return;
@@ -348,10 +322,6 @@
           void fetchNextStationsPage();
         }
       },
-      // rootMargin below 0 means "trigger when sentinel is within N
-      // pixels of the bottom". 1000px ≈ 1.5 viewports at typical
-      // phone heights; the page-side factor in shouldPrefetchNextPage
-      // gives callers a tunable scalar.
       { rootMargin: '0px 0px 1000px 0px', threshold: 0 },
     );
     observer.observe(sentinelEl);
@@ -374,14 +344,10 @@
         anchor: stationAnchor ?? undefined,
         scope: scopeArr.length === 0 ? undefined : scopeArr,
       });
-      // De-dupe by id (the worker may return a station we've already
-      // favorited on this page — those should appear in the
-      // favorites section above, not duplicated in "other stations").
       const seen = new Set(otherStationsPage.map((s) => s.id));
       const filtered = result.rows.filter((s) => !seen.has(s.id));
       otherStationsPage = [...otherStationsPage, ...filtered];
       otherStationsTotal = result.total;
-      loadedPages = [...loadedPages, filtered];
     } catch (e) {
       otherStationsError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -389,7 +355,7 @@
     }
   }
 
-  // ── Derived: Routes tab lists ───────────────────────────────────
+  // ── Derived: routes + stations lists ────────────────────────────
 
   const presentTypes = $derived.by<VehicleType[]>(() => {
     if (!allRoutes) return [];
@@ -418,10 +384,7 @@
     });
   });
 
-  // Favorited routes bypass the filter cascade — a user who hearted
-  // a metro route should still see it under "Your favorites" even
-  // when the Bus filter is active. The unfiltered set is sourced
-  // directly from `allRoutes` (not `filteredRoutes`).
+  // Favorited routes bypass the filter cascade.
   const favRoutes = $derived.by<Route[]>(() => {
     if (!allRoutes) return [];
     const set = new Set(favoritesStore.routeIds);
@@ -440,43 +403,78 @@
     );
   });
 
-  // ── Derived: Stations tab lists ─────────────────────────────────
-
-  // Favorited stations: always shown regardless of the filter
-  // cascade. Sorted by distance from anchor when GPS is on, alpha
-  // otherwise.
+  // Favorited stations in priority order: home, work, cityCenter
+  // (singletons float to the top), then favorite by distance/alpha.
   const favStationsSorted = $derived.by<StopWithDistance[]>(() => {
-    return sortStationsForPicker(favoriteStations, stationAnchor);
+    const list = [...favoriteStations];
+    list.sort((a, b) => {
+      const ma = favoritesStore.markerFor(a.id);
+      const mb = favoritesStore.markerFor(b.id);
+      const order = (m: StationMarker | undefined) => {
+        if (m === 'home') return 0;
+        if (m === 'work') return 1;
+        if (m === 'cityCenter') return 2;
+        if (m === 'favorite') return 3;
+        return 4;
+      };
+      const oa = order(ma);
+      const ob = order(mb);
+      if (oa !== ob) return oa - ob;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
   });
 
-  // "All other stations": filtered by the cascade, paginated. The
-  // worker handles ordering (distance from anchor); we re-sort here
-  // because stationAnchor may have updated since the page was
-  // fetched and we want the rendered order to reflect the current
-  // GPS position.
+  // "All other stations": client-side filter by marker set, then
+  // resort by distance (or alpha).
   const otherStationsSorted = $derived.by<StopWithDistance[]>(() => {
-    return sortStationsForPicker(otherStationsPage, stationAnchor);
+    let list = otherStationsPage;
+    if (activeMarkerFilter.size > 0) {
+      list = list.filter((s) => {
+        const m = favoritesStore.markerFor(s.id);
+        return m !== undefined && activeMarkerFilter.has(m);
+      });
+    }
+    return sortStationsForPicker(list, stationAnchor);
   });
 
-  // Stations in the cascade's scope (after the mode + network
-  // filter). Empty when no filter is active (every station is in
-  // scope). Used to compute the "X stations match" caption.
   const stationsScopeCount = $derived(Object.keys(stationsScope).length);
-
   const filtersActive = $derived(typeFilter !== null || networkFilter !== null);
   const otherStationsHasMore = $derived(
     otherStationsTotal === 0 || otherStationsPage.length < otherStationsTotal,
   );
 
-  // ── Filter card visibility ──────────────────────────────────────
+  // Marker labels for the filter chips. "All" clears the filter.
+  const MARKER_LABELS: Record<StationMarker, string> = {
+    favorite: 'Favorite',
+    home: 'Home',
+    work: 'Work',
+    cityCenter: 'City center',
+  };
 
-  const showFiltersCard = $derived(
-    (allRoutes != null && (presentTypes.length > 1 || allNetworks.length > 0))
-      || (activeTab === 'stations' && stationsScopeCount > 0),
-  );
+  // Per-stop marker map for the expanded route view.
+  const routeStopMarkers = $derived.by<ReadonlyMap<string, StationMarker>>(() => {
+    const m = new Map<string, StationMarker>();
+    for (const stop of routeStops.values()) {
+      for (const s of stop) {
+        const marker = favoritesStore.markerFor(s.stopId);
+        if (marker !== undefined && !m.has(s.stopId)) m.set(s.stopId, marker);
+      }
+    }
+    return m;
+  });
 
   function selectStation(id: string) {
     goto(`/station/${id}`);
+  }
+
+  function changeStationMarker(stopId: string, next: StationMarker | null) {
+    if (next === null) {
+      if (favoritesStore.markerFor(stopId) === undefined) return;
+      favoritesStore.setMarker(stopId, null);
+    } else {
+      favoritesStore.setMarker(stopId, next);
+    }
   }
 </script>
 
@@ -501,18 +499,10 @@
     </Card>
   {:else}
     <Stack spacing={2}>
-      <!-- Tabs sit above the filter card and the first list card so
-           the user sees the tab choice before any per-tab content. -->
-      <Tabs
-        value={activeTab}
-        items={[
-          { value: 'routes', label: 'Routes' },
-          { value: 'stations', label: 'Stations' },
-        ]}
-        onchange={setTab}
-      />
-
-      {#if showFiltersCard && (presentTypes.length > 1 || allNetworks.length > 0)}
+      <!-- Filter card: shared across both tabs. Mode + network cascade
+           to the Stations tab; on the Routes tab they just narrow the
+           catalog shown below the favorites. -->
+      {#if presentTypes.length > 1 || allNetworks.length > 0}
         <Card>
           <CardContent>
             <Stack spacing={1.5}>
@@ -561,9 +551,9 @@
                 </Stack>
               {/if}
 
-              {#if activeTab === 'stations' && filtersActive}
+              {#if filtersActive}
                 <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                  Stations below are filtered to those served by at least one matching route.
+                  Stations below the tabs are filtered to those served by at least one matching route.
                   Your favorited stations are always shown regardless.
                 </Typography>
               {/if}
@@ -572,32 +562,35 @@
         </Card>
       {/if}
 
-      {#if activeTab === 'routes'}
-        <!-- ── Routes tab ──────────────────────────────────────── -->
-        {#if favRoutes.length > 0}
-          <Card>
-            <CardContent>
-              <Stack spacing={1}>
-                <Stack spacing={0.5}>
-                  <Stack direction="row" spacing={1} align="center">
-                    <Heart size={16} class="shrink-0 text-[color:var(--color-fg-muted)]" />
-                    <Typography variant="h5">Your favorites</Typography>
-                  </Stack>
-                  <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                    {favRoutes.length} starred. Routes running in the next hour float to the top.
-                  </Typography>
-                </Stack>
-                <Stack spacing={1}>
-                  {#each favRoutes as route (route.id)}
-                    {@render expandableRouteRow({ route })}
-                  {/each}
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
-        {/if}
+      <!-- Combined "Your favorites" card. Always visible regardless of
+           active tab. Lists favorited routes AND marked stations, with
+           their marker badges. -->
+      {#if favRoutes.length > 0 || favStationsSorted.length > 0}
+        <FavoritesCard
+          routes={favRoutes}
+          stations={favStationsSorted}
+          stationMarkers={favoritesStore.markers}
+          onChangeStationMarker={changeStationMarker}
+          headerStyle="standalone"
+        />
+      {/if}
 
-        {#if otherRoutes.length > 0}
+      <!-- Page-width tabs sit BELOW the combined Your favorites card.
+           They only control the catalog (All other routes / All other
+           stations) below. -->
+      <Tabs
+        value={activeTab}
+        items={[
+          { value: 'routes', label: 'Routes' },
+          { value: 'stations', label: 'Stations' },
+        ]}
+        onchange={setTab}
+        variant="block"
+      />
+
+      {#if activeTab === 'routes'}
+        <!-- ── Routes tab: All other routes ──────────────────── -->
+        {#if otherRoutes.length > 0 || noScheduleRoutes.length > 0}
           <Card>
             <CardContent>
               <Stack spacing={1}>
@@ -606,30 +599,13 @@
                     {favRoutes.length > 0 ? 'All other routes' : 'All routes'}
                   </Typography>
                   <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                    {otherRoutes.length} more to choose from. Routes running in the next hour float to the top.
+                    Routes running in the next hour float to the top.
                   </Typography>
                 </Stack>
                 <Stack spacing={1}>
                   {#each otherRoutes as route (route.id)}
                     {@render expandableRouteRow({ route })}
                   {/each}
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
-        {/if}
-
-        {#if noScheduleRoutes.length > 0}
-          <Card>
-            <CardContent>
-              <Stack spacing={1}>
-                <Stack spacing={0.5}>
-                  <Typography variant="h5">All other routes (no schedule available)</Typography>
-                  <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                    {noScheduleRoutes.length} route{noScheduleRoutes.length !== 1 ? 's' : ''} without timetable data. Tap the heart to favorite.
-                  </Typography>
-                </Stack>
-                <Stack spacing={1}>
                   {#each noScheduleRoutes as route (route.id)}
                     {@render expandableRouteRow({ route })}
                   {/each}
@@ -639,58 +615,45 @@
           </Card>
         {/if}
       {:else}
-        <!-- ── Stations tab ────────────────────────────────────── -->
+        <!-- ── Stations tab: marker filter + All other stations ──── -->
 
-        {#if favoriteStationsError}
-          <Card>
-            <CardContent>
-              <Typography variant="caption" class="text-[color:var(--color-danger)]">
-                {favoriteStationsError}
+        <!-- Marker filter chip row. Client-side; scoped to this tab. -->
+        <Card>
+          <CardContent>
+            <Stack spacing={0.5}>
+              <Typography variant="h5">Filter by marker</Typography>
+              <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+                {#if activeMarkerFilter.size === 0}
+                  Showing every station. Tap a marker to narrow down.
+                {:else}
+                  Showing stations marked as {Array.from(activeMarkerFilter).map((m) => MARKER_LABELS[m]).join(' or ')}.
+                {/if}
               </Typography>
-            </CardContent>
-          </Card>
-        {:else if favStationsSorted.length > 0}
-          <Card>
-            <CardContent>
-              <Stack spacing={1}>
-                <Stack spacing={0.5}>
-                  <Stack direction="row" spacing={1} align="center">
-                    <Heart size={16} class="shrink-0 text-[color:var(--color-fg-muted)]" />
-                    <Typography variant="h5">Your favorites</Typography>
-                  </Stack>
-                  <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
-                    {favStationsSorted.length} starred.
-                    {#if locationStore.position}
-                      Nearest to you first.
-                    {:else if stationAnchor}
-                      Sorted alphabetically (enable location to rank by distance).
-                    {:else}
-                      Sorted alphabetically.
-                    {/if}
-                    {#if filtersActive}
-                      Favorited stations are always shown, even when the filter would otherwise hide them.
-                    {/if}
-                  </Typography>
-                </Stack>
-                <Stack spacing={1}>
-                  {#each favStationsSorted as stop (stop.id)}
-                    <FavoriteStationRow
-                      stop={stop}
-                      isFav={favoritesStore.hasStation(stop.id)}
-                      onToggleFavorite={() => favoritesStore.toggleStation(stop.id)}
-                      onbodyclick={() => selectStation(stop.id)}
-                      routes={favoriteStationsRoutes[stop.id]}
-                      hasGps={!!locationStore.position && stop.distance != null}
-                      variant="card"
-                      class="mt-1"
-                    />
-                  {/each}
-                </Stack>
+              <Stack direction="row" spacing={1} align="center" wrap>
+                <Chip
+                  size="small"
+                  variant="filled"
+                  onclick={clearMarkerFilter}
+                  class={activeMarkerFilter.size === 0 ? '' : 'opacity-50'}
+                >
+                  All
+                </Chip>
+                {#each STATION_MARKERS as m (m)}
+                  <Chip
+                    size="small"
+                    variant="filled"
+                    onclick={() => toggleMarkerFilter(m)}
+                    class={activeMarkerFilter.has(m) ? '' : 'opacity-50'}
+                  >
+                    {MARKER_LABELS[m]}
+                  </Chip>
+                {/each}
               </Stack>
-            </CardContent>
-          </Card>
-        {/if}
+            </Stack>
+          </CardContent>
+        </Card>
 
+        <!-- "All other stations" - paginated catalog. -->
         <Card>
           <CardContent>
             <Stack spacing={1}>
@@ -704,7 +667,9 @@
                   {:else if otherStationsError}
                     {otherStationsError}
                   {:else if otherStationsTotal > 0}
-                    {#if filtersActive}
+                    {#if activeMarkerFilter.size > 0}
+                      Showing {otherStationsSorted.length} of {otherStationsTotal} stations.
+                    {:else if filtersActive}
                       Showing {otherStationsPage.length} of {otherStationsTotal} stations matching the filter.
                     {:else}
                       Showing {otherStationsPage.length} of {otherStationsTotal} stations.
@@ -723,8 +688,8 @@
                 {#each otherStationsSorted as stop (stop.id)}
                   <FavoriteStationRow
                     stop={stop}
-                    isFav={favoritesStore.hasStation(stop.id)}
-                    onToggleFavorite={() => favoritesStore.toggleStation(stop.id)}
+                    marker={favoritesStore.markerFor(stop.id)}
+                    onChangeMarker={(next) => changeStationMarker(stop.id, next)}
                     onbodyclick={() => selectStation(stop.id)}
                     routes={stationsScope[stop.id]}
                     hasGps={!!locationStore.position && stop.distance != null}
@@ -766,7 +731,8 @@
 
 <!-- expandableRouteRow: route row + stops-list Collapsible. Routes
      with no schedule have no representative trip, so the card is
-     non-expandable. -->
+     non-expandable. The expanded stop list picks up the markers map
+     so each stop shows its badge when set. -->
 {#snippet expandableRouteRow({ route }: { route: Route })}
   {@const expandable = route.hasSchedule !== false}
   {@const expanded = expandedRouteId === route.id}
@@ -778,7 +744,6 @@
       {route}
       isFav={favoritesStore.hasRoute(route.id)}
       onToggleFavorite={() => favoritesStore.toggleRoute(route.id)}
-      onbodyclick={() => toggleRouteStops(route)}
     />
     {#if expandable}
       <Collapsible in={expanded} reduced>
@@ -793,7 +758,7 @@
               No stops published for this route today.
             </Typography>
           {:else if stops != null}
-            <TripStopList {stops} />
+            <TripStopList {stops} markers={routeStopMarkers} />
           {/if}
         </div>
       </Collapsible>

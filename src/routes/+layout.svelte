@@ -357,7 +357,11 @@
   {activeNav}
   onnav={(to) => goto(to)}
   onrefresh={startRefresh}
-  showSearch={userPrefs.feedId != null}
+  // The search icon is the global entry point to the station/route
+  // picker overlay. On /favorites and /settings, the user has their
+  // own per-page surfaces (the favorites list, the settings list);
+  // showing the search icon there is redundant and adds visual noise.
+  showSearch={userPrefs.feedId != null && page.url.pathname !== '/favorites' && page.url.pathname !== '/settings'}
 >
   {@render children()}
 </AppLayout>
