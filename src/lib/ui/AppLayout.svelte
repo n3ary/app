@@ -1,8 +1,6 @@
-<!-- Overall page shell: Header + StatusBar + scrollable main + fixed BottomNavigation. Header+StatusBar share a single sticky strip (StatusBar alone would scroll away); BottomNavigation is rendered outside the flex column because position: fixed inside flex is an iOS Safari quirk. Shell height is `--app-height` (set from JS in <head> + on resize) with 100dvh fallback for SSR / pre-hydration; 100dvh alone is unreliable on the first paint in iOS PWA standalone because the CSS engine resolves it before the viewport has stabilized (#184 fixed the post-navigation case; #227 tracks the first-paint case). -->
+<!-- Overall page shell: Header + StatusBar + scrollable main + fixed BottomNavigation. Header+StatusBar share a single sticky strip (StatusBar alone would scroll away); BottomNavigation is rendered outside the flex column because position: fixed inside flex is an iOS Safari quirk. Shell uses min-h-100vh: the layout viewport height is correct on the first paint of an iOS PWA standalone launch, where 100dvh resolves before the standalone viewport has stabilized and leaves a strip of background below the fixed BottomNavigation (#227). dvh was tried (#184) but only fixed the post-navigation case. -->
 <script lang="ts" generics="T extends string">
-  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
-  import { subscribeAppHeight } from './appHeight';
   import BottomNavigation from './BottomNavigation.svelte';
   import Header from './Header.svelte';
   import type { HeaderHealth } from './headerTypes';
@@ -39,18 +37,9 @@
     onnav,
     children,
   }: Props = $props();
-
-  // Keep --app-height in sync after mount so rotation, on-screen keyboard,
-  // and PWA standalone↔browser transitions reflow the shell. The initial
-  // value is set in <head> (app.html) before the CSS parses, so this only
-  // needs to handle post-mount changes.
-  onMount(() => subscribeAppHeight());
 </script>
 
-<div
-  class="app-shell flex flex-col bg-[color:var(--color-bg)] text-[color:var(--color-fg)]"
-  style="min-height: var(--app-height, 100dvh);"
->
+<div class="min-h-100vh flex flex-col bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
   <!-- Sticky strip: Header (sticky itself) + StatusBar. Wrapping them
        in one sticky element means they move together as a unit while
        the user scrolls, instead of the Header pinning and the StatusBar
