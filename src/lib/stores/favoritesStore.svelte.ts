@@ -1,11 +1,9 @@
-// favoritesStore: persistent map of stop_id -> StationMarker, plus
-// the singleton tracking fields for home / work / cityCenter. Each
-// station has at most one marker; a station's marker replaces any
-// previous one for the same station. The "single home / work /
-// cityCenter" invariants are enforced here, not at the call site.
+// favoritesStore: persistent map of stop_id -> StationMarker. Each
+// station has at most one marker (a station's marker replaces any
+// previous one for the same station); many stations can share the
+// same marker type, so home / work / cityCenter are not singletons.
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { userPrefs } from './userPrefs.svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
 const STORAGE_KEY_MARKERS = 'neary:stationMarkers';
@@ -20,7 +18,7 @@ export const STATION_MARKERS: readonly StationMarker[] = [
 ] as const;
 
 export function isStationMarker(value: unknown): value is StationMarker {
-  return value === 'favorite' || value === 'home' || value === 'work' || value === 'cityCenter';
+  return STATION_MARKERS.includes(value as StationMarker);
 }
 
 function loadRoutes(): string[] {
@@ -64,9 +62,7 @@ class FavoritesStore {
   #routes = new SvelteSet<string>(loadRoutes());
 
   // Station markers: stop_id -> StationMarker. Native SvelteMap so
-  // .set / .delete are reactive. The singleton fields below are
-  // derived (or could be) but we keep them as separate get accessors
-  // for type-safe single-value queries without the map lookup.
+  // .set / .delete are reactive.
   #markers = new SvelteMap<string, StationMarker>(
     Object.entries(loadMarkers()) as [string, StationMarker][],
   );
@@ -84,7 +80,6 @@ class FavoritesStore {
     if (this.#routes.has(routeId)) return;
     this.#routes.add(routeId);
     this.#persistRoutes();
-    userPrefs.lastRouteMarkedAt = Date.now();
   }
 
   removeRoute(routeId: string): void {
@@ -131,23 +126,11 @@ class FavoritesStore {
     return out;
   }
 
-  /** The home station id, if one is set. */
-  get homeStationId(): string | undefined {
-    return this.#markers.get('__singleton__home__' as never) as never;
-  }
-
-  /** Internal: find the station that currently holds a given singleton marker. */
-  #findSingleton(marker: 'home' | 'work' | 'cityCenter'): string | undefined {
-    for (const [id, m] of this.#markers) {
-      if (m === marker) return id;
-    }
-    return undefined;
-  }
-
-  /** Apply a marker to a station. For singleton markers (home / work /
-   *  cityCenter), the previous owner of the same type is cleared.
-   *  Assigning the same marker a station already has is a no-op.
-   *  Pass `null` to remove a station's marker entirely. */
+  /** Apply a marker to a station. Assigning the same marker a station
+   *  already has is a no-op; assigning a different marker replaces
+   *  the previous one for that station. Pass `null` to remove the
+   *  station's marker entirely. Many stations can share the same
+   *  marker type (no per-type singleton invariant). */
   setMarker(stopId: string, marker: StationMarker | null): void {
     const current = this.#markers.get(stopId);
     if (marker === null) {
@@ -155,17 +138,9 @@ class FavoritesStore {
       this.#markers.delete(stopId);
     } else {
       if (current === marker) return;
-      // Singleton invariants: at most one home, one work, one cityCenter.
-      if (marker !== 'favorite') {
-        const previousOwner = this.#findSingleton(marker);
-        if (previousOwner && previousOwner !== stopId) {
-          this.#markers.delete(previousOwner);
-        }
-      }
       this.#markers.set(stopId, marker);
     }
     this.#persistMarkers();
-    userPrefs.lastStationMarkerAssignedAt = Date.now();
   }
 
   /** Toggle semantics for the heart-button dropdown: if the station

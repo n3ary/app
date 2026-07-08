@@ -6,6 +6,7 @@
 import { compareRouteShortName } from './types';
 import type { Route, VehicleType } from './types';
 import type { StopWithDistance } from '$lib/data/gtfs/types';
+import { haversineMeters } from '@n3ary/gtfs-spec/shape';
 import { routeMatchesFilters } from './favoritesRanking';
 
 /** Mode filter applied to the Stations tab. `null` = no filter. */
@@ -67,8 +68,8 @@ export function sortRoutesForPicker(
   });
 }
 
-/** Sort stations for the Stations tab. Distance from anchor when
- *  anchor is set; localeCompare on name otherwise. Stops missing
+/** Sort stations for the Stations tab catalog. Distance from anchor
+ *  when anchor is set; localeCompare on name otherwise. Stops missing
  *  coordinates sort to the end (Infinity) regardless of mode. */
 export function sortStationsForPicker(
   stations: readonly StopWithDistance[],
@@ -79,29 +80,29 @@ export function sortStationsForPicker(
   }
   return [...stations].sort((a, b) => {
     const ad = a.distance ?? (a.lat != null && a.lon != null
-      ? haversineLocal(anchor.lat, anchor.lon, a.lat, a.lon)
+      ? haversineMeters(anchor.lat, anchor.lon, a.lat, a.lon)
       : Number.POSITIVE_INFINITY);
     const bd = b.distance ?? (b.lat != null && b.lon != null
-      ? haversineLocal(anchor.lat, anchor.lon, b.lat, b.lon)
+      ? haversineMeters(anchor.lat, anchor.lon, b.lat, b.lon)
       : Number.POSITIVE_INFINITY);
     return ad - bd;
   });
 }
 
-function haversineLocal(
-  lat1: number, lon1: number, lat2: number, lon2: number,
-): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
+/** Sort stations for the combined "Your favorites" card. Pure
+ *  alphabetical on name, locale-aware. The marker type does not
+ *  influence order here - home / work / cityCenter / favorite
+ *  stations interleave alphabetically. Used by both the home
+ *  FavoritesCard and /favorites so the same stations render in the
+ *  same order wherever they appear. */
+export function sortStationsAlphabetically(
+  stations: readonly StopWithDistance[],
+): StopWithDistance[] {
+  return [...stations].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Parse the `?tab=` query param. Unknown values collapse to null
- *  so the caller can fall back to the default (last-favorited kind). */
+ *  so the caller can fall back to the default (Routes). */
 export type FavoritesTab = 'routes' | 'stations';
 export function parseFavoritesTab(raw: string | null | undefined): FavoritesTab | null {
   if (raw === 'routes' || raw === 'stations') return raw;

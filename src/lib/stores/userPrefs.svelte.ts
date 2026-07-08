@@ -25,13 +25,6 @@ class UserPrefs {
   gpsOptedIn = $state(false);
   /** True once the user has ever called `locationStore.enable()` — even if denied or later disabled. Used by home to suppress the first-time Enable CTA once the user has engaged. */
   hasEverEnabledGPS = $state(false);
-  /** Unix-ms of the user's most recent route marker assignment. Drives
-   *  the /favorites default tab - whichever kind was marked more
-   *  recently wins when both have entries. Null = never. */
-  lastRouteMarkedAt = $state<number | null>(null);
-  /** Unix-ms of the user's most recent station marker assignment.
-   *  See `lastRouteMarkedAt`. */
-  lastStationMarkerAssignedAt = $state<number | null>(null);
 
   constructor() {
     if (typeof localStorage === 'undefined') return;
@@ -48,8 +41,6 @@ class UserPrefs {
         stationBoardMaxRows: number;
         gpsOptedIn: boolean;
         hasEverEnabledGPS: boolean;
-        lastRouteMarkedAt: number | null;
-        lastStationMarkerAssignedAt: number | null;
       }>;
       if (o.theme === 'auto' || o.theme === 'light' || o.theme === 'dark') this.theme = o.theme;
       if (typeof o.feedId === 'string' || o.feedId === null) this.feedId = o.feedId;
@@ -60,8 +51,6 @@ class UserPrefs {
       if (typeof o.stationBoardMaxRows === 'number' && o.stationBoardMaxRows > 0) this.stationBoardMaxRows = o.stationBoardMaxRows;
       if (typeof o.gpsOptedIn === 'boolean') this.gpsOptedIn = o.gpsOptedIn;
       if (typeof o.hasEverEnabledGPS === 'boolean') this.hasEverEnabledGPS = o.hasEverEnabledGPS;
-      if (typeof o.lastRouteMarkedAt === 'number') this.lastRouteMarkedAt = o.lastRouteMarkedAt;
-      if (typeof o.lastStationMarkerAssignedAt === 'number') this.lastStationMarkerAssignedAt = o.lastStationMarkerAssignedAt;
     } catch {
       // Corrupt/unreadable — defaults
     }
@@ -79,8 +68,6 @@ class UserPrefs {
       stationBoardMaxRows: this.stationBoardMaxRows,
       gpsOptedIn: this.gpsOptedIn,
       hasEverEnabledGPS: this.hasEverEnabledGPS,
-      lastRouteMarkedAt: this.lastRouteMarkedAt,
-      lastStationMarkerAssignedAt: this.lastStationMarkerAssignedAt,
     };
   }
 }
