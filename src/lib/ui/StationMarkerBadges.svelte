@@ -8,8 +8,9 @@
 -->
 <script lang="ts">
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { STATION_MARKERS } from '$lib/stores/favoritesStore.svelte';
-  import { Briefcase, Heart, Home, Landmark } from 'lucide-svelte';
+  import {
+    STATION_MARKERS, STATION_MARKER_ICONS, STATION_MARKER_FILL,
+  } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
   type Props = {
@@ -36,36 +37,24 @@
     return STATION_MARKERS.filter((m) => seen.has(m));
   });
 
-  const ICON: Record<StationMarker, typeof Heart> = {
-    favorite: Heart,
-    home: Home,
-    work: Briefcase,
-    cityCenter: Landmark,
-  };
-
+  // Color per marker. favorite is the danger (red) accent to match
+  // the heart fill convention; the rest share the primary tint.
   const COLOR: Record<StationMarker, string> = {
     favorite: 'text-[color:var(--color-danger)]',
     home: 'text-[color:var(--color-primary)]',
     work: 'text-[color:var(--color-primary)]',
     cityCenter: 'text-[color:var(--color-primary)]',
   };
-
-  const FILL: Record<StationMarker, 'currentColor' | 'none'> = {
-    favorite: 'currentColor',
-    home: 'none',
-    work: 'none',
-    cityCenter: 'none',
-  };
 </script>
 
 {#if uniqueMarkers.length > 0}
   <div class={cn('inline-flex items-center gap-0.5', className)}>
     {#each uniqueMarkers as m (m)}
-      {@const Icon = ICON[m]}
+      {@const Icon = STATION_MARKER_ICONS[m]}
       <Icon
         {size}
         strokeWidth={2.25}
-        fill={FILL[m]}
+        fill={STATION_MARKER_FILL[m]}
         class={cn('shrink-0', COLOR[m])}
         aria-label={m}
       />

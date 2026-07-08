@@ -4,6 +4,7 @@
 // same marker type, so home / work / cityCenter are not singletons.
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { Briefcase, Crosshair, Heart, Home } from 'lucide-svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
 const STORAGE_KEY_MARKERS = 'neary:stationMarkers';
@@ -16,6 +17,33 @@ export const STATION_MARKERS: readonly StationMarker[] = [
   'work',
   'cityCenter',
 ] as const;
+
+// Single source of truth for the icon + display style per marker.
+// Every marker surface (badge / dropdown option / headsign / route row /
+// station header) imports this map - changing the icon here propagates
+// everywhere. Same shape as the marker enum so the iteration order in
+// STATION_MARKERS is the visual order.
+//
+// Crosshair for city center mirrors the Italian road sign "simbolo
+// centro" - a circle with crosshair lines indicating the centre of a
+// city/town. Visually distinct from Heart / Home / Briefcase so the
+// four markers don't blur together when shown on the same row.
+export const STATION_MARKER_ICONS: Record<StationMarker, typeof Heart> = {
+  favorite: Heart,
+  home: Home,
+  work: Briefcase,
+  cityCenter: Crosshair,
+};
+
+/** Whether the marker's icon should be filled or outlined. favorite
+ *  fills (matches the long-standing heart fill convention); the rest
+ *  read better outlined at the 12-16px sizes markers render at. */
+export const STATION_MARKER_FILL: Record<StationMarker, 'currentColor' | 'none'> = {
+  favorite: 'currentColor',
+  home: 'none',
+  work: 'none',
+  cityCenter: 'none',
+};
 
 export function isStationMarker(value: unknown): value is StationMarker {
   return STATION_MARKERS.includes(value as StationMarker);

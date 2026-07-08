@@ -12,8 +12,11 @@
 -->
 <script lang="ts">
   import { Popover } from 'bits-ui';
-  import { Briefcase, CircleOff, Heart, Home, Landmark } from 'lucide-svelte';
+  import { CircleOff, Heart } from 'lucide-svelte';
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
+  import {
+    STATION_MARKERS, STATION_MARKER_ICONS, STATION_MARKER_FILL,
+  } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
   type Props = {
@@ -40,15 +43,7 @@
   // Filled only for `favorite` (matches the long-standing heart fill
   // convention); the other three read better outlined at 14-16px.
   const TriggerIcon = $derived(
-    marker === undefined
-      ? Heart
-      : marker === 'favorite'
-        ? Heart
-        : marker === 'home'
-          ? Home
-          : marker === 'work'
-            ? Briefcase
-: Landmark,
+    marker === undefined ? Heart : STATION_MARKER_ICONS[marker],
   );
 
   function pick(next: StationMarker | null) {
@@ -71,14 +66,16 @@
   };
   // Normal sits at the top: it's the default, the most common pick
   // when the user opens the dropdown by accident, and the "remove"
-  // escape hatch. The four real markers follow in a fixed order so
-  // muscle memory builds the same way across visits.
+  // escape hatch. The four real markers follow STATION_MARKERS order
+  // (single source of truth - same order as the favorites card,
+  // the marker filter chips, the station badges, etc.).
   const options: Option[] = [
     { marker: null, Icon: CircleOff, label: 'Normal' },
-    { marker: 'favorite', Icon: Heart, label: 'Favorite' },
-    { marker: 'home', Icon: Home, label: 'Home' },
-    { marker: 'work', Icon: Briefcase, label: 'Work' },
-    { marker: 'cityCenter', Icon: Landmark, label: 'City center' },
+    ...STATION_MARKERS.map<Option>((m) => ({
+      marker: m,
+      Icon: STATION_MARKER_ICONS[m],
+      label: m === 'cityCenter' ? 'City center' : m.charAt(0).toUpperCase() + m.slice(1),
+    })),
   ];
 </script>
 
@@ -95,7 +92,7 @@
     <TriggerIcon
       {size}
       strokeWidth={2.25}
-      fill={marker === 'favorite' ? 'currentColor' : 'none'}
+      fill={marker === undefined ? 'none' : STATION_MARKER_FILL[marker]}
       class={cn(
         marker === 'favorite'
           ? 'text-[color:var(--color-danger)]'
@@ -126,7 +123,7 @@
           <opt.Icon
             size={14}
             strokeWidth={2.25}
-            fill={selected && opt.marker === 'favorite' ? 'currentColor' : 'none'}
+            fill={selected && opt.marker !== null ? STATION_MARKER_FILL[opt.marker] : 'none'}
             class={cn(
               // Selected option: full color (favorite = danger, others = primary).
               // Unselected (including favorite when home/work/cityCenter is the
