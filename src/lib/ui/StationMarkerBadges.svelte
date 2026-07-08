@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { STATION_MARKERS } from '$lib/stores/favoritesStore.svelte';
-  import { Briefcase, Heart, Home, Radio } from 'lucide-svelte';
+  import { Briefcase, Heart, Home, Landmark } from 'lucide-svelte';
   import { cn } from './cn';
 
   type Props = {
@@ -40,7 +40,7 @@
     favorite: Heart,
     home: Home,
     work: Briefcase,
-    cityCenter: Radio,
+    cityCenter: Landmark,
   };
 
   const COLOR: Record<StationMarker, string> = {

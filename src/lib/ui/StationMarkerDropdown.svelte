@@ -12,7 +12,7 @@
 -->
 <script lang="ts">
   import { Popover } from 'bits-ui';
-  import { Briefcase, CircleOff, Heart, Home, Radio } from 'lucide-svelte';
+  import { Briefcase, CircleOff, Heart, Home, Landmark } from 'lucide-svelte';
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
@@ -48,7 +48,7 @@
           ? Home
           : marker === 'work'
             ? Briefcase
-            : Radio,
+: Landmark,
   );
 
   function pick(next: StationMarker | null) {
@@ -78,7 +78,7 @@
     { marker: 'favorite', Icon: Heart, label: 'Favorite' },
     { marker: 'home', Icon: Home, label: 'Home' },
     { marker: 'work', Icon: Briefcase, label: 'Work' },
-    { marker: 'cityCenter', Icon: Radio, label: 'City center' },
+    { marker: 'cityCenter', Icon: Landmark, label: 'City center' },
   ];
 </script>
 

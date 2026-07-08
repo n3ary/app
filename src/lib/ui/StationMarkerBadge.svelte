@@ -5,7 +5,7 @@
   stop lists, route card subtitle, search overlay results, etc.).
 -->
 <script lang="ts">
-  import { Briefcase, Heart, Home, Radio } from 'lucide-svelte';
+  import { Briefcase, Heart, Home, Landmark } from 'lucide-svelte';
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
@@ -19,8 +19,10 @@
 
   let { marker, size = 14, class: className }: Props = $props();
 
-  // Lucide's `Radio` icon reads as concentric circles at this size
-  // and is the closest match in the iconset to "city center".
+  // Lucide's `Landmark` icon (classical building silhouette) reads as
+  // "city center / notable central place" at 12-16px. Distinct from
+  // Heart / Home / Briefcase shapes so the four markers read as a
+  // distinct set when shown together.
   const Icon = $derived(
     marker === 'favorite'
       ? Heart
@@ -28,7 +30,7 @@
         ? Home
         : marker === 'work'
           ? Briefcase
-          : Radio,
+          : Landmark,
   );
 </script>
 
