@@ -39,7 +39,8 @@
   }: Props = $props();
 </script>
 
-<div class="min-h-svh flex flex-col bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
+<!-- Shell bg is --color-surface (not --color-bg) so the band immediately below the fixed BottomNavigation matches the nav; with --color-bg the band's --bg shows through and reads as a dark stripe between the last card and the screen bottom on short views. -->
+<div class="min-h-svh flex flex-col bg-[color:var(--color-surface)] text-[color:var(--color-fg)]">
   <!-- Sticky strip so Header and StatusBar scroll together (StatusBar alone would scroll away); wrapper's surface background hides the gap between an active Header and an inactive StatusBar. -->
   <div class="sticky top-0 z-40 bg-[color:var(--color-surface)]">
     <Header {title} {health} {onrefresh} {refreshing} {showSearch} />
