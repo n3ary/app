@@ -51,10 +51,10 @@
         class="px-2 py-1 rounded-md hover:bg-[color:var(--color-border)]/30"
       >
         <Chip size="small" class="font-mono shrink-0">{i + 1}</Chip>
-        <span class="flex-1 min-w-0 text-xs truncate">{s.stopName}</span>
         {#if markers && markers.has(s.stopId)}
           <StationMarkerBadge marker={markers.get(s.stopId)!} size={12} />
         {/if}
+        <span class="flex-1 min-w-0 text-xs truncate">{s.stopName}</span>
         <span class="flex items-center gap-0.5 text-[color:var(--color-fg-muted)] font-mono text-xs shrink-0">
           {#if showDepartureMarker && i === 0}
             <ArrowUpRight size={12} class="text-[color:var(--color-danger)]" aria-label="Departure" />
