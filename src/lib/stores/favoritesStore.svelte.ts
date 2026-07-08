@@ -186,29 +186,7 @@ class FavoritesStore {
   }
 }
 
-// HMR: preserve the singleton instance across hot reloads. Without
-// this, a save to favoritesStore.svelte (or any file in its dependency
-// graph) replaces the module, the new class definition creates a fresh
-// FavoritesStore with its own `#markers` private field, and component
-// instances still holding the old reference throw "Cannot access
-// invalid private field (evaluating 'this.#markers')" the next time
-// they read `markers` / call `markerFor` / etc.
-let cachedFavoritesStore: FavoritesStore | null =
-  (import.meta.hot?.data.favoritesStore as FavoritesStore | undefined) ?? null;
-
-export const favoritesStore = cachedFavoritesStore ?? new FavoritesStore();
-cachedFavoritesStore = favoritesStore;
-
-if (import.meta.hot) {
-  // Self-accept so Vite doesn't escalate updates here to a full page
-  // reload (which would force the feed-bind cold path and reset every
-  // store the user has interacted with this session).
-  import.meta.hot.accept();
-  import.meta.hot.dispose((data) => {
-    data.favoritesStore = favoritesStore;
-  });
-}
-
+export const favoritesStore = new FavoritesStore();
 /** Exported for tests that need a clean instance after mutating the
  *  pre-load localStorage state. App code should always use the
  *  module-level singleton. */
