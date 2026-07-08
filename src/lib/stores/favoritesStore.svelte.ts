@@ -72,66 +72,68 @@ class FavoritesStore {
     return this.#routes;
   }
 
-  hasRoute(routeId: string): boolean {
-    return this.#routes.has(routeId);
-  }
-
-  addRoute(routeId: string): void {
-    if (this.#routes.has(routeId)) return;
-    this.#routes.add(routeId);
-    this.#persistRoutes();
-  }
-
-  removeRoute(routeId: string): void {
-    if (!this.#routes.has(routeId)) return;
-    this.#routes.delete(routeId);
-    this.#persistRoutes();
-  }
-
-  toggleRoute(routeId: string): void {
-    if (this.hasRoute(routeId)) this.removeRoute(routeId);
-    else this.addRoute(routeId);
-  }
-
-  clearRoutes(): void {
-    this.#routes.clear();
-    this.#persistRoutes();
-  }
-
-  // ── Station markers ───────────────────────────────────────────
-
   /** Reactive, read-only view of the marker map. */
   get markers(): ReadonlyMap<string, StationMarker> {
     return this.#markers;
   }
 
+  // Arrow class fields (initialised in the constructor with `this`
+  // bound to the instance). This lets callers extract a method and
+  // pass it as a callback (`favoritesStore.markerFor`) without losing
+  // `this` - the arrow closes over the instance, so `this.#markers`
+  // still resolves even when the method is invoked as
+  // `markerFor(stopId)` from a child component. Same shape as the
+  // original method-style definitions; just bound at construction.
+
+  hasRoute = (routeId: string): boolean => this.#routes.has(routeId);
+
+  addRoute = (routeId: string): void => {
+    if (this.#routes.has(routeId)) return;
+    this.#routes.add(routeId);
+    this.#persistRoutes();
+  };
+
+  removeRoute = (routeId: string): void => {
+    if (!this.#routes.has(routeId)) return;
+    this.#routes.delete(routeId);
+    this.#persistRoutes();
+  };
+
+  toggleRoute = (routeId: string): void => {
+    if (this.hasRoute(routeId)) this.removeRoute(routeId);
+    else this.addRoute(routeId);
+  };
+
+  clearRoutes = (): void => {
+    this.#routes.clear();
+    this.#persistRoutes();
+  };
+
+  // ── Station markers ───────────────────────────────────────────
+
   /** Marker assigned to a station, or undefined. */
-  markerFor(stopId: string): StationMarker | undefined {
-    return this.#markers.get(stopId);
-  }
+  markerFor = (stopId: string): StationMarker | undefined => this.#markers.get(stopId);
 
   /** True if the station has any marker (favorite / home / work / cityCenter). */
-  hasMarker(stopId: string): boolean {
-    return this.#markers.has(stopId);
-  }
+  hasMarker = (stopId: string): boolean => this.#markers.has(stopId);
 
   /** Stop ids with the given marker. Allocates a new array; callers
    *  that read this in render paths should keep the consumer in a
    *  `$derived` so the allocation only happens on real change. */
-  stationsWithMarker(marker: StationMarker): string[] {
+  stationsWithMarker = (marker: StationMarker): string[] => {
     const out: string[] = [];
     for (const [id, m] of this.#markers) {
       if (m === marker) out.push(id);
     }
     return out;
-  }
+  };
 
   /** Apply a marker to a station. Assigning the same marker a station
    *  already has is a no-op; assigning a different marker replaces
    *  the previous one for that station. Pass `null` to remove the
    *  station's marker entirely. Many stations can share the same
    *  marker type (no per-type singleton invariant). */
-  setMarker(stopId: string, marker: StationMarker | null): void {
+  setMarker = (stopId: string, marker: StationMarker | null): void => {
     const current = this.#markers.get(stopId);
     if (marker === null) {
       if (current === undefined) return;
@@ -141,12 +143,12 @@ class FavoritesStore {
       this.#markers.set(stopId, marker);
     }
     this.#persistMarkers();
-  }
+  };
 
   /** Toggle semantics for the heart-button dropdown: if the station
    *  currently has the given marker, remove it; otherwise assign it.
    *  Returns the station's resulting marker (undefined if cleared). */
-  toggleMarker(stopId: string, marker: StationMarker): StationMarker | undefined {
+  toggleMarker = (stopId: string, marker: StationMarker): StationMarker | undefined => {
     const current = this.#markers.get(stopId);
     if (current === marker) {
       this.setMarker(stopId, null);
@@ -154,27 +156,27 @@ class FavoritesStore {
     }
     this.setMarker(stopId, marker);
     return marker;
-  }
+  };
 
   /** Reset every station's marker. Tests + "clear all" UI use this. */
-  clearMarkers(): void {
+  clearMarkers = (): void => {
     if (this.#markers.size === 0) return;
     this.#markers.clear();
     this.#persistMarkers();
-  }
+  };
 
   // ── Persistence ────────────────────────────────────────────────
 
-  #persistRoutes(): void {
+  #persistRoutes = (): void => {
     if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY_ROUTES, JSON.stringify(Array.from(this.#routes)));
     } catch {
       // Quota / disabled — silent noop. Favorites is non-critical.
     }
-  }
+  };
 
-  #persistMarkers(): void {
+  #persistMarkers = (): void => {
     if (typeof localStorage === 'undefined') return;
     try {
       const out: Record<string, StationMarker> = {};
@@ -183,7 +185,7 @@ class FavoritesStore {
     } catch {
       // Quota / disabled — silent noop.
     }
-  }
+  };
 }
 
 export const favoritesStore = new FavoritesStore();
