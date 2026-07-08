@@ -161,6 +161,12 @@
   let favoriteStationsRoutes = $state<Record<string, Route[]>>({});
   let favoriteStationsError = $state<string | null>(null);
 
+  // Routes that serve at least one station carrying a marker in the
+  // active marker filter. `null` = no marker filter (filter unused,
+  // all routes pass). An empty Set means the filter is set but no
+  // routes qualify (filter excludes everything).
+  let routeIdsForMarker = $state<Set<string> | null>(null);
+
   // Stop IDs the catalog's "All other routes" rows serve, used to
   // render marker badges on each row. Batched in one worker round-trip
   // for the visible catalog routes, kept separate from FavoritesCard's
@@ -189,6 +195,41 @@
   function clearMarkerFilter() {
     activeMarkerFilter = new Set();
   }
+
+  // Route filter cascade marker pass: when the marker filter is set,
+  // fetch the routes serving each marker-bearing stop and intersect.
+  // `null` (no filter) skips the worker round-trip; `Set` (filter set)
+  // narrows the route list. Filters by mode + network apply first
+  // (in `filteredRoutes`); this marker pass applies on top.
+  $effect(() => {
+    if (activeMarkerFilter.size === 0) {
+      routeIdsForMarker = null;
+      return;
+    }
+    const stopIds = Array.from(favoritesStore.markers.entries())
+      .filter(([, m]) => activeMarkerFilter.has(m))
+      .map(([id]) => id);
+    if (stopIds.length === 0) {
+      routeIdsForMarker = new Set();
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const repo = getGtfsRepo();
+        const stopRoutes = await repo.getRoutesForStops(stopIds);
+        if (cancelled) return;
+        const ids = new Set<string>();
+        for (const list of Object.values(stopRoutes)) {
+          for (const r of list) ids.add(r.id);
+        }
+        routeIdsForMarker = ids;
+      } catch {
+        // Network failure: leave the previous (or null) state in place.
+      }
+    })();
+    return () => { cancelled = true; };
+  });
 
   const stationAnchor = $derived.by(() => {
     if (locationStore.position) {
@@ -391,6 +432,11 @@
     return allRoutes.filter((r) => {
       if (typeFilter !== null && (r.type ?? 'unknown') !== typeFilter) return false;
       if (networkFilter !== null && !(r.networks?.includes(networkFilter) ?? false)) return false;
+      // Marker filter: route qualifies iff it serves at least one
+      // station carrying a marker in the active filter set. Routes
+      // with no overlap are excluded. Skipped entirely when no
+      // filter is active (routeIdsForMarker stays null).
+      if (routeIdsForMarker !== null && !routeIdsForMarker.has(r.id)) return false;
       return true;
     });
   });
