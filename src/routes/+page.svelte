@@ -290,7 +290,6 @@
   let allRoutesForFavorites = $state<Route[] | null>(null);
   let routesError = $state<string | null>(null);
   let favoriteStations = $state<StopWithDistance[]>([]);
-  let stationsError = $state<string | null>(null);
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
@@ -316,9 +315,9 @@
         const repo = getGtfsRepo();
         const resolved = await repo.getStopsByIds(Array.from(favoritesStore.markers.keys()));
         favoriteStations = sortStationsAlphabetically(resolved);
-        stationsError = null;
       } catch (e) {
-        stationsError = e instanceof Error ? e.message : String(e);
+        // Stations fetch failed; leave favoriteStations as the previous
+        // (or empty) list. The card still renders.
       }
     })();
   });
@@ -433,7 +432,6 @@
             stationMarkers={favoritesStore.markers}
             routesLoading={!allRoutesForFavorites && !routesError}
             {routesError}
-            {stationsError}
           />
         {/if}
       {/snippet}

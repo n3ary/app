@@ -34,8 +34,6 @@
     routesLoading?: boolean;
     /** Wins over loading + content. */
     routesError?: string | null;
-    /** Wins over content. */
-    stationsError?: string | null;
     /** e.g. wrap with a stops-list Collapsible on /favorites. The
      *  snippet receives the route plus its stopIds so it can render
      *  marker badges without re-fetching. */
@@ -56,7 +54,6 @@
     viewAllHref,
     routesLoading = false,
     routesError = null,
-    stationsError = null,
     routeRow,
     stationRow,
     headerStyle = 'compact',
@@ -198,11 +195,6 @@
       {/if}
 
       {#if visibleStations.length > 0}
-        {#if stationsError}
-          <Typography variant="caption" class="px-2 py-1 text-[color:var(--color-danger)]">
-            {stationsError}
-          </Typography>
-        {/if}
         {#if showStationsHeader}
           <Typography variant="caption" class="block pt-2 px-1 text-[color:var(--color-fg-muted)]">
             Stations
