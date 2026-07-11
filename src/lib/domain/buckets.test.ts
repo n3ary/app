@@ -305,10 +305,14 @@ describe('atStationLabel', () => {
     ...o,
   });
 
-  it('"now" red when about-to-leave and moving', () => {
+  it('"departing now" red when about-to-leave and moving', () => {
+    // The label collapses the moving vs. scheduled-last-minute
+    // distinction into a single "departing now" — the rider
+    // doesn't need to know which mechanism fired, only that the
+    // bus is gone.
     expect(
       atStationLabel('about-to-leave', baseInputs({ vehicleSpeedKmh: 10 })),
-    ).toEqual({ text: 'now', urgency: 'stop' });
+    ).toEqual({ text: 'departing now', urgency: 'stop' });
   });
 
   it('"departing now" red when about-to-leave but stationary (scheduled last minute)', () => {
@@ -323,22 +327,58 @@ describe('atStationLabel', () => {
     ).toEqual({ text: 'arriving now', urgency: 'go' });
   });
 
-  it('"at station" green when mid-dwell', () => {
+  it('"arriving now" green when mid-dwell (section header carries the "at station" context)', () => {
+    // The section header already says "At station", so the row
+    // label only needs the action verb. Collapsing mid-dwell and
+    // just-arrived into the same string keeps the section internally
+    // consistent — a 4-minute dwell shouldn't change copy mid-row.
     expect(
       atStationLabel('mid-dwell', baseInputs({})),
-    ).toEqual({ text: 'at station', urgency: 'go' });
+    ).toEqual({ text: 'arriving now', urgency: 'go' });
   });
 
-  it('relative ETA when close (not at the stop)', () => {
+  it('"arriving in N min" green when close, eta >= 1', () => {
     expect(
       atStationLabel('close', baseInputs({ etaMinutes: 2 })),
-    ).toEqual({ text: 'in 2 min', urgency: 'go' });
+    ).toEqual({ text: 'arriving in 2 min', urgency: 'go' });
   });
 
-  it('"now" when close sub-state has eta=0 (vehicle is at the stop by eta)', () => {
+  it('"arriving in 1 min" green when close, eta = 1', () => {
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 1 })),
+    ).toEqual({ text: 'arriving in 1 min', urgency: 'go' });
+  });
+
+  it('"arriving now" green when close, eta within the current minute', () => {
+    // Eta may be fractional (e.g. 0.5 from a live position);
+    // anything below a whole minute is "arriving now".
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 0.5 })),
+    ).toEqual({ text: 'arriving now', urgency: 'go' });
     expect(
       atStationLabel('close', baseInputs({ etaMinutes: 0 })),
-    ).toEqual({ text: 'now', urgency: 'go' });
+    ).toEqual({ text: 'arriving now', urgency: 'go' });
+  });
+
+  it('"arriving in Hh" green when close, eta >= 60 min', () => {
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 60 })),
+    ).toEqual({ text: 'arriving in 1h', urgency: 'go' });
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 75 })),
+    ).toEqual({ text: 'arriving in 1h 15m', urgency: 'go' });
+  });
+
+  it('rounds fractional eta to whole minutes', () => {
+    // Live position reports can produce 1.4, 0.6, etc. The label
+    // rounds so the rider sees a stable "in N min" instead of
+    // flickering between e.g. "in 1 min" and "in 2 min".
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 1.4 })),
+    ).toEqual({ text: 'arriving in 1 min', urgency: 'go' });
+    expect(
+      atStationLabel('close', baseInputs({ etaMinutes: 1.6 })),
+    ).toEqual({ text: 'arriving in 2 min', urgency: 'go' });
   });
 });
 
