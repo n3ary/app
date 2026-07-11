@@ -33,12 +33,22 @@ permissions:
 
 jobs:
   deploy:
-    # Skip deploy when the release bot (n3ary-release-bot) is the actor.
-    # The bot's release/calver-* PRs land on main as a squash merge; the
-    # `push` event fires with `github.actor = n3ary-release-bot[bot]`.
-    # Deploying a version-only commit would re-run a deploy whose
-    # artefact is byte-identical to the previous one. The release bot
-    # bumps `package.json#version`; nothing else changes.
+    # Deploy only on release-bot pushes. The bot opens
+    # `release/calver-*` PRs against main; when GitHub auto-merges
+    # them, the resulting `push` event has `github.actor =
+    # n3ary-release-bot[bot]`. That push is the "official" deploy
+    # event — every deploy is now tied to a version bump, so the
+    # deploy log matches the version history.
+    #
+    # Human PR pushes and workflow-only changes (docs, standards
+    # sync, CI config) skip the deploy because their build artefact
+    # is either (a) a duplicate of an imminent version-bump deploy,
+    # or (b) not user-facing. Several non-deploy PRs can be merged
+    # in a row without piling up redundant Cloudflare Pages rebuilds.
+    #
+    # Hotfix escape hatch: `workflow_dispatch` (unchanged) — manual
+    # trigger from the GH UI or `gh workflow run` for a critical
+    # code fix that doesn't touch the version. Refs: PR #283.
     if: github.actor == 'n3ary-release-bot[bot]'
     runs-on: ubuntu-latest
 
@@ -167,36 +177,46 @@ jobs:
       # provided"). Pass the host + path only. Each prefix
       # purges all URLs starting with that string.
 
-      # Smoke test: fetch a worker file from the edge and assert
-      # the CSP includes the latest connect-src origin. Catches
-      # the case where the purge step above silently failed (e.g.
-      # token scope changed) and a future `_headers` change is
-      # masked by a still-cached old response. Runs against the
-      # production origin, not the SW or any local cache.
-      - name: Verify CSP on a worker file
-        env:
-          EXPECTED_ORIGIN: 'gtfs-rt.n3ary.com'
+      # Smoke test: did the purge actually reach the edge for one
+      # of the prefixes we just cleared? Pick any hashed worker file
+      # (representative cached asset) and assert that the next request
+      # is a `cf-cache-status: MISS` -- i.e. the request was NOT
+      # served from a previously-cached entry. A MISS is the only
+      # signal that the purge invalidated the cache for this prefix;
+      # HIT or REVALIDATED here means an edge node is still serving a
+      # stale entry, which is exactly the failure mode that bit us
+      # after PR #291.
+      #
+      # General by design: we do NOT assert any specific response
+      # header value. The check works regardless of which `_headers`
+      # directive is in play, so it stays useful long after CSP stops
+      # being the active concern. The 3-attempt retry absorbs
+      # purge-to-edge propagation lag (the purge API returns success
+      # before every edge node has processed it).
+      - name: Verify Cloudflare purge cleared the edge cache
         run: |
-          # Find a hashed worker file URL from the precache manifest
-          # emitted by the build. Falls back to a known path if the
-          # manifest is unavailable.
+          # Find a hashed worker file URL from the build output. Fall
+          # back to a known path if the build dir is unavailable so
+          # the check still has a URL to probe.
           worker_url=$(python3 -c "
-          import json, glob, os
+          import glob, os
           files = glob.glob('build/_app/immutable/workers/*.js')
           if not files:
             print('https://app.n3ary.com/_app/immutable/workers/')
           else:
             print('https://app.n3ary.com/_app/immutable/workers/' + os.path.basename(files[0]))
           ")
-          echo "Checking CSP on: ${worker_url}"
-          csp=$(curl -sI "${worker_url}" | awk -F': ' 'tolower($1)=="content-security-policy"{print $2}' | tr -d '\r')
-          if [ -z "${csp}" ]; then
-            echo "::error::no Content-Security-Policy header on ${worker_url}"
-            exit 1
-          fi
-          if ! echo "${csp}" | grep -q "${EXPECTED_ORIGIN}"; then
-            echo "::error::CSP on ${worker_url} does not include ${EXPECTED_ORIGIN}"
-            echo "Got: ${csp}"
-            exit 1
-          fi
-          echo "CSP on ${worker_url} includes ${EXPECTED_ORIGIN} ✓"
+          echo "Checking cf-cache-status on: ${worker_url}"
+          status=""
+          for attempt in 1 2 3; do
+            status=$(curl -sI "${worker_url}" | awk -F': ' 'tolower($1)=="cf-cache-status"{print $2}' | tr -d '\r')
+            echo "  attempt ${attempt}: cf-cache-status = ${status:-<empty>}"
+            if [ "${status}" = "MISS" ]; then
+              echo "Edge cache was empty on first hit (cf-cache-status: MISS) -- purge confirmed for ${worker_url} ✓"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::cf-cache-status never reached MISS after 3 attempts (last: ${status:-<empty>}) for ${worker_url}"
+          echo "A persistent HIT or REVALIDATED here usually means the purge API call returned success but this edge node is still serving a previously-cached entry -- either purge propagation lag exceeded the retry window, or the prefix passed to /purge_cache did not match this URL. Check the purge step's response and the prefix list above."
+          exit 1
