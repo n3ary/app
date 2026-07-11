@@ -21,7 +21,7 @@
  * `AtStationSubState`) that drive per-row label, color, and sort order.
  */
 
-import { formatRelativeMin, type Vehicle } from './types';
+import { type Vehicle } from './types';
 
 export type ArrivalBucket =
   | 'at-station'
@@ -139,12 +139,12 @@ export function scheduleUrgency(
  *
  *    about-to-leave  vehicle is at the stop, in the last minute of
  *                    scheduled dwell, or already picking up speed.
- *                    UI label: 'now' (if moving) or 'departing now'.
- *    just-arrived    first minute of scheduled dwell. UI: 'arriving now'.
+ *                    UI label: 'departing now' (red).
+ *    just-arrived    first minute of scheduled dwell. UI: 'arriving now' (green).
  *    mid-dwell       at the stop, between just-arrived and about-to-leave.
- *                    UI: 'at station'.
+ *                    UI: 'at station' (green).
  *    close           not at the stop yet, but within ARRIVING_THRESHOLD_MIN.
- *                    UI: relative ETA ('in N min'). */
+ *                    UI: 'arriving in N min' (or 'arriving now' if eta < 1). */
 export type AtStationSubState = 'about-to-leave' | 'just-arrived' | 'mid-dwell' | 'close';
 
 export const AT_STATION_SUB_STATE_ORDER: Record<AtStationSubState, number> = {
@@ -225,19 +225,33 @@ export function atStationLabel(
 ): AtStationLabel {
   switch (subState) {
     case 'about-to-leave':
-      // Distinguish moving (vehicle is gone — 'now' red) from scheduled
-      // last-minute (vehicle is still at the stop — 'departing now' red).
-      if (inputs.vehicleSpeedKmh != null && inputs.vehicleSpeedKmh >= DEPARTING_SPEED_KMH) {
-        return { text: 'now', urgency: 'stop' };
-      }
+      // Vehicle is leaving the stop — either already moving at
+      // DEPARTING_SPEED_KMH or in the last minute of the
+      // scheduled dwell. "Departing now" covers both: the user
+      // doesn't care which mechanism, only that the bus is gone.
       return { text: 'departing now', urgency: 'stop' };
     case 'just-arrived':
       return { text: 'arriving now', urgency: 'go' };
     case 'mid-dwell':
       return { text: 'at station', urgency: 'go' };
     case 'close':
-      return { text: formatRelativeMin(inputs.etaMinutes), urgency: 'go' };
+      // Approaching but not at the stop yet. Use the "arriving"
+      // prefix so the rider reads it as progress, not as a stale
+      // countdown — "in 1 min" is ambiguous (in 1 min until what?).
+      if (inputs.etaMinutes < 1) return { text: 'arriving now', urgency: 'go' };
+      return { text: arrivingIn(inputs.etaMinutes), urgency: 'go' };
   }
+}
+
+/** Format an ETA as "arriving in N min" (or "arriving in Hh", "arriving in Hh Mm").
+ *  Eta rounds to whole minutes — fractional minutes from a live
+ *  position aren't actionable for the rider's planning. */
+function arrivingIn(etaMin: number): string {
+  const m = Math.round(etaMin);
+  if (m < 60) return `arriving in ${m} min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `arriving in ${h}h` : `arriving in ${h}h ${rem}m`;
 }
 
 export interface BucketInputs {
