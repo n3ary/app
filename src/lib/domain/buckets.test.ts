@@ -327,10 +327,14 @@ describe('atStationLabel', () => {
     ).toEqual({ text: 'arriving now', urgency: 'go' });
   });
 
-  it('"at station" green when mid-dwell', () => {
+  it('"arriving now" green when mid-dwell (section header carries the "at station" context)', () => {
+    // The section header already says "At station", so the row
+    // label only needs the action verb. Collapsing mid-dwell and
+    // just-arrived into the same string keeps the section internally
+    // consistent — a 4-minute dwell shouldn't change copy mid-row.
     expect(
       atStationLabel('mid-dwell', baseInputs({})),
-    ).toEqual({ text: 'at station', urgency: 'go' });
+    ).toEqual({ text: 'arriving now', urgency: 'go' });
   });
 
   it('"arriving in N min" green when close, eta >= 1', () => {

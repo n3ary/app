@@ -142,7 +142,9 @@ export function scheduleUrgency(
  *                    UI label: 'departing now' (red).
  *    just-arrived    first minute of scheduled dwell. UI: 'arriving now' (green).
  *    mid-dwell       at the stop, between just-arrived and about-to-leave.
- *                    UI: 'at station' (green).
+ *                    UI: 'arriving now' (green) — same as just-arrived; the
+ *                    section header already says "At station", so the row
+ *                    label only needs the action verb.
  *    close           not at the stop yet, but within ARRIVING_THRESHOLD_MIN.
  *                    UI: 'arriving in N min' (or 'arriving now' if eta < 1). */
 export type AtStationSubState = 'about-to-leave' | 'just-arrived' | 'mid-dwell' | 'close';
@@ -233,7 +235,7 @@ export function atStationLabel(
     case 'just-arrived':
       return { text: 'arriving now', urgency: 'go' };
     case 'mid-dwell':
-      return { text: 'at station', urgency: 'go' };
+      return { text: 'arriving now', urgency: 'go' };
     case 'close':
       // Approaching but not at the stop yet. Use the "arriving"
       // prefix so the rider reads it as progress, not as a stale
