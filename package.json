@@ -1,7 +1,8 @@
 {
   "name": "neary",
   "private": true,
-  "version": "1.5.116",
+  "version": "1.5.117",
+  "packageManager": "pnpm@11.5.2",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
