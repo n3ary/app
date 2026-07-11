@@ -143,14 +143,14 @@ jobs:
             -H "Content-Type: application/json" \
             --data '{
               "prefixes": [
-                "https://app.n3ary.com/_app/immutable/workers/",
-                "https://app.n3ary.com/_app/immutable/chunks/",
-                "https://app.n3ary.com/_app/immutable/assets/",
-                "https://app.n3ary.com/_app/immutable/nodes/",
-                "https://app.n3ary.com/_app/immutable/entry/",
-                "https://app.n3ary.com/service-worker.js",
-                "https://app.n3ary.com/registerSW.js",
-                "https://app.n3ary.com/manifest.webmanifest"
+                "app.n3ary.com/_app/immutable/workers/",
+                "app.n3ary.com/_app/immutable/chunks/",
+                "app.n3ary.com/_app/immutable/assets/",
+                "app.n3ary.com/_app/immutable/nodes/",
+                "app.n3ary.com/_app/immutable/entry/",
+                "app.n3ary.com/service-worker.js",
+                "app.n3ary.com/registerSW.js",
+                "app.n3ary.com/manifest.webmanifest"
               ]
             }')
           echo "$response" | python3 -c "
@@ -161,6 +161,11 @@ jobs:
             sys.exit(1)
           print('Cache purged:', d.get('result', {}).get('id', 'ok'))
           "
+
+      # NOTE: the Cloudflare API `prefixes` field rejects the
+      # `https://` scheme (error 1119: "URI schemes must not be
+      # provided"). Pass the host + path only. Each prefix
+      # purges all URLs starting with that string.
 
       # Smoke test: fetch a worker file from the edge and assert
       # the CSP includes the latest connect-src origin. Catches
