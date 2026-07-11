@@ -220,24 +220,27 @@
   // appear (route filter, prefs filter, etc. all belong upstream so
   // the cap operates on the already-filtered set).
   const groups = $derived.by(() => {
-    const byBucket = new Map<ArrivalBucket, BoardRow[]>();
+    const atStation: BoardRow[] = [];
+    const others: Record<'incoming' | 'drop-off' | 'departed' | 'off-route', BoardRow[]> = {
+      incoming: [],
+      'drop-off': [],
+      departed: [],
+      'off-route': [],
+    };
     for (const r of rows) {
-      const list = byBucket.get(r.bucket) ?? [];
-      list.push(r);
-      byBucket.set(r.bucket, list);
-    }
-    const merged: BoardRow[] = [];
-    for (const b of ['departing', 'at-station', 'arriving'] as const) {
-      const list = byBucket.get(b);
-      if (list) merged.push(...list);
+      if (r.bucket === 'departing' || r.bucket === 'at-station' || r.bucket === 'arriving') {
+        atStation.push(r);
+      } else {
+        others[r.bucket].push(r);
+      }
     }
     const out: { key: string; bucket: ArrivalBucket; label: string; rows: BoardRow[] }[] = [];
-    if (merged.length > 0) {
-      out.push({ key: 'at-station', bucket: 'at-station', label: 'At station', rows: merged });
+    if (atStation.length > 0) {
+      out.push({ key: 'at-station', bucket: 'at-station', label: 'At station', rows: atStation });
     }
     for (const b of ['incoming', 'drop-off', 'departed', 'off-route'] as const) {
-      const list = byBucket.get(b);
-      if (!list || list.length === 0) continue;
+      const list = others[b];
+      if (list.length === 0) continue;
       out.push({
         key: b,
         bucket: b,
