@@ -32,6 +32,13 @@ permissions:
 
 jobs:
   deploy:
+    # Skip deploy when the release bot (n3ary-release-bot) is the actor.
+    # The bot's release/calver-* PRs land on main as a squash merge; the
+    # `push` event fires with `github.actor = n3ary-release-bot[bot]`.
+    # Deploying a version-only commit would re-run a deploy whose
+    # artefact is byte-identical to the previous one. The release bot
+    # bumps `package.json#version`; nothing else changes.
+    if: github.actor != 'n3ary-release-bot[bot]'
     runs-on: ubuntu-latest
 
     steps:
