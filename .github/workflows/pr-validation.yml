@@ -50,7 +50,7 @@ jobs:
         # lockfile supply-chain re-verification can fail on stale
         # entries from registry republishes; clean + re-resolve keeps
         # the install robust.
-        uses: n3ary/actions/.github/actions/setup-pnpm-gh-packages-auth@v11
+        uses: n3ary/actions/.github/actions/setup-pnpm-gh-packages-auth@v22
         with:
           auth-token: ${{ secrets.NPM_TOKEN }}
           install-args: '--no-frozen-lockfile'
@@ -85,4 +85,4 @@ jobs:
         # handles metadata-only skip, computes next version (preserving
         # pre-release suffixes like '1.5.87'), commits package.json
         # (and pnpm-lock.yaml if dirty), and pushes race-safely.
-        uses: n3ary/actions/.github/actions/version-bump@v6
+        uses: n3ary/actions/.github/actions/version-bump@v22
