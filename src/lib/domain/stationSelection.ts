@@ -44,8 +44,23 @@ export function selectBoardsForView<S extends SelectableStop>(
     const closestDist = closest.stop.distance ?? Infinity;
     const secondDist = second?.stop.distance ?? Infinity;
     const paired = second && (secondDist - closestDist) <= config.pairProximityM;
-    const boards = paired ? [closest, second] : [closest];
-    return { boards, expandedStopId: closest.stop.id };
+    if (paired) {
+      // Issue #258: when two paired stations are shown and only the
+      // second serves a favorited route, lead with the favorited one
+      // and auto-expand it. Closest-by-distance stays the lead when
+      // both or neither have a favorite — flipping on every snapshot
+      // would be a worse UX than honoring distance.
+      const favIds = favoriteRouteIds;
+      const second2 = second;
+      const preferSecond = favIds != null
+        && favIds.size > 0
+        && !closest.vehicles.some((v) => favIds.has(v.route.id))
+        && second2.vehicles.some((v) => favIds.has(v.route.id));
+      const first = preferSecond ? second2 : closest;
+      const rest = preferSecond ? closest : second2;
+      return { boards: [first, rest], expandedStopId: first.stop.id };
+    }
+    return { boards: [closest], expandedStopId: closest.stop.id };
   }
 
   // (2) Wider fallback — closest stop within favoriteFallbackRadiusM; prefer a favorited route when the user has any

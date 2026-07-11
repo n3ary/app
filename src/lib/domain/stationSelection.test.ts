@@ -129,3 +129,111 @@ describe('selectBoardsForView', () => {
     expect(res.expandedStopId).toBeNull();
   });
 });
+
+describe('selectBoardsForView favorited-route priority (issue #258)', () => {
+  it('leads with the closest when neither paired station serves a favorite', () => {
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r1)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r2)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(['99']),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1');
+  });
+
+  it('leads with the closest when only the closest serves a favorite', () => {
+    // Closest already serves a favorite — second does not. No swap
+    // needed; the user's interest is already on the lead.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r99)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r2)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(['99']),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1');
+  });
+
+  it('leads with the second when only the second serves a favorite (issue #258)', () => {
+    // The bug: distance puts the unfavorited stop first, the
+    // user's favorited-route stop is buried second. After this fix,
+    // the favorited one leads and gets auto-expanded.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r1)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r99)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(['99']),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['2', '1']);
+    expect(res.expandedStopId).toBe('2');
+  });
+
+  it('leads with the closest when both paired stations serve a favorite', () => {
+    // Both have a favorite — the closest-by-distance stays the
+    // lead. Flipping between the two on every snapshot would be a
+    // worse UX than honoring distance.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r99)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r99)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(['99']),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1');
+  });
+
+  it('does not swap when favorites are not set, even if a stop has a favorited-route vehicle', () => {
+    // favoriteRouteIds null is the "favorites store not ready"
+    // signal from the page. Selector must behave the same as the
+    // no-favorites case: distance order, closest first.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r1)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r99)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: null,
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1');
+  });
+
+  it('does not swap when the set of favorites is empty', () => {
+    // Mirror of the null case: a present-but-empty set is the same
+    // as no favorites. Distance order, closest first.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r1)] },
+        { stop: stop(2, 150), vehicles: [vehicle(r99)] },
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1', '2']);
+    expect(res.expandedStopId).toBe('1');
+  });
+
+  it('does not swap when only one station is in the nearby radius (not paired)', () => {
+    // Single-station case: no swap logic to apply. Closest stays,
+    // even if it has no favorited-route vehicles.
+    const res = selectBoardsForView({
+      candidates: [
+        { stop: stop(1, 80),  vehicles: [vehicle(r1)] },
+        { stop: stop(2, 250), vehicles: [vehicle(r99)] }, // > pairProximityM
+      ],
+      config: cfg,
+      favoriteRouteIds: new Set(['99']),
+    });
+    expect(res.boards.map((b) => b.stop.id)).toEqual(['1']);
+    expect(res.expandedStopId).toBe('1');
+  });
+});
