@@ -38,7 +38,7 @@ jobs:
     # Deploying a version-only commit would re-run a deploy whose
     # artefact is byte-identical to the previous one. The release bot
     # bumps `package.json#version`; nothing else changes.
-    if: github.actor != 'n3ary-release-bot[bot]'
+    if: github.actor == 'n3ary-release-bot[bot]'
     runs-on: ubuntu-latest
 
     steps:
