@@ -13,6 +13,14 @@
   /* Light defaults */
   --color-bg: oklch(98% 0 0);
   --color-surface: oklch(100% 0 0);
+  /* A subtly different surface for the one card we want users to
+   * anchor on (currently the "Your favorites" card on /favorites
+   * and home). Goes *darker* than --color-surface in light mode
+   * (96% vs 100%) -- a card that visually settles into the page --
+   * and *lighter* in dark mode, where elevation reads as "raised".
+   * Also the fallback for filter chips that have no per-type color
+   * (TypeBadge / RouteBadge 'neutral'). */
+  --color-surface-elevated: oklch(96% 0 0);
   --color-fg: oklch(20% 0 0);
   --color-fg-muted: oklch(50% 0 0);
   --color-border: oklch(90% 0 0);
@@ -45,6 +53,7 @@
 [data-theme='dark'] {
   --color-bg: oklch(15% 0 0);
   --color-surface: oklch(20% 0 0);
+  --color-surface-elevated: oklch(24% 0 0);
   --color-fg: oklch(96% 0 0);
   --color-fg-muted: oklch(70% 0 0);
   --color-border: oklch(30% 0 0);
@@ -57,6 +66,7 @@
   [data-theme='auto'] {
     --color-bg: oklch(15% 0 0);
     --color-surface: oklch(20% 0 0);
+    --color-surface-elevated: oklch(24% 0 0);
     --color-fg: oklch(96% 0 0);
     --color-fg-muted: oklch(70% 0 0);
     --color-border: oklch(30% 0 0);

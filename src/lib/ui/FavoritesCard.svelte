@@ -150,7 +150,7 @@
   }
 </script>
 
-<Card>
+<Card tone="elevated">
   <CardContent>
     <Stack spacing={1}>
       {#if headerStyle === 'compact'}
