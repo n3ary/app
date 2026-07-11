@@ -1,4 +1,16 @@
-name: PR Validation
+# ----------------------------------------------------------------------------
+# [check] PR validation (on PR)
+#
+# Validates every PR: shared ASCII + standards-drift checks, repo-specific
+# check/test/build. Never pushes to the branch.
+#
+# Trigger:     pull_request
+# Permissions: contents: read
+# Secrets:     NPM_TOKEN (for pnpm install from GH Packages)
+# Owner:       @ciotlosm
+# Run time:    ~3-7 min
+# ----------------------------------------------------------------------------
+name: '[check] PR validation (on PR)'
 
 on:
   pull_request:
@@ -6,18 +18,10 @@ on:
 
 # Shared base PR-validation lives in n3ary/actions. enable-drift-check
 # is true: app vendors n3ary/standards under docs/standards/.
-# Repo-specific jobs (check/test/build + version-bump) stay local.
-#
-# Auto-bump lives in its own non-required job (`auto-bump`) below.
-# It depends on `validate` and is intentionally NOT in the required
-# status checks: the auto-bump only edits `package.json#version`,
-# so it can't introduce a code regression, and making it required
-# would force every PR to wait for a second CI cycle (the bot
-# pushes a new commit after `validate` passes, which would otherwise
-# re-block the PR with `strict: true` status checks).
+# Repo-specific jobs (check/test/build) stay local.
 
 permissions:
-  contents: write  # needed by the version-bump action to push the bot commit
+  contents: read
 
 jobs:
   shared:
@@ -63,26 +67,3 @@ jobs:
 
       - name: Build
         run: pnpm run build
-
-  auto-bump:
-    # Not in required status checks by design: see comment at the
-    # top of this file.
-    needs: validate
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-bump version to main + 1
-        # Replaces ~80 lines of inline auto-bump logic. The action
-        # handles metadata-only skip, computes next version (preserving
-        # pre-release suffixes like '1.5.87'), commits package.json
-        # (and pnpm-lock.yaml if dirty), and pushes race-safely.
-        uses: n3ary/actions/.github/actions/version-bump@v22

@@ -1,16 +1,21 @@
-name: Deploy to Production
+# ----------------------------------------------------------------------------
+# [deploy] PWA to Cloudflare Pages (on push to main + manual)
+#
+# Builds the PWA and deploys to the Cloudflare Pages project 'neary'
+# (app.n3ary.com) on every push to main. Manual trigger exists for
+# the case where secrets / config changed but the code didn't.
+#
+# Trigger:     push to main, manual
+# Permissions: contents: read
+# Secrets:     NPM_TOKEN, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+# Owner:       @ciotlosm
+# Run time:    ~3-5 min
+# ----------------------------------------------------------------------------
+name: '[deploy] PWA to Cloudflare Pages (on push to main + manual)'
 
 on:
   push:
     branches: [main]
-    # Skip deploy when only the version-bump commit lands (avoid infinite loop
-    # if we ever re-enable auto-bump).
-    paths-ignore:
-      - '**/CHANGELOG.md'
-  # Manual trigger — use `gh workflow run deploy-production.yml --repo n3ary/app`
-  # to re-deploy without pushing a commit. The push trigger is the normal
-  # path; this exists for the case where the secrets / config changed but
-  # the code didn't (e.g. rotating CLOUDFLARE_API_TOKEN).
   workflow_dispatch:
 
 # Only one deploy at a time; cancel in-progress if a new merge lands.
@@ -28,26 +33,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Only honor [skip ci] on a direct push to main with a single commit.
-    # The flag is meant to break the auto-bump loop where the bot pushes
-    # a version-bump commit and the workflow would otherwise deploy that
-    # bump on its own. It is NOT meant to skip a real production deploy
-    # that happens to include an auto-bump in the merge payload.
-    #
-    # Concretely:
-    #   - Direct push, 1 commit,    [skip ci]  -> skip  (the bot's own loop)
-    #   - Direct push, 1 commit,    no flag    -> deploy
-    #   - Direct push, many commits, [skip ci] -> deploy (rebase / merge
-    #     brought multiple PR commits including the bot's bump)
-    #   - Merge commit (2+ parents), [skip ci]  -> deploy
-    #   - Squash merge, 1 commit,    [skip ci]  -> deploy iff the squash
-    #     message itself does not contain [skip ci] (the bot's flag is
-    #     in the auto-bump's subject, not the squash subject, so this
-    #     case typically works out fine in practice).
-    if: |
-      !contains(github.event.head_commit.message, '[skip ci]')
-      || github.event.head_commit.parents.length > 1
-      || github.event.commits.length > 1
 
     steps:
       - name: Checkout
@@ -78,7 +63,7 @@ jobs:
         # considers the file committed and could leak the secret to
         # an attacker-controlled registry). Use `pnpm config set`
         # to write the credential to user-level ~/.npmrc at install
-        # time — that's an untracked, per-run path.
+        # time -- that's an untracked, per-run path.
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
