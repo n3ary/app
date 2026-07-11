@@ -15,7 +15,7 @@
   import type { Route, Station, Vehicle } from '$lib/domain/types';
   import { compareRouteShortName } from '$lib/domain/types';
   import {
-    BUCKET_ORDER, bucketLabel, etaUrgency, type ArrivalBucket,
+    bucketLabel, etaUrgency, type ArrivalBucket,
   } from '$lib/domain/buckets';
   import type { BoardRow } from '$lib/domain/stationBoard';
   import type { ScheduleTripStop } from '$lib/data/gtfs/types';
@@ -209,27 +209,43 @@
     });
   });
 
-  // Group rows by bucket while preserving the domain-sorted order. Empty
-  // buckets are dropped so the UI shows only headers that have content.
-  // The card does NOT filter — the caller is expected to hand us only
-  // the rows that should appear (route filter, prefs filter, etc. all
-  // belong upstream so the cap operates on the already-filtered set).
-  // `selectedRouteId` here is purely a visual prop: it tells the badge
-  // row which pill to render as pressed.
+  // Section grouping. The three now-group buckets (departing,
+  // at-station, arriving) are merged into a single "At station"
+  // section so a vehicle that re-classifies between them stays in
+  // the same DOM row — the only thing that changes is the per-row
+  // label and color (see `atStationLabel` on each BoardRow). Other
+  // buckets stay separate. Empty sections are dropped so the UI
+  // shows only headers that have content. The card does NOT filter
+  // — the caller is expected to hand us only the rows that should
+  // appear (route filter, prefs filter, etc. all belong upstream so
+  // the cap operates on the already-filtered set).
   const groups = $derived.by(() => {
-    const byBucket = new Map<ArrivalBucket, Vehicle[]>();
+    const byBucket = new Map<ArrivalBucket, BoardRow[]>();
     for (const r of rows) {
       const list = byBucket.get(r.bucket) ?? [];
-      list.push(r.vehicle);
+      list.push(r);
       byBucket.set(r.bucket, list);
     }
-    return Array.from(byBucket.entries())
-      .sort(([a], [b]) => BUCKET_ORDER[a] - BUCKET_ORDER[b])
-      .map(([bucket, vehicles]) => ({
-        bucket,
-        label: bucketLabel(bucket, vehicles),
-        vehicles,
-      }));
+    const merged: BoardRow[] = [];
+    for (const b of ['departing', 'at-station', 'arriving'] as const) {
+      const list = byBucket.get(b);
+      if (list) merged.push(...list);
+    }
+    const out: { key: string; bucket: ArrivalBucket; label: string; rows: BoardRow[] }[] = [];
+    if (merged.length > 0) {
+      out.push({ key: 'at-station', bucket: 'at-station', label: 'At station', rows: merged });
+    }
+    for (const b of ['incoming', 'drop-off', 'departed', 'off-route'] as const) {
+      const list = byBucket.get(b);
+      if (!list || list.length === 0) continue;
+      out.push({
+        key: b,
+        bucket: b,
+        label: bucketLabel(b, list.map((r) => r.vehicle)),
+        rows: list,
+      });
+    }
+    return out;
   });
   const isEmpty = $derived(groups.length === 0);
 
@@ -350,7 +366,7 @@
         {/if}
       {:else}
         <Stack spacing={1.5} class="pt-1">
-          {#each groups as group (group.bucket)}
+          {#each groups as group (group.key)}
             {@const meta = BUCKET_META[group.bucket]}
             {@const HeaderIcon = meta.icon}
             <Box>
@@ -369,7 +385,8 @@
                 </Typography>
               </Stack>
               <Stack spacing={0.5} class="pt-1">
-                {#each group.vehicles as vehicle (vehicle.id)}
+                {#each group.rows as row (row.vehicle.id)}
+                  {@const vehicle = row.vehicle}
                   {@const hasTripId = vehicle.schedule?.tripId != null}
                   {@const phase = vehicle.schedule?.tripPhase}
                   <!-- A row is "actionable" when it represents a trip
@@ -393,7 +410,8 @@
                   <Box class="flex flex-col gap-1">
                     <VehicleCard
                       {vehicle}
-                      urgency={etaUrgency(group.bucket, vehicle.eta?.minutes ?? 0)}
+                      urgency={etaUrgency(row.bucket, vehicle.eta?.minutes ?? 0)}
+                      atStationLabel={row.atStationLabel}
                       scheduleHref={actionable && hasSchedule ? `/schedule/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}` : undefined}
                       mapHref={actionable
                         ? `/map/route/${vehicle.route.id}_${vehicle.schedule?.directionId ?? 0}${vehicle.schedule?.tripId ? `/${encodeURIComponent(vehicle.schedule.tripId)}` : ''}?from=${station.id}`

@@ -17,7 +17,7 @@
  *   off-route    sanity bucket — surfaces only in debug view
  */
 
-import type { Vehicle } from './types';
+import { formatRelativeMin, type Vehicle } from './types';
 
 export type ArrivalBucket =
   | 'departing'
@@ -146,6 +146,80 @@ export function scheduleUrgency(
   if (deltaMin < 1) return 'stop';
   if (deltaMin <= config.imminentEtaThresholdMin) return 'go';
   return 'neutral';
+}
+
+/** Per-row label and urgency for the combined "At station" section of
+ *  the station card. The bucket (see `bucketOf`) drives which section
+ *  a row belongs to; `atStationLabel` drives the per-row text and
+ *  color inside that section. They're intentionally independent so a
+ *  vehicle in the `departing` bucket (last minute of scheduled dwell)
+ *  can show "departing now" while a vehicle in the `arriving` bucket
+ *  (first minute of scheduled dwell) shows "arriving now" — both
+ *  belong in the same combined section.
+ *
+ *  Returns undefined for rows that don't belong in the at-station
+ *  section (incoming, drop-off, departed, off-route) — those keep
+ *  their existing per-bucket rendering. */
+export interface AtStationLabel {
+  text: string;
+  urgency: Urgency;
+}
+
+export function atStationLabel(
+  bucket: ArrivalBucket,
+  inputs: {
+    etaMinutes: number;
+    distanceToStopMeters: number;
+    vehicleSpeedKmh?: number;
+    scheduledArrivalMin?: number;
+    scheduledDepartureMin?: number;
+    nowMin: number;
+  },
+): AtStationLabel | undefined {
+  if (
+    bucket !== 'arriving' &&
+    bucket !== 'at-station' &&
+    bucket !== 'departing'
+  ) {
+    return undefined;
+  }
+
+  const atTheStop = inputs.distanceToStopMeters <= PROXIMITY_AT_STATION_M;
+
+  if (atTheStop) {
+    // Vehicle is at the stop — pick a sub-state label.
+    // (a) Picking up speed → "now" red.
+    if (inputs.vehicleSpeedKmh != null && inputs.vehicleSpeedKmh >= DEPARTING_SPEED_KMH) {
+      return { text: 'now', urgency: 'stop' };
+    }
+    // (b) Last minute of scheduled dwell → "departing now" red.
+    if (
+      inputs.scheduledDepartureMin != null &&
+      inputs.nowMin >= inputs.scheduledDepartureMin - 1 &&
+      inputs.nowMin <= inputs.scheduledDepartureMin + 1
+    ) {
+      return { text: 'departing now', urgency: 'stop' };
+    }
+    // (c) First minute of scheduled dwell → "arriving now" green.
+    if (
+      inputs.scheduledArrivalMin != null &&
+      inputs.nowMin >= inputs.scheduledArrivalMin - 1 &&
+      inputs.nowMin <= inputs.scheduledArrivalMin + 1
+    ) {
+      return { text: 'arriving now', urgency: 'go' };
+    }
+    // (d) Mid-dwell → "at station" green.
+    return { text: 'at station', urgency: 'go' };
+  }
+
+  // Not at the stop. Reaching the `departing` bucket without being
+  // physically at the stop means the live vehicle is moving away;
+  // show "now" red. For `arriving` (close but not at the stop),
+  // show the ETA.
+  if (bucket === 'departing') {
+    return { text: 'now', urgency: 'stop' };
+  }
+  return { text: formatRelativeMin(inputs.etaMinutes), urgency: 'go' };
 }
 
 export interface BucketInputs {

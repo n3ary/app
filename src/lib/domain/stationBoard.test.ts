@@ -99,6 +99,41 @@ describe('assembleStationBoard', () => {
     expect(board).toHaveLength(1);
     expect(board[0].bucket).toBe('incoming');
   });
+
+  it('attaches atStationLabel to every at-station-section row (arriving / at-station / departing)', () => {
+    // The "At station" section's per-row label is computed once at
+    // assembly time so the UI can render it without re-deriving from
+    // schedule inputs. Verify it's set for every row that belongs in
+    // the merged section.
+    const atStationRow: Vehicle = {
+      kind: 'scheduled',
+      id: 'trip:atst',
+      route: r24,
+      type: 'bus',
+      directionId: 0,
+      confidence: 'low',
+      schedule: { tripId: 'atst', scheduledArrival: 538, scheduledDeparture: 542, directionId: 0 },
+      eta: { distanceMeters: 0, minutes: 0, confidence: 'low' },
+    } as Vehicle;
+    const vehicles = [
+      scheduled('arr', r24, 1),         // bucket=arriving
+      atStationRow,                      // bucket=at-station (mid-dwell)
+      scheduled('dep', r24, 0),         // bucket=arriving (no proximity, eta=0)
+    ];
+    const board = assembleStationBoard(vehicles, { lat: 46.7712, lon: 23.6236 }, allowAll, nowMs, 'UTC');
+    expect(board).toHaveLength(3);
+    for (const r of board) {
+      expect(r.atStationLabel).toBeDefined();
+    }
+  });
+
+  it('omits atStationLabel for buckets outside the at-station section', () => {
+    const vehicles = [scheduled('a', r24, 10), scheduled('b', r35, 25)];
+    const board = assembleStationBoard(vehicles, { lat: 46.7712, lon: 23.6236 }, allowAll, nowMs, 'UTC');
+    for (const r of board) {
+      expect(r.atStationLabel).toBeUndefined();
+    }
+  });
 });
 
 describe('applyGpsEta', () => {

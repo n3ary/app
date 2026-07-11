@@ -1,10 +1,12 @@
 // Pure helpers: Vehicle[] → ready-to-render BoardRow[] for one station. No DOM, no SQL. Timezone contract: all minutes-since-midnight values are FEED-local.
 
 import {
+  atStationLabel,
   bucketOf,
   compareForBoard,
   filterForStationView,
   type ArrivalBucket,
+  type AtStationLabel,
 } from './buckets';
 import { haversineMeters } from '@n3ary/gtfs-spec/shape';
 import { minSinceMidnightInTz } from './pipeline/timeUtils';
@@ -22,6 +24,11 @@ export interface BoardRow {
   bucket: ArrivalBucket;
   /** Signed minutes (negative = past). Cached so the sort doesn't redo math. */
   etaMinutes: number;
+  /** Per-row label and urgency for the combined "At station" section.
+   *  Undefined for rows that don't belong in that section (incoming,
+   *  drop-off, departed, off-route) — those keep their existing
+   *  per-bucket rendering. */
+  atStationLabel?: AtStationLabel;
 }
 
 export interface BoardPrefs {
@@ -43,19 +50,37 @@ export function assembleStationBoard(
 ): BoardRow[] {
   const nowMin = minSinceMidnightInTz(nowMs, timezone);
   const rows: BoardRow[] = vehicles.map((v) => {
+    const distanceToStopMeters =
+      v.position && typeof stop.lat === 'number' && typeof stop.lon === 'number'
+        ? haversineMeters(v.position.lat, v.position.lon, stop.lat, stop.lon)
+        : Number.POSITIVE_INFINITY;
+    const etaMinutes = v.eta?.minutes ?? 0;
     const rawBucket = bucketOf(v.kind, {
-      etaMinutes: v.eta?.minutes ?? 0,
-      distanceToStopMeters:
-        v.position && typeof stop.lat === 'number' && typeof stop.lon === 'number'
-          ? haversineMeters(v.position.lat, v.position.lon, stop.lat, stop.lon)
-          : Number.POSITIVE_INFINITY,
+      etaMinutes,
+      distanceToStopMeters,
+      vehicleSpeedKmh:
+        v.position?.speedMs != null ? v.position.speedMs * 3.6 : undefined,
       scheduledArrivalMin: v.schedule?.scheduledArrival,
       scheduledDepartureMin: v.schedule?.scheduledDeparture,
       nowMin,
     });
     // Drop-off-only vehicles can't be boarded — segregate into their own bucket; departed ones keep 'departed' (the flag is moot post-departure).
     const bucket = v.dropOffOnly && rawBucket !== 'departed' ? 'drop-off' : rawBucket;
-    return { vehicle: v, bucket, etaMinutes: v.eta?.minutes ?? 0 };
+    const atStationLabelResult = atStationLabel(bucket, {
+      etaMinutes,
+      distanceToStopMeters,
+      vehicleSpeedKmh:
+        v.position?.speedMs != null ? v.position.speedMs * 3.6 : undefined,
+      scheduledArrivalMin: v.schedule?.scheduledArrival,
+      scheduledDepartureMin: v.schedule?.scheduledDeparture,
+      nowMin,
+    });
+    return {
+      vehicle: v,
+      bucket,
+      etaMinutes,
+      ...(atStationLabelResult ? { atStationLabel: atStationLabelResult } : {}),
+    };
   });
   const sorted = filterForStationView(rows, prefs).sort(compareForBoard);
   return capStationBoard(sorted, prefs.stationBoardMaxRows ?? DEFAULT_CONTEXT_BUCKET_CAP);

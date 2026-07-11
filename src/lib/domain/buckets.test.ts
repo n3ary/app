@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  atStationLabel,
   bucketOf,
   compareForBoard,
   bucketCounts,
@@ -216,7 +217,6 @@ describe('etaUrgency', () => {
     expect(etaUrgency('at-station', 0)).toBe('go');
     expect(etaUrgency('arriving', 1)).toBe('go');
   });
-
   it("returns 'go' for incoming within the imminent threshold", () => {
     expect(etaUrgency('incoming', 5)).toBe('go');
     expect(etaUrgency('incoming', 3)).toBe('go');
@@ -230,6 +230,85 @@ describe('etaUrgency', () => {
   it("returns 'neutral' for departed and off-route", () => {
     expect(etaUrgency('departed', -3)).toBe('neutral');
     expect(etaUrgency('off-route', 99)).toBe('neutral');
+  });
+});
+
+describe('atStationLabel', () => {
+  const atStop = (o: Partial<Parameters<typeof atStationLabel>[1]>) => ({
+    etaMinutes: 0,
+    distanceToStopMeters: 20,
+    nowMin: 9 * 60,
+    ...o,
+  });
+
+  it('returns undefined for buckets outside the at-station section', () => {
+    expect(atStationLabel('incoming', atStop({ etaMinutes: 5 }))).toBeUndefined();
+    expect(atStationLabel('drop-off', atStop({ etaMinutes: 1 }))).toBeUndefined();
+    expect(atStationLabel('departed', atStop({ etaMinutes: -1 }))).toBeUndefined();
+    expect(atStationLabel('off-route', atStop({ etaMinutes: 1 }))).toBeUndefined();
+  });
+
+  it('"now" red when a live vehicle at the stop is picking up speed', () => {
+    expect(
+      atStationLabel('departing', atStop({ vehicleSpeedKmh: 10 })),
+    ).toEqual({ text: 'now', urgency: 'stop' });
+  });
+
+  it('"departing now" red when at the stop, last minute of scheduled dwell', () => {
+    const nowMin = 9 * 60;
+    expect(
+      atStationLabel('departing', atStop({
+        nowMin,
+        scheduledArrivalMin: nowMin - 4,
+        scheduledDepartureMin: nowMin,
+      })),
+    ).toEqual({ text: 'departing now', urgency: 'stop' });
+  });
+
+  it('"arriving now" green when at the stop, first minute of scheduled dwell', () => {
+    const nowMin = 9 * 60;
+    expect(
+      atStationLabel('arriving', atStop({
+        nowMin,
+        scheduledArrivalMin: nowMin,
+        scheduledDepartureMin: nowMin + 3,
+      })),
+    ).toEqual({ text: 'arriving now', urgency: 'go' });
+  });
+
+  it('"at station" green when at the stop mid-dwell', () => {
+    const nowMin = 9 * 60;
+    expect(
+      atStationLabel('at-station', atStop({
+        nowMin,
+        scheduledArrivalMin: nowMin - 2,
+        scheduledDepartureMin: nowMin + 3,
+      })),
+    ).toEqual({ text: 'at station', urgency: 'go' });
+  });
+
+  it('"at station" green when at the stop with no schedule anchor', () => {
+    // Live vehicle, GPS at the stop, no scheduled arrival/departure —
+    // dwell gap is unknown, but the vehicle is at the stop, so render
+    // the default mid-dwell label.
+    expect(
+      atStationLabel('at-station', atStop({})),
+    ).toEqual({ text: 'at station', urgency: 'go' });
+  });
+
+  it('relative ETA when arriving (close but not at the stop)', () => {
+    expect(
+      atStationLabel('arriving', atStop({ etaMinutes: 2, distanceToStopMeters: 200 })),
+    ).toEqual({ text: 'in 2 min', urgency: 'go' });
+  });
+
+  it('"now" red for a moving vehicle in the departing bucket', () => {
+    // Defensive: if a moving vehicle ever reaches the bucketer
+    // without the proximity test firing, fall back to "now" red so
+    // the row still reads as "this one's gone".
+    expect(
+      atStationLabel('departing', atStop({ distanceToStopMeters: 500, etaMinutes: 0 })),
+    ).toEqual({ text: 'now', urgency: 'stop' });
   });
 });
 
