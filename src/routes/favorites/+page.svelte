@@ -665,7 +665,15 @@
   </div>
 {/snippet}
 
-<div class="mx-auto max-w-3xl px-4 py-6">
+<!--
+  Short-view wrapper: `flex flex-col min-h-[calc(100svh-3.5rem-3rem)]` pins the
+  column to a definite minimum height (viewport minus header strip minus nav)
+  and the `flex-1 aria-hidden` spacer at the end fills any leftover space, so
+  the visible bottom of the page sits flush with the nav instead of leaving
+  a `--color-surface` void between the last card and the fixed BottomNavigation.
+  Same pattern as home / station / schedule / map (PR #322).
+-->
+<div class="mx-auto max-w-3xl w-full px-4 py-6 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
   {#if userPrefs.feedId == null}
     <SelectFeedCard fallbackBody="Pick a feed in Settings to star routes here." />
   {:else if error}
@@ -895,6 +903,7 @@
           {/if}
         {/if}
       </div>
-</Stack>
-{/if}
+    </Stack>
+  {/if}
+  <div class="flex-1" aria-hidden="true"></div>
 </div>
