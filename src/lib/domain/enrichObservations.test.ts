@@ -89,8 +89,6 @@ describe('enrichObservations — orphan passthrough', () => {
   it('leaves canonical fields untouched when trip is NOT in active set', () => {
     // No active trips, so the observation flows through unchanged.
     // Downstream (reconciler) will treat it as an unmatched orphan.
-    // The tripId here does NOT match the TEMP cluj recovery regex
-    // (no `<route>_<dir>_<service>_<run>_<HHMM>` shape).
     const out = enrichObservations(
       [obs({ tripId: 'opaque-orphan-abc', directionId: 0, startTime: '' })],
       [],
@@ -103,52 +101,5 @@ describe('enrichObservations — orphan passthrough', () => {
     const o = obs({ tripId: 'opaque-orphan' });
     const out = enrichObservations([o], []);
     expect(out[0]).toBe(o); // same reference: no allocation when nothing changed
-  });
-});
-
-describe('enrichObservations — TEMP cluj trip_id recovery', () => {
-  // REMOVE this describe block when `packages/gtfs-rt` ships canonical
-  // direction_id + start_time upstream (see
-  // https://github.com/n3ary/gtfs/issues/36)
-  // step 4). The block under test lives in enrichObservations.ts.
-
-  it('recovers direction_id + start_time from a Cluj-shaped trip_id when start_time is empty', () => {
-    const out = enrichObservations(
-      [obs({ tripId: '14_1_LV_99_1423', directionId: 0, startTime: '' })],
-      [],
-    );
-    expect(out[0].directionId).toBe(1);
-    expect(out[0].startTime).toBe('14:23:00');
-  });
-
-  it('does not override a populated start_time even when trip_id matches the regex', () => {
-    // Canonical fields win — if the feed publishes a non-empty
-    // start_time, trust it (the recovery is a fallback for the broken
-    // upstream case, not a normaliser).
-    const out = enrichObservations(
-      [obs({ tripId: '14_1_LV_99_1423', directionId: 0, startTime: '08:00:00' })],
-      [],
-    );
-    expect(out[0].directionId).toBe(0);
-    expect(out[0].startTime).toBe('08:00:00');
-  });
-
-  it('does not recover for trip_ids that do not match the Cluj shape', () => {
-    const out = enrichObservations(
-      [obs({ tripId: 'some-other-feed:42', directionId: 1, startTime: '' })],
-      [],
-    );
-    expect(out[0].directionId).toBe(1);
-    expect(out[0].startTime).toBe('');
-  });
-
-  it('static-feed enrichment still wins over Cluj recovery when active set has the trip', () => {
-    const active = [sched({ tripId: '14_1_LV_99_1423', directionId: 0, tripStartMin: 9 * 60 + 30 })];
-    const out = enrichObservations(
-      [obs({ tripId: '14_1_LV_99_1423', directionId: 0, startTime: '' })],
-      active,
-    );
-    expect(out[0].directionId).toBe(0);
-    expect(out[0].startTime).toBe('09:30:00');
   });
 });

@@ -86,8 +86,6 @@ flowchart TB
 
 The Hetzner RT adapter shipped in
 [n3ary/gtfs-publisher](https://github.com/n3ary/gtfs-publisher) —
-the per-feed quirks that used to live inline in the app via the
-TEMP `recoverClujTripFields` block in
-`src/lib/domain/enrichObservations.ts` moved to the producer side
-(`@n3ary/gtfs-adapter-cluj-napoca/rt`) so the app no longer needs
-feed-specific fallbacks.
+per-feed quirks that used to live inline in the app moved to the
+producer side (`@n3ary/gtfs-adapter-cluj-napoca/rt`) so the app no
+longer needs feed-specific fallbacks.
