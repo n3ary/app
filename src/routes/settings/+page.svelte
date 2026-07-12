@@ -191,7 +191,17 @@
   });
 </script>
 
-<div class="mx-auto max-w-3xl px-4 py-6 space-y-6">
+<!--
+  Short-view wrapper: `flex flex-col min-h-[calc(100svh-3.5rem-3rem)]` pins the
+  column to a definite minimum height (viewport minus header strip minus nav).
+  Cards sit inside a sub-div with their original `space-y-6` so the inter-card
+  gap is preserved; the `flex-1 aria-hidden` spacer at the end fills any
+  leftover space so the visible bottom sits flush with the fixed nav instead
+  of leaving a `--color-surface` void. Same pattern as home / station /
+  schedule / map (PR #322).
+-->
+<div class="mx-auto max-w-3xl w-full px-4 py-6 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
+  <div class="space-y-6">
   <!-- ===== Display ===== -->
   <Card>
     <CardContent>
@@ -470,6 +480,8 @@
       </Stack>
     </CardContent>
   </Card>
+  </div>
+  <div class="flex-1" aria-hidden="true"></div>
 </div>
 
 <!-- Confirm dialog for the per-feed delete button. Body copy says
