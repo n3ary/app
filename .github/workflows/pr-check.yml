@@ -17,6 +17,12 @@ name: '[check] PR validation (on PR)'
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run'
+        required: true
+        default: 'station-marker-dropdown'
 
 # Shared base PR-validation lives in n3ary/actions. enable-drift-check
 # is true: app vendors n3ary/standards under docs/standards/.
@@ -45,7 +51,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ inputs.branch || github.head_ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
