@@ -69,7 +69,7 @@
   });
 </script>
 
-<div class="mx-auto max-w-3xl w-full px-4 py-6">
+<div class="mx-auto max-w-3xl w-full px-4 py-6 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
   {#if userPrefs.feedId == null}
     <SelectFeedCard />
   {:else if !stopIdValid}
@@ -118,4 +118,5 @@
       ontoggle={() => {}}
     />
   {/if}
+  <div class="flex-1" aria-hidden="true"></div>
 </div>

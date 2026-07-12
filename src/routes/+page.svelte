@@ -1,7 +1,6 @@
 <!-- Default landing route. Empty state points to Settings until a feed is selected; with a feed bound, fetches nearest stops (GPS if opted in, else the feed's published center) and renders a StationCard list per stop. GPS is strictly opt-in — browser prompt is never triggered without a user gesture. -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { version } from '$app/environment';
   import { goto } from '$app/navigation';
   import { AlertTriangle, Heart, MapPin, Search, X } from 'lucide-svelte';
   import {
@@ -365,7 +364,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-3xl w-full px-4 py-6 flex min-h-[150svh] flex-col">
+<div class="mx-auto max-w-3xl w-full px-4 py-6 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
   <Stack spacing={1}>
 
     <!-- ── Setup banners ─────────────────────────────────────────────
@@ -576,18 +575,7 @@
     {/if}
 
   </Stack>
-  <!-- flex-1 spacer fills the rest of <main>'s content area so the view
-       extends to just above the BottomNavigation. The version marker
-       below sits at the bottom of that filled area, visible above the
-       nav — the spacer is what "pushes" the view, not a negative-margin
-       hack on the version itself. -->
-  <div class="flex-1 min-h-0" aria-hidden="true"></div>
-  <p
-    class="text-center text-xs text-[color:var(--color-fg-muted)] select-none"
-    aria-hidden="true"
-  >
-    v{version}
-  </p>
+  <div class="flex-1" aria-hidden="true"></div>
 </div>
 
 <!--

@@ -1182,7 +1182,7 @@
   />
 {/snippet}
 
-<div class="mx-auto max-w-5xl px-4 py-3">
+<div class="mx-auto max-w-5xl w-full px-4 py-3 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
   {#if userPrefs.feedId == null}
     <SelectFeedCard fallbackBody="Pick a feed in Settings to view the route map." />
   {:else if direction == null}
@@ -1299,6 +1299,7 @@
       </Card>
     </Stack>
   {/if}
+  <div class="flex-1" aria-hidden="true"></div>
 </div>
 
 <style>
