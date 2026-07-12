@@ -729,7 +729,7 @@
                   spacing={1}
                   align="center"
                   wrap
-                  class="pt-2"
+                  class="pt-2 border-t border-[color:var(--color-border)]"
                 >
                   {#each presentTypes as t (t)}
                     <TypeBadge type={t} color={colorByType.get(t)} active={typeFilter === t} onclick={() => toggleType(t)} />
@@ -738,7 +738,7 @@
               {/if}
 
               {#if allNetworks.length > 0}
-                <Stack direction="row" spacing={1} align="center" wrap class="pt-2">
+                <Stack direction="row" spacing={1} align="center" wrap class="pt-2 border-t border-[color:var(--color-border)]">
                   {#each allNetworks as net (net.id)}
                     {@const active = networkFilter === net.id}
                     <TypeBadge
