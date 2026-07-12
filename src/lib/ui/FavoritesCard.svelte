@@ -140,7 +140,7 @@
 
 </script>
 
-<Card tone="elevated" accentColor="var(--color-favorite)">
+<Card tone="elevated">
   <CardContent>
     <Stack spacing={1}>
       {#if headerStyle === 'compact'}

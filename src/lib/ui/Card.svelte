@@ -32,13 +32,11 @@
     // plain = the default card frame: surface bg + gray border.
     plain: 'bg-[color:var(--color-surface)] border-[color:var(--color-border)]',
     // 'elevated' = the anchor card (currently "Your favorites"). A
-    // different surface (--color-surface-elevated) PLUS a 1px border
-    // in the marker's accent colour so the card reads as the focus
-    // without leaning on color blocks or thick accents. Border colour
-    // is owned by TONE (not the base) so plain vs elevated don't
-    // compete via CSS cascade. Uses --card-accent so the caller
-    // (FavoritesCard) controls the actual colour.
-    elevated: 'bg-[color:var(--color-surface-elevated)] border-[color:var(--card-accent,var(--color-favorite))]',
+    // different surface (--color-surface-elevated) so the card
+    // visually settles into the page; no perimeter border — the
+    // tint alone carries the focus, and the marker's accent colour
+    // stays reserved for chips / strokes inside the card.
+    elevated: 'bg-[color:var(--color-surface-elevated)] border-0',
   };
 </script>
 
