@@ -576,14 +576,14 @@
     {/if}
 
   </Stack>
-  <!-- flex-1 spacer fills the rest of <main>'s height so the version below
-       sits at the bottom of the visible area, behind the fixed BottomNavigation.
-       The -mb on <p> pulls the version down past <main>'s pb (which clears the
-       fixed nav) so the version lands inside the nav's footprint and is covered
-       by it — the "hidden under" the user asked for. -->
+  <!-- flex-1 spacer fills the rest of <main>'s content area so the view
+       extends to just above the BottomNavigation. The version marker
+       below sits at the bottom of that filled area, visible above the
+       nav — the spacer is what "pushes" the view, not a negative-margin
+       hack on the version itself. -->
   <div class="flex-1 min-h-0" aria-hidden="true"></div>
   <p
-    class="text-center text-xs text-[color:var(--color-fg-muted)] select-none -mb-[calc(3.5rem+env(safe-area-inset-bottom,0px))]"
+    class="text-center text-xs text-[color:var(--color-fg-muted)] select-none"
     aria-hidden="true"
   >
     v{version}
