@@ -72,13 +72,11 @@
     : STATION_MARKER_FILL[marker],
   );
 
-  // Background color for the trigger. Like the old Avatar: the marker's
-  // accent colour as the background, black icon on top. Normal (null/
-  // undefined marker) uses --color-primary (blue).
+  // Background color for the trigger. Like the old Avatar: amber for
+  // any non-normal marker (favorite, home, work, city center), blue
+  // for Normal (no marker).
   const triggerBg = $derived(
-    marker === 'favorite' ? 'var(--color-favorite)'
-    : marker === undefined ? 'var(--color-primary)'
-    : 'var(--color-primary)',
+    marker == null ? 'var(--color-primary)' : 'var(--color-favorite)',
   );
 
   function pick(next: StationMarker | null) {
@@ -157,7 +155,9 @@
           onclick={() => pick(opt.marker)}
           class={cn(
             'flex items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-[color:var(--color-border)]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]',
-            selected && 'bg-[color:var(--color-border)]/30',
+            // Highlight the selected option: amber tint for non-normal, muted for Normal.
+            selected && opt.marker !== null && 'bg-[color:var(--color-favorite)]/15',
+            selected && opt.marker === null && 'bg-[color:var(--color-border)]/40',
           )}
         >
           <Icon
@@ -170,7 +170,7 @@
               selected && opt.marker === 'favorite'
                 ? 'text-[color:var(--color-favorite)]'
                 : selected
-                  ? 'text-[color:var(--color-primary)]'
+                  ? 'text-[color:var(--color-favorite)]'
                   : 'text-[color:var(--color-fg-muted)] opacity-60',
             )}
           />

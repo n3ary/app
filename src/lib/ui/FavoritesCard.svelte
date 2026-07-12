@@ -9,6 +9,7 @@
   import type { Route } from '$lib/domain/types';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import {
     Button, Card, CardContent, FavoriteRouteRow, FavoriteStationRow,
@@ -38,6 +39,9 @@
     /** 'compact' = Heart icon + h6 (home card-in-card);
      *  'standalone' = plain h5 (/favorites picker). */
     headerStyle?: 'compact' | 'standalone';
+    /** Mutate a station's marker from within the card. When set,
+     *  the station avatar becomes an interactive dropdown trigger. */
+    onChangeStationMarker?: (stopId: string, next: StationMarker | null) => void;
   };
 
   let {
@@ -50,6 +54,7 @@
     routeRow,
     stationRow,
     headerStyle = 'compact',
+    onChangeStationMarker,
   }: Props = $props();
 
   const visibleRoutes = $derived(routeLimit != null ? routes.slice(0, routeLimit) : routes);
@@ -135,7 +140,7 @@
 
 </script>
 
-<Card tone="elevated">
+<Card tone="elevated" accentColor="var(--color-favorite)">
   <CardContent>
     <Stack spacing={1}>
       {#if headerStyle === 'compact'}
@@ -197,6 +202,7 @@
                 hasGps={false}
                 variant="card"
                 marker={favoritesStore.markerFor(stop.id) ?? undefined}
+                onChangeMarker={onChangeStationMarker}
                 class="mt-1"
               />
             {/if}

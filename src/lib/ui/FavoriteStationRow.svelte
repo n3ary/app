@@ -7,6 +7,7 @@
   import { STATION_MARKER_ICONS, STATION_MARKER_ACCENT } from '$lib/stores/favoritesStore.svelte';
   import Avatar from './Avatar.svelte';
   import RouteChipsRow from './RouteChipsRow.svelte';
+  import StationMarkerDropdown from './StationMarkerDropdown.svelte';
   import { cn } from './cn';
 
   type Props = {
@@ -31,6 +32,9 @@
      *  (amber for favorite, blue for home/work/cityCenter, blue for normal).
      *  When omitted the Avatar uses the default blue. */
     marker?: StationMarker | null;
+    /** Mutate the station's marker. When set, the avatar becomes an
+     *  interactive dropdown trigger (e.g. in /favorites). */
+    onChangeMarker?: (stopId: string, next: StationMarker | null) => void;
     class?: string;
   };
 
@@ -41,10 +45,12 @@
     hasGps = false,
     variant = 'card',
     marker,
+    onChangeMarker,
     class: className,
   }: Props = $props();
 
   const interactive = $derived(typeof onbodyclick === 'function');
+  const hasDropdown = $derived(typeof onChangeMarker === 'function');
   const showChips = $derived(Array.isArray(routes) && routes.length > 0);
   // The wider StopWithDistance shape may or may not carry a `distance`
   // (the favorites store resolves ids via getStopsByIds, which always
@@ -92,10 +98,21 @@
       : 'px-1 py-1.5 -mx-1 hover:bg-[color:var(--color-border)]/20',
     className,
   )}
->
-  <Avatar variant="square" class="w-10 h-10 shrink-0" style={`background-color: ${avatarAccent}; color: var(--color-fg);`}>
-    <AvatarIcon size={20} />
-  </Avatar>
+  >
+  {#if hasDropdown}
+    <StationMarkerDropdown
+      stationId={stop.id}
+      marker={marker ?? undefined}
+      onChange={(next) => (onChangeMarker ?? (() => {}))(stop.id, next)}
+      label={stop.name}
+      size={20}
+      class="w-10 h-10 shrink-0"
+    />
+  {:else}
+    <Avatar variant="square" class="w-10 h-10 shrink-0" style={`background-color: ${avatarAccent}; color: var(--color-fg);`}>
+      <AvatarIcon size={20} />
+    </Avatar>
+  {/if}
   <div class="min-w-0 flex-1 flex flex-col gap-1">
     <div class="flex items-center gap-2">
       <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>

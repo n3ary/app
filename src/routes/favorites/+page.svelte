@@ -675,8 +675,8 @@
         <FavoritesCard
           routes={favRoutes}
           stations={favStationsSorted}
-
           headerStyle="standalone"
+          onChangeStationMarker={(stopId: string, next) => favoritesStore.setMarker(stopId, next)}
         >
           {#snippet routeRow(args: { route: Route; markerStopIds: readonly string[] })}
             {@render expandableRouteRow(args)}

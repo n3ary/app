@@ -430,6 +430,7 @@
             stations={favoriteStations}
             routesLoading={!allRoutesForFavorites && !routesError}
             {routesError}
+            onChangeStationMarker={(stopId: string, next) => favoritesStore.setMarker(stopId, next)}
           />
         {/if}
       {/snippet}
