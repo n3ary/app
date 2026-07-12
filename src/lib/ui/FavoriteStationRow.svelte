@@ -1,5 +1,6 @@
 <!-- FavoriteStationRow: plain tappable station row used by the search overlay (with optional distance) and /favorites. Tapping the row navigates to /station/[id] where the marker dropdown lives via the StationCard avatar. -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { Bus } from 'lucide-svelte';
   import type { Route } from '$lib/domain/types';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
@@ -35,6 +36,9 @@
     /** Mutate the station's marker. When set, the avatar becomes an
      *  interactive dropdown trigger (e.g. in /favorites). */
     onChangeMarker?: (stopId: string, next: StationMarker | null) => void;
+    /** Optional trailing badge rendered on the right side of the name
+     *  row (e.g. a StationMarkerBadge). */
+    trailingBadge?: Snippet;
     class?: string;
   };
 
@@ -46,6 +50,7 @@
     variant = 'card',
     marker,
     onChangeMarker,
+    trailingBadge,
     class: className,
   }: Props = $props();
 
@@ -120,6 +125,9 @@
         <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
           {formatDistance(distance)}
         </span>
+      {/if}
+      {#if trailingBadge}
+        {@render trailingBadge()}
       {/if}
     </div>
     {#if showChips && routes}

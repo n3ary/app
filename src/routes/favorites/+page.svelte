@@ -545,15 +545,14 @@
 
   // "All other stations": the stations that AREN'T in the favorites
   // card above. Filter cascade (mode + network) trims the page at
-  // the worker via stationsScope. Stations with any marker are
-  // always excluded - they already appear in the "Your favorites"
-  // card, so duplicating them here is noise. The marker filter no
+  // the worker via stationsScope. All other stations are included
+  // regardless of their marker - they appear here too so the user
+  // can find and interact with any station. The marker filter no
   // longer applies here: its chips live on the Routes tab only, so
   // on this tab the filter is always empty and the old "look up
   // marker match" pass was always a no-op anyway.
   const otherStationsSorted = $derived.by<StopWithDistance[]>(() => {
-    const list = otherStationsPage.filter((s) => favoritesStore.markerFor(s.id) === undefined);
-    return sortStationsForPicker(list, stationAnchor);
+    return sortStationsForPicker(otherStationsPage, stationAnchor);
   });
 
   const stationsScopeCount = $derived(Object.keys(stationsScope).length);
@@ -804,7 +803,7 @@
                 <Stack spacing={1}>
                   <Stack spacing={0.5}>
                     <Typography variant="h5">
-                      {favStationsSorted.length > 0 ? 'All other stations' : 'All stations'}
+                      All stations
                     </Typography>
                     <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
                       {#if otherStationsLoading && otherStationsPage.length === 0}
@@ -836,6 +835,7 @@
                         hasGps={!!locationStore.position && stop.distance != null}
                         variant="card"
                         marker={favoritesStore.markerFor(stop.id) ?? undefined}
+                        onChangeMarker={(stopId, next) => favoritesStore.setMarker(stopId, next)}
                         class="mt-1"
                       />
                     {/each}

@@ -24,6 +24,7 @@
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import {
     STATION_MARKERS, STATION_MARKER_ICONS, STATION_MARKER_FILL,
+    STATION_MARKER_ACCENT,
   } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
@@ -72,11 +73,10 @@
     : STATION_MARKER_FILL[marker],
   );
 
-  // Background color for the trigger. Like the old Avatar: amber for
-  // any non-normal marker (favorite, home, work, city center), blue
-  // for Normal (no marker).
+  // Background color for the trigger. Like the old Avatar: the marker's
+  // accent colour as the background. Normal uses --color-primary.
   const triggerBg = $derived(
-    marker == null ? 'var(--color-primary)' : 'var(--color-favorite)',
+    marker == null ? 'var(--color-primary)' : STATION_MARKER_ACCENT[marker],
   );
 
   function pick(next: StationMarker | null) {

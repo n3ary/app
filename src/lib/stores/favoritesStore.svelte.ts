@@ -49,14 +49,14 @@ export const STATION_MARKER_FILL: Record<StationMarker, 'currentColor' | 'none'>
 
 /** Accent colour for stations with a marker. Used for the left-border
  *  accent on station cards/rows and the badge icon tint. Uses CSS
- *  variables so theme.css controls the actual colour (--color-favorite
- *  for favorite, --color-primary for home/work/cityCenter). */
+ *  variables so theme.css controls the actual colour. All non-normal
+ *  markers use --color-favorite (amber) for consistency. */
 export const STATION_MARKER_ACCENT: Record<StationMarker | 'none', string> = {
   none: 'transparent',
   favorite: 'var(--color-favorite)',
-  home: 'var(--color-primary)',
-  work: 'var(--color-primary)',
-  cityCenter: 'var(--color-primary)',
+  home: 'var(--color-favorite)',
+  work: 'var(--color-favorite)',
+  cityCenter: 'var(--color-favorite)',
 };
 
 export function isStationMarker(value: unknown): value is StationMarker {
