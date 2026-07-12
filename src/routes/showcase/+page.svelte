@@ -3,11 +3,13 @@
   import { onMount } from 'svelte';
   import {
     Avatar, BackButton, Box, Button, Card, CardContent, Chip,
-    Collapsible, Dialog, DialogContent, DialogTitle, FavoriteStationRow,
-    IconButton, InfoCard, List, ListItem, ListItemText, SelectFeedCard,
-    ProgressBar, RouteBadge, RouteChipsRow, Spinner, Stack,
-    StationCard, StationMarkerBadges, StationMarkerDropdown, StatusDot, Switch, Tabs, TextField,
-    ToggleGroup, Tooltip, TripStopList, Typography, TypeBadge, VehicleCard,
+    Collapsible, Dialog, DialogContent, DialogTitle, FavoriteRouteRow,
+    FavoriteStationRow, FavoritesCard, HeaderSearchOverlay,
+    IconButton, InfoCard, List, ListItem, ListItemText, NoLocationCard,
+    ProgressBar, RouteBadge, RouteChipsRow, SelectFeedCard, Spinner, Stack,
+    StationCard, StationMarkerBadge, StationMarkerBadges, StationMarkerDropdown,
+    StatusBar, StatusDot, Switch, Tabs, TextField, ToggleGroup,
+    Tooltip, TripStopList, Typography, TypeBadge, VehicleCard,
   } from '$lib/ui';
   import type { Route, Station, Vehicle, VehicleType } from '$lib/domain/types';
   import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';
@@ -23,6 +25,7 @@
   let switchOn = $state(true);
   let collapsibleOpen = $state(false);
   let dialogOpen = $state(false);
+  let searchOpen = $state(false);
   let textValue = $state('');
   let progressValue = $state(35);
   let tabsValue = $state<'today' | 'tomorrow' | 'week'>('today');
@@ -197,6 +200,11 @@
 
   <section class="space-y-3">
     <Typography variant="h4">StatusBar</Typography>
+    <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+      Lives in the global layout (visible at the top of this page already). Buttons below push
+      entries to <code>statusBus</code>; the bar reads the highest-priority active entry and
+      renders it. Idle = 0 height.
+    </Typography>
     <Stack direction="row" spacing={1} wrap>
       <Button size="small" color="primary" onclick={() => demo('loading')}>loading</Button>
       <Button size="small" color="primary" onclick={() => demo('progress')}>progress</Button>
@@ -205,6 +213,12 @@
       <Button size="small" variant="outlined" color="danger" onclick={() => demo('warning')}>warning</Button>
       <Button size="small" color="danger" onclick={() => demo('error')}>error</Button>
       <Button size="small" variant="text" onclick={() => statusBus.clear()}>clear</Button>
+    </Stack>
+    <Stack spacing={0.5}>
+      <Typography variant="body2">Live render (mounted inline so the bar is visible without leaving the page):</Typography>
+      <div class="rounded-md overflow-hidden border border-[color:var(--color-border)]">
+        <StatusBar />
+      </div>
     </Stack>
   </section>
 
@@ -386,6 +400,24 @@
     <div>
       <Button onclick={() => (dialogOpen = true)}>Open dialog</Button>
     </div>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">HeaderSearchOverlay — empty mode shows favorites + nearby; typed mode filters</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Same overlay the global Header's search icon opens. Read-only
+        demo here: empty mode falls back to favorites / feed center
+        (no GPS) when location is off.
+      </Typography>
+      <Stack direction="row" spacing={1} align="center">
+        <Button
+          variant="outlined"
+          size="small"
+          onclick={() => (searchOpen = true)}
+        >
+          Open search overlay
+        </Button>
+      </Stack>
+    </Stack>
   </section>
 
   <section class="space-y-4">
@@ -564,6 +596,30 @@
     </Stack>
 
     <Stack spacing={1}>
+      <Typography variant="body2">FavoriteRouteRow — favorited route card with heart + Calendar/Map</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Single source of truth for the favorited-route row across
+        /favorites, the search overlay, and the home FavoritesCard.
+        Tapping the heart toggles <code>favoritesStore</code>; tapping
+        the body navigates to the route's schedule.
+      </Typography>
+      <FavoriteRouteRow
+        route={route24}
+        isFav={favoritesStore.hasRoute('24')}
+        onToggleFavorite={() => favoritesStore.toggleRoute('24')}
+        markerStopIds={['demo-fav', 'demo-home']}
+        onbodyclick={() => statusBus.push({ id: 'frr-click', kind: 'info', message: 'Would open /schedule/route/24_0' })}
+      />
+      <FavoriteRouteRow
+        route={route35}
+        isFav={favoritesStore.hasRoute('35')}
+        onToggleFavorite={() => favoritesStore.toggleRoute('35')}
+        variant="inline"
+        onbodyclick={() => statusBus.push({ id: 'frr-click-2', kind: 'info', message: 'Would open /schedule/route/35_0' })}
+      />
+    </Stack>
+
+    <Stack spacing={1}>
       <Typography variant="body2">StationMarkerDropdown — popover with Normal + 4 markers</Typography>
       <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
         The dropdown is opened by clicking the icon. Selected option
@@ -607,6 +663,29 @@
             />
             <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
               {sample.label}
+            </Typography>
+          </Stack>
+        {/each}
+      </Stack>
+    </Stack>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">StationMarkerBadge — single marker, all 4 kinds × 3 sizes</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Singular counterpart of StationMarkerBadges: 12px inline next
+        to a station name, 14px next to a route long name, 16px
+        standalone. The 4 marker kinds share the same icon and accent.
+      </Typography>
+      <Stack direction="row" spacing={3} align="center" wrap>
+        {#each (['favorite', 'home', 'work', 'cityCenter'] as StationMarker[]) as m (m)}
+          <Stack spacing={0.5} align="center">
+            <Stack direction="row" spacing={1} align="center">
+              <StationMarkerBadge marker={m} size={12} />
+              <StationMarkerBadge marker={m} size={14} />
+              <StationMarkerBadge marker={m} size={16} />
+            </Stack>
+            <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+              {m} (12 / 14 / 16)
             </Typography>
           </Stack>
         {/each}
@@ -700,6 +779,43 @@
       </Typography>
       <SelectFeedCard fallbackBody="Pick a feed in Settings to browse routes and schedules." />
     </Stack>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">NoLocationCard — shared "we can't get your location" surface</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Used in the home-page denied-GPS stack (dismissible) and the
+        settings privacy section (non-dismissible, replaces the lying
+        toggle when location can't be enabled). Dismissal flag shared
+        via <code>noLocationCardDismissedStore</code> so dismissing in
+        one place persists in the other.
+      </Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Dismissable (home variant):
+      </Typography>
+      <NoLocationCard dismissible />
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Non-dismissable (settings variant):
+      </Typography>
+      <NoLocationCard />
+    </Stack>
+
+    <Stack spacing={1}>
+      <Typography variant="body2">FavoritesCard — the "Your favorites" surface, the only Card.elevated consumer</Typography>
+      <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+        Same card on / (home, compact header) and /favorites
+        (standalone header). Pinned across the filter cascade: a
+        mode / network / marker filter can never hide a favorited
+        item. The Card's elevated tone paints with
+        <code>--color-surface-elevated</code> — change that token
+        in theme.css to verify the elevation hierarchy.
+      </Typography>
+      <FavoritesCard
+        routes={[route24, route35]}
+        stations={[]}
+        headerStyle="standalone"
+        onChangeStationMarker={() => {}}
+      />
+    </Stack>
   </section>
 </main>
 
@@ -718,3 +834,5 @@
     </Stack>
   </DialogContent>
 </Dialog>
+
+<HeaderSearchOverlay open={searchOpen} onclose={() => (searchOpen = false)} />
