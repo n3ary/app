@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import {
-    STATION_MARKER_ICONS, STATION_MARKER_FILL,
+    STATION_MARKER_ICONS, STATION_MARKER_FILL, STATION_MARKER_ACCENT,
   } from '$lib/stores/favoritesStore.svelte';
   import { cn } from './cn';
 
@@ -29,11 +29,9 @@
   strokeWidth={2.25}
   fill={STATION_MARKER_FILL[marker]}
   class={cn(
-    marker === 'favorite'
-      ? 'text-[color:var(--color-danger)]'
-      : 'text-[color:var(--color-primary)]',
     'shrink-0',
     className,
   )}
   aria-label={marker}
+  style={`color: ${STATION_MARKER_ACCENT[marker]}`}
 />

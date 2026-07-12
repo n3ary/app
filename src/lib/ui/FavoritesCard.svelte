@@ -8,7 +8,8 @@
   import { goto } from '$app/navigation';
   import type { Route } from '$lib/domain/types';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import { favoritesStore, type StationMarker } from '$lib/stores/favoritesStore.svelte';
+  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import {
     Button, Card, CardContent, FavoriteRouteRow, FavoriteStationRow,
@@ -18,11 +19,6 @@
   type Props = {
     routes: Route[];
     stations: StopWithDistance[];
-    /** Marker assignments keyed by stop id. Omitted ids default to
-     *  undefined (unstarred). */
-    stationMarkers?: ReadonlyMap<string, StationMarker>;
-    /** Mutate a station's marker. `null` clears. */
-    onChangeStationMarker?: (stopId: string, next: StationMarker | null) => void;
     /** Max routes to show before truncating with the View-all
      *  footer. Undefined = show all. */
     routeLimit?: number;
@@ -43,12 +39,13 @@
     /** 'compact' = Heart icon + h6 (home card-in-card);
      *  'standalone' = plain h5 (/favorites picker). */
     headerStyle?: 'compact' | 'standalone';
+    /** Mutate a station's marker from within the card. When set,
+     *  the station avatar becomes an interactive dropdown trigger. */
+    onChangeStationMarker?: (stopId: string, next: StationMarker | null) => void;
   };
 
   let {
     routes, stations,
-    stationMarkers,
-    onChangeStationMarker,
     routeLimit,
     stationLimit,
     viewAllHref,
@@ -57,6 +54,7 @@
     routeRow,
     stationRow,
     headerStyle = 'compact',
+    onChangeStationMarker,
   }: Props = $props();
 
   const visibleRoutes = $derived(routeLimit != null ? routes.slice(0, routeLimit) : routes);
@@ -139,18 +137,10 @@
     visibleStations.length > 0 && visibleRoutes.length > 0,
   );
 
-  function defaultChangeMarker(stopId: string, next: StationMarker | null): void {
-    if (next === null) {
-      const current = favoritesStore.markerFor(stopId);
-      if (current === undefined) return;
-      favoritesStore.setMarker(stopId, null);
-    } else {
-      favoritesStore.setMarker(stopId, next);
-    }
-  }
+
 </script>
 
-<Card tone="elevated">
+<Card tone="elevated" accentColor="var(--color-favorite)">
   <CardContent>
     <Stack spacing={1}>
       {#if headerStyle === 'compact'}
@@ -207,14 +197,12 @@
             {:else}
               <FavoriteStationRow
                 stop={stop}
-                marker={stationMarkers?.get(stop.id)}
-                onChangeMarker={(next) => onChangeStationMarker
-                  ? onChangeStationMarker(stop.id, next)
-                  : defaultChangeMarker(stop.id, next)}
                 onbodyclick={() => goto(`/station/${stop.id}`)}
                 routes={stopRoutes[stop.id]}
                 hasGps={false}
                 variant="card"
+                marker={favoritesStore.markerFor(stop.id) ?? undefined}
+                onChangeMarker={onChangeStationMarker}
                 class="mt-1"
               />
             {/if}

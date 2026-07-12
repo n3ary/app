@@ -1,9 +1,11 @@
-<!-- FavoriteStationRow: single source of truth for the station row used by the search overlay (with optional distance), /favorites, and home. The marker dropdown replaces the old heart toggle; the body tap navigates to /station/[id]. -->
+<!-- FavoriteStationRow: plain tappable station row used by the search overlay (with optional distance) and /favorites. Tapping the row navigates to /station/[id] where the marker dropdown lives via the StationCard avatar. -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { Bus } from 'lucide-svelte';
   import type { Route } from '$lib/domain/types';
   import type { StopWithDistance } from '$lib/data/gtfs/types';
   import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
+  import { STATION_MARKER_ICONS, STATION_MARKER_ACCENT } from '$lib/stores/favoritesStore.svelte';
   import Avatar from './Avatar.svelte';
   import RouteChipsRow from './RouteChipsRow.svelte';
   import StationMarkerDropdown from './StationMarkerDropdown.svelte';
@@ -15,10 +17,6 @@
      *  wider shape enables `hasGps`-gated distance display; the
      *  minimal shape is what the favorites store has on hand. */
     stop: StopWithDistance | { id: string; name: string };
-    /** Current marker on the station, or undefined if unstarred. */
-    marker: StationMarker | undefined;
-    /** Mutate the station's marker; `null` clears it. */
-    onChangeMarker: (next: StationMarker | null) => void;
     /** Optional body tap. When null/undefined the row is non-interactive
      *  (the search overlay always supplies one; the home favorites
      *  card uses one for station detail navigation). */
@@ -31,27 +29,44 @@
      *  favorites surfaces pass false (no distance to show). */
     hasGps?: boolean;
     variant?: 'card' | 'inline';
+    /** Marker for this station. Drives the avatar background colour
+     *  (amber for favorite, blue for home/work/cityCenter, blue for normal).
+     *  When omitted the Avatar uses the default blue. */
+    marker?: StationMarker | null;
+    /** Mutate the station's marker. When set, the avatar becomes an
+     *  interactive dropdown trigger (e.g. in /favorites). */
+    onChangeMarker?: (stopId: string, next: StationMarker | null) => void;
+    /** Optional trailing badge rendered on the right side of the name
+     *  row (e.g. a StationMarkerBadge). */
+    trailingBadge?: Snippet;
     class?: string;
   };
 
   let {
     stop,
-    marker,
-    onChangeMarker,
     onbodyclick = null,
     routes,
     hasGps = false,
     variant = 'card',
+    marker,
+    onChangeMarker,
+    trailingBadge,
     class: className,
   }: Props = $props();
 
   const interactive = $derived(typeof onbodyclick === 'function');
+  const hasDropdown = $derived(typeof onChangeMarker === 'function');
   const showChips = $derived(Array.isArray(routes) && routes.length > 0);
   // The wider StopWithDistance shape may or may not carry a `distance`
   // (the favorites store resolves ids via getStopsByIds, which always
   // includes it; older callers might not). 'in' is a type-narrowing
   // operator that needs to run reactively.
   const distance = $derived('distance' in stop ? stop.distance : undefined);
+
+  // Avatar icon: marker icon when the station has a marker, Bus otherwise.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const AvatarIcon = $derived(marker != null ? STATION_MARKER_ICONS[marker] as any : Bus);
+  const avatarAccent = $derived(marker != null ? STATION_MARKER_ACCENT[marker] : 'var(--color-primary)');
 
   function formatDistance(m: number): string {
     if (m < 1000) return `${Math.round(m)} m`;
@@ -88,33 +103,35 @@
       : 'px-1 py-1.5 -mx-1 hover:bg-[color:var(--color-border)]/20',
     className,
   )}
->
-  <Avatar variant="square" class="w-10 h-10 shrink-0">
-    <Bus size={20} />
-  </Avatar>
+  >
+  {#if hasDropdown}
+    <StationMarkerDropdown
+      stationId={stop.id}
+      marker={marker ?? undefined}
+      onChange={(next) => (onChangeMarker ?? (() => {}))(stop.id, next)}
+      label={stop.name}
+      size={20}
+      class="w-10 h-10 shrink-0"
+    />
+  {:else}
+    <Avatar variant="square" class="w-10 h-10 shrink-0" style={`background-color: ${avatarAccent}; color: var(--color-fg);`}>
+      <AvatarIcon size={20} />
+    </Avatar>
+  {/if}
   <div class="min-w-0 flex-1 flex flex-col gap-1">
     <div class="flex items-center gap-2">
-      <!-- Marker is conveyed by the dropdown trigger on the right;
-           a left-side badge next to the name would be redundant in a
-           list row. The dedicated station detail page (/station/[id])
-           renders the badge via StationCard. -->
       <span class="min-w-0 flex-1 text-sm font-medium truncate">{stop.name}</span>
       {#if hasGps && distance != null}
         <span class="shrink-0 text-xs font-mono text-[color:var(--color-fg-muted)]">
           {formatDistance(distance)}
         </span>
       {/if}
+      {#if trailingBadge}
+        {@render trailingBadge()}
+      {/if}
     </div>
     {#if showChips && routes}
       <RouteChipsRow {routes} />
     {/if}
-  </div>
-  <div class="flex items-center gap-1 shrink-0">
-    <StationMarkerDropdown
-      stationId={stop.id}
-      {marker}
-      onChange={onChangeMarker}
-      label={stop.name}
-    />
   </div>
 </div>
