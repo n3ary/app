@@ -83,22 +83,25 @@ function rowToRoute(r: RouteRow, withSchedule: Set<string>): Route {
   };
 }
 
-/** Shared SELECT + FROM body for route queries. Each call site adds
- *  its own WHERE / GROUP BY / ORDER BY. */
-function routeSelectAndFrom(
+/** Shared SELECT clause for route queries. Each call site adds
+ *  its own FROM + JOINs + WHERE / GROUP BY / ORDER BY.
+ *
+ *  Earlier this helper emitted `FROM routes r ${tagJoin} ${netJoin}`,
+ *  which is correct for `getRoutes` / `getRouteById` but produced
+ *  invalid SQL when `getRoutesForStop` / `getRoutesForStops` then
+ *  appended their own `FROM stop_times st ...` (two FROM clauses,
+ *  two `r` aliases, two sets of joins). Splitting the helper into
+ *  a SELECT-only builder lets every call site own its FROM and
+ *  its join shape. */
+function routeSelectClause(
   desc: string,
   tagSelect: string,
-  tagJoin: string,
   netSelect: string,
-  netJoin: string,
 ): string {
   const descCol = desc === 'route_desc' ? 'r.route_desc' : 'NULL AS route_desc';
   return `SELECT r.route_id, r.route_short_name, r.route_long_name, ${descCol},
             r.route_color, r.route_text_color, r.route_type,
-            ${tagSelect}, ${netSelect}
-     FROM routes r
-     ${tagJoin}
-     ${netJoin}`;
+            ${tagSelect}, ${netSelect}`;
 }
 
 export function getRoutes(db: Database): Route[] {
@@ -108,7 +111,10 @@ export function getRoutes(db: Database): Route[] {
   const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, tagSelect, tagJoin, netSelect, netJoin)}
+    `${routeSelectClause(desc, tagSelect, netSelect)}
+     FROM routes r
+     ${tagJoin}
+     ${netJoin}
      GROUP BY r.route_id
      ORDER BY CAST(r.route_short_name AS INTEGER), r.route_short_name;`,
   );
@@ -122,7 +128,10 @@ export function getRouteById(db: Database, routeId: string): Route | null {
   const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, tagSelect, tagJoin, netSelect, netJoin)}
+    `${routeSelectClause(desc, tagSelect, netSelect)}
+     FROM routes r
+     ${tagJoin}
+     ${netJoin}
      WHERE r.route_id = ?
      GROUP BY r.route_id;`,
     [routeId],
@@ -140,7 +149,7 @@ export function getRoutesForStop(db: Database, stopId: string): Route[] {
   const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, tagSelect, tagJoin, netSelect, netJoin)}
+    `${routeSelectClause(desc, tagSelect, netSelect)}
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
@@ -171,7 +180,7 @@ export function getRoutesForStops(
   const ph = stopIds.map(() => '?').join(',');
   const rows = selectAll<RouteRow & { stop_id: string }>(
     db,
-    `${routeSelectAndFrom(desc, tagSelect, tagJoin, netSelect, netJoin)}
+    `${routeSelectClause(desc, tagSelect, netSelect)}
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
