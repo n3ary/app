@@ -403,6 +403,14 @@
     const _anchor = stationAnchor;
     void _scope;
     void _anchor;
+    // Skip the very first run of this effect, which fires before
+    // /+layout has set the feed. Without this guard, the worker
+    // throws "not bound to a feed yet" and the error gets stored
+    // in `otherStationsError`, which paints "GTFS worker not bound
+    // to a feed yet" inside the catalog card -- the user reads it
+    // as "data isn't loading". The next run (after boundFeedId is
+    // set) will fire and actually load the data.
+    if (!feedsStore.boundFeedId) return;
     untrack(() => {
       otherStationsPage = [];
       otherStationsTotal = 0;
