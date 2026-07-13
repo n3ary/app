@@ -80,6 +80,7 @@
 <div
   role={interactive ? 'button' : undefined}
   tabindex={interactive ? 0 : undefined}
+  data-testid="favorite-station-row"
   aria-expanded={undefined}
   onclick={interactive
     ? (e) => {
