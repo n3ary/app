@@ -532,13 +532,15 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
                 {#each (route?.tags ?? []) as tagId (tagId)}
                   {@const tag = routeTags.get(tagId)}
                   {@const TagIcon = tag?.icon ? tagIcon(tag.icon) : null}
+                  {@const tagColor = tag?.color}
+                  {@const tagHex = tagColor ? `#${tagColor}` : undefined}
                   {#if TagIcon}
-                    <Chip size="small">
+                    <Chip size="small" hex={tagHex} fg={tagColor ? pickContrastingText(tagColor) : undefined}>
                       {#snippet icon()}<TagIcon size={12} />{/snippet}
                       {tag?.name ?? tagId}
                     </Chip>
                   {:else}
-                    <Chip size="small">
+                    <Chip size="small" hex={tagHex} fg={tagColor ? pickContrastingText(tagColor) : undefined}>
                       {tag?.name ?? tagId}
                     </Chip>
                   {/if}
