@@ -20,8 +20,6 @@ export interface Route {
   type?: VehicleType;
   /** True when the feed has at least one trip on this route with a usable arrival_time (schedule view has something). Undefined = assume true (back-compat). False = adapter-emitted live-only fallback trips with empty stop_times (`..._NT001`); UI gates schedule buttons on this. */
   hasSchedule?: boolean;
-  /** GTFS route_networks.txt ids — `['night']`, `['metroline', 'school']`. Undefined on older cached blobs. */
-  networks?: string[];
   /** Producer-extension tag ids from `_route_tags.txt` (1:many per route, e.g. `['night', 'metroline']`). Undefined on feeds that don't ship the producer extension. */
   tags?: string[];
 }
@@ -241,10 +239,9 @@ export function formatRelativeMin(deltaMin: number): string {
   return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
 }
 
-/** True when the route belongs to the 'night' network or has the 'night' tag. Falls back to legacy short-name heuristic for feeds that pre-date networks.txt / _route_tags support. */
+/** True when the route has the 'night' tag. Falls back to legacy short-name heuristic for feeds that pre-date _route_tags support. */
 export function isNightRoute(route: Route): boolean {
   if (route.tags?.includes('night')) return true;
-  if (route.networks?.includes('night')) return true;
   return /n$/i.test(route.shortName);
 }
 

@@ -7,7 +7,7 @@
  */
 
 import type { Feed } from '$lib/data/feeds';
-import type { Network, Route, RouteTag, Station, Vehicle } from '$lib/domain/types';
+import type { Route, RouteTag, Station, Vehicle } from '$lib/domain/types';
 import type { NearyFeedConfig } from '$lib/workers/gtfs/queries/feedConfig';
 import type { ReconcileStats } from '$lib/domain/reconcile';
 
@@ -79,10 +79,6 @@ export interface GtfsRepo {
 
   /** All routes, sorted by short_name (numeric where possible). */
   getRoutes(): Promise<Route[]>;
-
-  /** All networks present in the feed (`networks.txt`).
-   *  Empty array for feeds that pre-date networks.txt support. */
-  getNetworks(): Promise<Network[]>;
 
   /** All tags in the feed (`_route_tags.txt` producer extension).
    *  Empty array for feeds that don't ship the producer extension. */

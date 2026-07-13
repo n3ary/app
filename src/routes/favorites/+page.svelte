@@ -41,7 +41,7 @@
   import {
     Card, CardContent, Chip, Collapsible, FavoriteRouteRow, FavoriteStationRow,
     FavoritesCard, SelectFeedCard, Spinner, Stack, Tabs, TripStopList, Typography,
-    TypeBadge, networkIcon, networkTextColor,
+    TypeBadge, networkIcon,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';

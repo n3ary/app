@@ -64,25 +64,12 @@ interface RouteRowBase {
   route_color: string | null;
   route_text_color: string | null;
   route_type: number | null;
-  network_ids: string | null;
   tag_ids: string | null;
 }
 
 function routeDescExpr(db: Database): string {
   const cols = selectAll<{ name: string }>(db, `PRAGMA table_info(routes);`);
   return cols.some((c) => c.name === 'route_desc') ? 'route_desc' : 'NULL AS route_desc';
-}
-
-function routeNetworksJoinExpr(db: Database): { join: string; select: string } {
-  const tables = selectAll<{ name: string }>(
-    db,
-    `SELECT name FROM sqlite_master WHERE type='table' AND name='route_networks';`,
-  );
-  if (tables.length === 0) return { join: '', select: 'NULL AS network_ids' };
-  return {
-    join: 'LEFT JOIN route_networks rn ON rn.route_id = r.route_id',
-    select: "GROUP_CONCAT(rn.network_id, ',') AS network_ids",
-  };
 }
 
 function routeTagsJoinExpr(db: Database): { join: string; select: string } {
@@ -107,9 +94,6 @@ function rowToRoute(r: RouteRowBase, withSchedule: Set<string>): Route {
     textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
     type: vehicleTypeFromGtfs(r.route_type),
     hasSchedule: withSchedule.has(r.route_id),
-    networks: r.network_ids
-      ? r.network_ids.split(',').filter(Boolean)
-      : undefined,
     tags: r.tag_ids
       ? r.tag_ids.split(',').filter(Boolean)
       : undefined,
@@ -179,7 +163,6 @@ export function getRoutesThroughStations(
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
   const descCol = desc === 'route_desc' ? 'r.route_desc' : 'NULL AS route_desc';
-  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
 
   // Build the WHERE clause for mode + tag filters. The mode filter
@@ -225,12 +208,10 @@ export function getRoutesThroughStations(
     db,
     `SELECT st.stop_id, r.route_id, r.route_short_name, r.route_long_name, ${descCol},
             r.route_color, r.route_text_color, r.route_type,
-            ${netSelect},
             ${tagSelect}
      FROM stop_times st
      JOIN trips t  ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
-     ${netJoin}
      ${tagJoin}
      WHERE ${conds.join(' AND ')}
      GROUP BY st.stop_id, r.route_id;`,

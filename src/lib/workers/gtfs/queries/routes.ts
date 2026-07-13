@@ -18,7 +18,6 @@ type RouteRow = {
   route_color: string | null;
   route_text_color: string | null;
   route_type: number | null;
-  network_ids: string | null;
   tag_ids: string | null;
 };
 
@@ -33,23 +32,12 @@ function routeDescExpr(db: Database): string {
   return cols.some((c) => c.name === 'route_desc') ? 'route_desc' : 'NULL AS route_desc';
 }
 
-// `route_networks` was added together with `networks.txt` support.
-// Older cached blobs won't have the table — probe once and fall back
-// to NULL so callers get `route.networks === undefined` rather than an error.
-function routeNetworksJoinExpr(db: Database): { join: string; select: string } {
-  const tables = selectAll<{ name: string }>(db, `SELECT name FROM sqlite_master WHERE type='table' AND name='route_networks';`);
-  if (tables.length === 0) return { join: '', select: 'NULL AS network_ids' };
-  return {
-    join: 'LEFT JOIN route_networks rn ON rn.route_id = r.route_id',
-    select: "GROUP_CONCAT(rn.network_id, ',') AS network_ids",
-  };
-}
-
 // `_route_tags` is the cluj-napoca adapter's producer extension
-// (issue #25). Same graceful-degrade pattern as `route_networks`:
-// older cached blobs return NULL and the UI sees `route.tags ===
-// undefined`. The ORDER BY priority ASC inside the GROUP_CONCAT
-// preserves the consumer-side "primary identity first" sort.
+// (issue #25). Older cached blobs won't have the table — probe
+// once and fall back to NULL so callers get `route.tags ===
+// undefined` rather than an error. The ORDER BY priority ASC
+// inside the GROUP_CONCAT preserves the consumer-side "primary
+// identity first" sort.
 function routeTagsJoinExpr(db: Database): { join: string; select: string } {
   const tables = selectAll<{ name: string }>(db, `SELECT name FROM sqlite_master WHERE type='table' AND name='_route_tags';`);
   if (tables.length === 0) return { join: '', select: 'NULL AS tag_ids' };
@@ -69,9 +57,6 @@ function rowToRoute(r: RouteRow, withSchedule: Set<string>): Route {
     textColor: r.route_text_color ? `#${r.route_text_color}` : undefined,
     type: vehicleTypeFromGtfs(r.route_type),
     hasSchedule: withSchedule.has(r.route_id),
-    networks: r.network_ids
-      ? r.network_ids.split(',').filter(Boolean)
-      : undefined,
     tags: r.tag_ids
       ? r.tag_ids.split(',').filter(Boolean)
       : undefined,
@@ -82,29 +67,24 @@ function rowToRoute(r: RouteRow, withSchedule: Set<string>): Route {
  *  its own WHERE / GROUP BY / ORDER BY. */
 function routeSelectAndFrom(
   desc: string,
-  netSelect: string,
   tagSelect: string,
-  netJoin: string,
   tagJoin: string,
 ): string {
   const descCol = desc === 'route_desc' ? 'r.route_desc' : 'NULL AS route_desc';
   return `SELECT r.route_id, r.route_short_name, r.route_long_name, ${descCol},
             r.route_color, r.route_text_color, r.route_type,
-            ${netSelect},
             ${tagSelect}
      FROM routes r
-     ${netJoin}
      ${tagJoin}`;
 }
 
 export function getRoutes(db: Database): Route[] {
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
-  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, netSelect, tagSelect, netJoin, tagJoin)}
+    `${routeSelectAndFrom(desc, tagSelect, tagJoin)}
      GROUP BY r.route_id
      ORDER BY CAST(r.route_short_name AS INTEGER), r.route_short_name;`,
   );
@@ -114,11 +94,10 @@ export function getRoutes(db: Database): Route[] {
 export function getRouteById(db: Database, routeId: string): Route | null {
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
-  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, netSelect, tagSelect, netJoin, tagJoin)}
+    `${routeSelectAndFrom(desc, tagSelect, tagJoin)}
      WHERE r.route_id = ?
      GROUP BY r.route_id;`,
     [routeId],
@@ -132,15 +111,13 @@ export function getRouteById(db: Database, routeId: string): Route | null {
 export function getRoutesForStop(db: Database, stopId: string): Route[] {
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
-  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
   const rows = selectAll<RouteRow>(
     db,
-    `${routeSelectAndFrom(desc, netSelect, tagSelect, netJoin, tagJoin)}
+    `${routeSelectAndFrom(desc, tagSelect, tagJoin)}
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
-     ${netJoin}
      ${tagJoin}
      WHERE st.stop_id = ?
      GROUP BY r.route_id
@@ -162,16 +139,14 @@ export function getRoutesForStops(
   if (stopIds.length === 0) return {};
   const withSchedule = getRoutesWithSchedule(db);
   const desc = routeDescExpr(db);
-  const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
   const ph = stopIds.map(() => '?').join(',');
   const rows = selectAll<RouteRow & { stop_id: string }>(
     db,
-    `${routeSelectAndFrom(desc, netSelect, tagSelect, netJoin, tagJoin)}
+    `${routeSelectAndFrom(desc, tagSelect, tagJoin)}
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
-     ${netJoin}
      ${tagJoin}
      WHERE st.stop_id IN (${ph})
      GROUP BY st.stop_id, r.route_id

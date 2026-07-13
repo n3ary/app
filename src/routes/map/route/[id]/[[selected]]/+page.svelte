@@ -6,12 +6,12 @@
   import { ArrowRightLeft, Bus, Calendar, Heart, Maximize2, Minus, Plus } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
-    Stack, Typography, networkIcon, networkTextColor,
+    Stack, Typography, networkIcon,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import { useOtherDirectionExists } from '$lib/data/gtfs/otherDirectionExists.svelte';
   import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirection';
-  import type { Network, RouteTag } from '$lib/domain/types';
+  import type { RouteTag } from '$lib/domain/types';
   import type { RouteMapView } from '$lib/data/gtfs/types';
   import {
     formatHHMM, formatRelativeMin, pickContrastingText, vehicleTypeLabel,
@@ -70,15 +70,11 @@
   // ── Data ────────────────────────────────────────────────────────────
   let view = $state<RouteMapView | null>(null);
   let error = $state<string | null>(null);
-  let networkMap = $state<Map<string, Network>>(new Map());
   let routeTags = $state<Map<string, RouteTag>>(new Map());
 
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    void getGtfsRepo().getNetworks().then((nets) => {
-      networkMap = new Map(nets.map((n) => [n.id, n]));
-    });
     void getGtfsRepo().getRouteTags().then((tags) => {
       routeTags = new Map(tags.map((t) => [t.id, t]));
     });
