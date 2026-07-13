@@ -5,14 +5,14 @@
   import { ArrowRightLeft, ChevronDown, Map as MapIcon } from 'lucide-svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
-    Stack, ToggleGroup, TripStopList, Typography, tagIcon, hasTagIcon, networkTextColor,
+    Stack, ToggleGroup, TripStopList, Typography, tagIcon, hasTagIcon,
   } from '$lib/ui';
   import { getGtfsRepo } from '$lib/data/gtfs/repo';
   import { useOtherDirectionExists } from '$lib/data/gtfs/otherDirectionExists.svelte';
   import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirection';
   import type { Network, Route, RouteTag } from '$lib/domain/types';
   import {
-    formatHHMM, formatRelativeMin, isNightRoute, vehicleTypeLabel,
+    formatHHMM, formatRelativeMin, isNightRoute, pickContrastingText, vehicleTypeLabel,
   } from '$lib/domain/types';
   import { scheduleUrgency } from '$lib/domain/buckets';
   import { urgencyClass } from '$lib/ui/urgencyClass';
@@ -525,7 +525,7 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
                 <Typography variant="h5" class="truncate">{headerTitle}</Typography>
                 {#each (route?.networks ?? []) as netId (netId)}
                   {@const net = networkMap.get(netId)}
-                  <Chip size="small" hex={net?.color} fg={net ? networkTextColor(net.color) : undefined}>
+                  <Chip size="small" hex={net?.color} fg={net ? pickContrastingText(net.color) : undefined}>
                     {net?.name ?? netId}
                   </Chip>
                 {/each}
