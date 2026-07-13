@@ -12,15 +12,29 @@ export default defineConfig({
     tailwindcss(),
     sveltekit(),
     SvelteKitPWA({
+      // Don't let the plugin auto-register the SW in dev. The
+      // plugin's injectRegister script tries to evaluate the SW
+      // in dev mode, but the SW source contains `__APP_VERSION__`
+      // (Vite-replaced at build time via the `define` below) -- the
+      // literal reference throws "Can't find variable: __APP_VERSION__"
+      // and surfaces as an unhandled rejection. In production the
+      // plugin's script is fine; the SW is properly built and the
+      // `define` has been applied.
+      ...(process.env.NODE_ENV !== 'production' ? { disable: true } : {}),
       // injectManifest: we provide the SW source at src/service-worker.ts;
       // the plugin generates a final SW with the precache manifest
       // injected. The default srcDir is 'src' which is where our SW
       // lives, so we don't override it.
       strategies: 'injectManifest',
-      // Don't let the plugin auto-register the SW. We register it
-      // ourselves in src/routes/+layout.svelte (only on the client)
-      // so the dev server doesn't try to register one.
-      disable: false,
+      // Don't let the plugin auto-register the SW in dev. The
+      // plugin's injectRegister script tries to evaluate the SW
+      // in dev mode, but the SW source contains `__APP_VERSION__`
+      // (Vite-replaced at build time via the `define` below) -- the
+      // literal reference throws "Can't find variable: __APP_VERSION__"
+      // and surfaces as an unhandled rejection. In production the
+      // plugin's script is fine; the SW is properly built and the
+      // `define` has been applied.
+      disable: process.env.NODE_ENV !== 'production',
       // Vite's `define` injects the version at build time. The SW
       // reads it as `__APP_VERSION__`. We can't import package.json
       // from the SW because the SW is built by a separate Vite pass

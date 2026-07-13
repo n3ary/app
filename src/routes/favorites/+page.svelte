@@ -71,12 +71,16 @@
     return parseFavoritesTab(page.url.searchParams.get('tab')) ?? 'routes';
   }
 
-  $effect(() => {
-    const fromUrl = parseFavoritesTab(page.url.searchParams.get('tab'));
-    if (fromUrl && fromUrl !== activeTab) {
-      activeTab = fromUrl;
-    }
-  });
+  // No URL -> state sync effect. setTab is the only writer of
+  // activeTab after mount; initialTab() seeds it from the URL on
+  // mount; browser back/forward triggers a re-mount of the page
+  // component, which re-calls initialTab(). Earlier we had a
+  // `fromUrl !== activeTab` sync effect, but it raced with
+  // replaceState: SvelteKit's replaceState updates the browser
+  // history and `page.state` but not `page.url` synchronously,
+  // so on the same tick the effect saw the old URL and clobbered
+  // activeTab back to it -- which is why a click on the Routes
+  // tab was silently ignored.
 
   function setTab(next: FavoritesTab) {
     if (next === activeTab) return;
