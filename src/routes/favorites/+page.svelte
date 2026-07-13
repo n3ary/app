@@ -323,6 +323,7 @@
   // duplicate that worker call here.
   $effect(() => {
     const fid = feedsStore.boundFeedId;
+    void fid;
     if (!fid) return;
     const ids = Array.from(favoritesStore.markers.keys());
     if (ids.length === 0) {
@@ -346,6 +347,7 @@
   // value or null; `undefined` = no filter.
   $effect(() => {
     const fid = feedsStore.boundFeedId;
+    void fid;
     if (!fid) return;
     (async () => {
       try {
@@ -356,6 +358,15 @@
           tags: tagFilter ?? undefined,
         });
         stationsScopeError = null;
+        // Trigger catalog fetch after stationsScope is populated.
+        // The catalog effect tracks stationsScope, but if it ran before
+        // this async resolves (boundFeedId changes first), it would read
+        // an empty stationsScope and return early. Moving the trigger
+        // here ensures the fetch fires with fresh data.
+        otherStationsPage = [];
+        otherStationsTotal = 0;
+        otherStationsError = null;
+        await fetchNextStationsPage();
       } catch (e) {
         stationsScopeError = e instanceof Error ? e.message : String(e);
       }
@@ -365,6 +376,7 @@
   // Routes "active right now" set (one worker round-trip).
   $effect(() => {
     const fid = feedsStore.boundFeedId;
+    void fid;
     if (!fid) return;
     const now = nowTicker.ms;
     (async () => {
@@ -407,8 +419,10 @@
     // forever fetching page 0.
     const _scope = stationsScope;
     const _anchor = stationAnchor;
+    const _fid = feedsStore.boundFeedId;
     void _scope;
     void _anchor;
+    void _fid;
     // Skip the very first run of this effect, which fires before
     // /+layout has set the feed. Without this guard, the worker
     // throws "not bound to a feed yet" and the error gets stored
