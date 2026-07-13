@@ -34,7 +34,7 @@
    to both Routes (routes serving marked stations) and Stations tabs.
 -->
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import { Heart } from 'lucide-svelte';
@@ -86,15 +86,17 @@
     const url = new URL(page.url);
     if (next === 'routes') url.searchParams.delete('tab');
     else url.searchParams.set('tab', next);
-    // Use replaceState (not goto) so SvelteKit's navigation
-    // handler doesn't fire. With both tabs always mounted
-    // (visibility: hidden on the inactive one), the document
-    // height is stable across tab swaps so `window.scrollY` is
-    // preserved naturally -- no manual scroll restore is needed
-    // (issue #344). `goto` with `noScroll: true` was resetting
-    // scrollY to 0 on same-page query changes despite the
-    // noScroll option, so we bypass it entirely.
-    window.history.replaceState(window.history.state, '', url);
+    // Use SvelteKit's replaceState (not the raw history API and
+    // not goto) so the page store stays in sync without triggering
+    // a full navigation. With both tabs always mounted (visibility:
+    // hidden on the inactive one), the document height is stable
+    // across tab swaps so `window.scrollY` is preserved naturally
+    // -- no manual scroll restore is needed (issue #344). `goto`
+    // with `noScroll: true` was resetting scrollY to 0 on same-page
+    // query changes despite the noScroll option, and the raw
+    // `window.history.replaceState` triggers a SvelteKit dev-mode
+    // warning that it conflicts with the router.
+    replaceState(url, {});
     // The browser's "scroll focused element into view" behavior
     // fires on the click that activated the tab trigger (the
     // tab is at the top of the page, the user is mid-list, so
