@@ -415,23 +415,29 @@
     });
   });
 
-  let sentinelEl = $state<HTMLElement | null>(null);
+  // Paginate on a real user scroll, not on a layout reflow. The previous
+  // IntersectionObserver fired whenever the sentinel crossed the 1000px
+  // rootMargin edge — including reflows from stationsScope / stationAnchor
+  // changes, row-grow on marker-chip population, and viewport resizes —
+  // which silently appended pages and shifted the user's mid-list view
+  // (issue #328). A `scroll` event only fires on real input, so the page
+  // can no longer grow beneath the user. Reads inside `onScroll` are
+  // ordinary closure captures, not $effect-tracked — the listener is
+  // registered once at mount, the handler reads the current state at
+  // fire-time.
   $effect(() => {
-    if (!sentinelEl) return;
-    if (typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          if (otherStationsLoading) continue;
-          if (otherStationsPage.length >= otherStationsTotal) continue;
-          void fetchNextStationsPage();
-        }
-      },
-      { rootMargin: '0px 0px 1000px 0px', threshold: 0 },
-    );
-    observer.observe(sentinelEl);
-    return () => observer.disconnect();
+    if (typeof window === 'undefined') return;
+    const onScroll = () => {
+      if (otherStationsLoading) return;
+      if (otherStationsTotal > 0 && otherStationsPage.length >= otherStationsTotal) return;
+      const distanceToBottom =
+        document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (distanceToBottom < 200) {
+        void fetchNextStationsPage();
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   });
 
   async function fetchNextStationsPage() {
@@ -876,8 +882,6 @@
                       />
                     {/each}
                   </Stack>
-
-                  <div bind:this={sentinelEl} aria-hidden="true" class="h-1"></div>
 
                   {#if otherStationsLoading}
                     <Stack direction="row" spacing={1} align="center" class="py-2">

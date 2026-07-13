@@ -1,5 +1,5 @@
 // Pure list-layout helpers for the /favorites page. The page itself
-// owns fetch + scroll + IntersectionObserver; this module owns
+// owns fetch + scroll; this module owns
 // "given the data the worker returned, what order do rows render in,
 // and which tab the user is on".
 
