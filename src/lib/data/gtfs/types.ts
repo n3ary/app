@@ -193,15 +193,17 @@ export interface GtfsRepo {
    * Feed switches invalidate via the db handle.
    */
   getRoutesThroughStations(filter: {
-    modes?: ReadonlyArray<import('$lib/domain/types').VehicleType>;
-    /** Network filter — OR semantics: a route qualifies if it carries
-     *  at least one of the listed network ids (1:1 per route — school
-     *  / normal for the cluj feed). */
-    networks?: ReadonlyArray<string>;
-    /** Tag filter — OR semantics: a route qualifies if it carries at
-     *  least one of the listed tag ids (1:many per route — night /
-     *  metroline / festival / airport / special for the cluj feed). */
-    tags?: ReadonlyArray<string>;
+    /** Mode filter: only routes whose GTFS route_type matches this
+     *  VehicleType. undefined = no mode filter. */
+    modes?: import('$lib/domain/types').VehicleType;
+    /** Network filter: only routes carrying this single network id
+     *  (1:1 per route — school / normal for the cluj feed). undefined
+     *  = no network filter. */
+    networks?: string;
+    /** Tag filter: only routes carrying this single tag id (1:many
+     *  per route — night / metroline / festival / airport / special
+     *  for the cluj feed). undefined = no tag filter. */
+    tags?: string;
   }): Promise<Record<string, Route[]>>;
 
   /**

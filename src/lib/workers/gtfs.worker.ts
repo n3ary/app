@@ -155,9 +155,9 @@ const api: GtfsRepo = {
   },
   async getRoutesThroughStations(filter) {
     return getRoutesThroughStationsImpl(await ensureDb(), {
-      modes: filter.modes ? new Set(filter.modes) : undefined,
-      networks: filter.networks ? new Set(filter.networks) : undefined,
-      tags: filter.tags ? new Set(filter.tags) : undefined,
+      modes: filter.modes,
+      networks: filter.networks,
+      tags: filter.tags,
     });
   },
   async getStationsPage(query) {

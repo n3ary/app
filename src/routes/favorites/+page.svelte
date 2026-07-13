@@ -133,71 +133,33 @@
   let allNetworks = $state<Network[]>([]);
   let allTags = $state<RouteTag[]>([]);
   let error = $state<string | null>(null);
-  // All chips start selected (everything visible). Deselecting removes those
-  // items. Deselecting all = empty catalog. No "All" button.
-  let activeMarkerFilter = $state<ReadonlySet<StationMarker>>(new Set(STATION_MARKERS));
-  let typeFilter = $state<ReadonlySet<VehicleType>>(new Set());
-  let networkFilter = $state<ReadonlySet<string>>(new Set());
-  let tagFilter = $state<ReadonlySet<string>>(new Set());
+  // Single-select-with-deselect filter rows. Each filter type
+  // (marker, mode, network, tag) holds at most one active chip;
+  // `null` means no chip is selected and the filter is inactive
+  // (catalog shows everything). Tapping the active chip again
+  // deselects it. All chips render at full color regardless of
+  // active state — the white ring is the only visual cue, so the
+  // available filter set stays readable when nothing is selected.
+  let activeMarkerFilter = $state<StationMarker | null>(null);
+  let typeFilter = $state<VehicleType | null>(null);
+  let networkFilter = $state<string | null>(null);
+  let tagFilter = $state<string | null>(null);
 
   function toggleMarkerFilter(m: StationMarker) {
-    const next = new Set(activeMarkerFilter);
-    if (next.has(m)) next.delete(m);
-    else next.add(m);
-    activeMarkerFilter = next;
-  }
-  function clearMarkerFilter() {
-    activeMarkerFilter = new Set(STATION_MARKERS);
+    activeMarkerFilter = activeMarkerFilter === m ? null : m;
   }
 
   function toggleType(t: VehicleType) {
-    const next = new Set(typeFilter);
-    if (next.has(t)) next.delete(t);
-    else next.add(t);
-    typeFilter = next;
-  }
-  function clearTypeFilter() {
-    typeFilter = new Set(presentTypes);
+    typeFilter = typeFilter === t ? null : t;
   }
 
   function toggleNetwork(id: string) {
-    const next = new Set(networkFilter);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    networkFilter = next;
-  }
-  function clearNetworkFilter() {
-    networkFilter = new Set(allNetworks.map((n) => n.id));
+    networkFilter = networkFilter === id ? null : id;
   }
 
   function toggleTag(id: string) {
-    const next = new Set(tagFilter);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    tagFilter = next;
+    tagFilter = tagFilter === id ? null : id;
   }
-  function clearTagFilter() {
-    tagFilter = new Set(allTags.map((n) => n.id));
-  }
-
-  // Seed filters with all values on first data load so the default
-  // state is "everything selected". Skipped once either filter has
-  // been manually changed (size > 0 means user interacted).
-  $effect(() => {
-    if (typeFilter.size === 0 && presentTypes.length > 0) {
-      typeFilter = new Set(presentTypes);
-    }
-  });
-  $effect(() => {
-    if (networkFilter.size === 0 && allNetworks.length > 0) {
-      networkFilter = new Set(allNetworks.map((n) => n.id));
-    }
-  });
-  $effect(() => {
-    if (tagFilter.size === 0 && allTags.length > 0) {
-      tagFilter = new Set(allTags.map((n) => n.id));
-    }
-  });
 
   const tz = $derived(feedsStore.activeTimezone);
 
@@ -280,17 +242,18 @@
   // routes/stations with that marker. Deselecting all = empty catalog.
   // Client-side only - the marker map is small.
 
-  // Route filter cascade marker pass: when all markers are selected the
-  // filter is dormant (null = no constraint). When fewer are selected,
-  // fetch the routes serving those marker-bearing stops and intersect.
+  // Route filter cascade marker pass: when no marker is selected the
+  // filter is dormant (null = no constraint). When exactly one
+  // marker is selected, fetch the routes serving those marker-
+  // bearing stops and intersect.
   $effect(() => {
-    // All markers selected = no filter applied
-    if (activeMarkerFilter.size === STATION_MARKERS.length) {
+    // No marker selected = no filter applied.
+    if (activeMarkerFilter === null) {
       routeIdsForMarker = null;
       return;
     }
     const stopIds = Array.from(favoritesStore.markers.entries())
-      .filter(([, m]) => activeMarkerFilter.has(m))
+      .filter(([, m]) => m === activeMarkerFilter)
       .map(([id]) => id);
     if (stopIds.length === 0) {
       routeIdsForMarker = new Set();
@@ -308,7 +271,7 @@
         }
         routeIdsForMarker = ids;
       } catch {
-        // Tag fetch failure: leave the previous (or null) state in place.
+        // Marker fetch failure: leave the previous (or null) state in place.
       }
     })();
     return () => { cancelled = true; };
@@ -377,17 +340,19 @@
   });
 
   // Filter-cascade scope for the Stations tab. Recomputed when
-  // mode, network, or tag filter changes.
+  // mode, network, or tag filter changes. Each filter is single-
+  // value or null; `undefined` = no filter.
   $effect(() => {
     const fid = feedsStore.boundFeedId;
     if (!fid) return;
-    const modes = typeFilter.size < presentTypes.length ? Array.from(typeFilter) : undefined;
-    const networks = networkFilter.size < allNetworks.length ? Array.from(networkFilter) : undefined;
-    const tags = tagFilter.size < allTags.length ? Array.from(tagFilter) : undefined;
     (async () => {
       try {
         const repo = getGtfsRepo();
-        stationsScope = await repo.getRoutesThroughStations({ modes, networks, tags });
+        stationsScope = await repo.getRoutesThroughStations({
+          modes: typeFilter ?? undefined,
+          networks: networkFilter ?? undefined,
+          tags: tagFilter ?? undefined,
+        });
         stationsScopeError = null;
       } catch (e) {
         stationsScopeError = e instanceof Error ? e.message : String(e);
@@ -519,13 +484,13 @@
   const filteredRoutes = $derived.by<Route[]>(() => {
     if (!allRoutes) return [];
     return allRoutes.filter((r) => {
-      if (typeFilter.size < presentTypes.length && !typeFilter.has(r.type ?? 'unknown')) return false;
-      if (networkFilter.size < allNetworks.length && !(r.networks?.some((n) => networkFilter.has(n)) ?? false)) return false;
-      if (tagFilter.size < allTags.length && !(r.tags?.some((t) => tagFilter.has(t)) ?? false)) return false;
+      if (typeFilter !== null && r.type !== typeFilter) return false;
+      if (networkFilter !== null && !(r.networks?.includes(networkFilter) ?? false)) return false;
+      if (tagFilter !== null && !(r.tags?.includes(tagFilter) ?? false)) return false;
       // Marker filter: route qualifies iff it serves at least one
-      // station carrying a marker in the active filter set. Routes
-      // with no overlap are excluded. Skipped entirely when no
-      // filter is active (routeIdsForMarker stays null).
+      // station carrying the active marker. Routes with no overlap
+      // are excluded. Skipped entirely when no filter is active
+      // (routeIdsForMarker stays null).
       if (routeIdsForMarker !== null && !routeIdsForMarker.has(r.id)) return false;
       return true;
     });
@@ -590,27 +555,22 @@
   const favStationsSorted = $derived<StopWithDistance[]>(favoriteStations);
 
   // "All stations": stations that AREN'T in the favorites card above.
-  // All chips start selected (everything visible). Deselecting a marker
-  // hides stations with that marker. Deselecting all = empty catalog.
+  // When a marker is selected, only stations carrying that marker
+  // show; otherwise the full catalog renders.
   const otherStationsSorted = $derived.by<StopWithDistance[]>(() => {
     let list = otherStationsPage;
-    if (activeMarkerFilter.size < STATION_MARKERS.length) {
-      list = list.filter((s) => {
-        const marker = favoritesStore.markerFor(s.id);
-        // Show station if it has no marker, or its marker is in the active set.
-        // Hide stations whose marker is deselected.
-        return marker == null || activeMarkerFilter.has(marker);
-      });
+    if (activeMarkerFilter !== null) {
+      list = list.filter((s) => favoritesStore.markerFor(s.id) === activeMarkerFilter);
     }
     return sortStationsForPicker(list, stationAnchor);
   });
 
   const stationsScopeCount = $derived(Object.keys(stationsScope).length);
   const filtersActive = $derived(
-    typeFilter.size < presentTypes.length
-    || networkFilter.size < allNetworks.length
-    || tagFilter.size < allTags.length
-    || activeMarkerFilter.size < STATION_MARKERS.length
+    typeFilter !== null
+    || networkFilter !== null
+    || tagFilter !== null
+    || activeMarkerFilter !== null
   );
   const otherStationsHasMore = $derived(
     otherStationsTotal === 0 || otherStationsPage.length < otherStationsTotal,
@@ -771,7 +731,7 @@
                       label={MARKER_LABELS[m]}
                       color={MARKER_COLORS[m].bg}
                       fg={MARKER_COLORS[m].fg}
-                      active={activeMarkerFilter.has(m)}
+                      active={activeMarkerFilter === m}
                       onclick={() => toggleMarkerFilter(m)}
                     >
                       {#snippet icon()}
@@ -791,7 +751,7 @@
                   class="pt-2"
                 >
                   {#each presentTypes as t (t)}
-                    <TypeBadge type={t} color={colorByType.get(t)} active={typeFilter.has(t)} onclick={() => toggleType(t)} />
+                    <TypeBadge type={t} color={colorByType.get(t)} active={typeFilter === t} onclick={() => toggleType(t)} />
                   {/each}
                 </Stack>
               {/if}
@@ -803,7 +763,7 @@
                       size="small"
                       label={net.name}
                       color={net.color}
-                      active={networkFilter.has(net.id)}
+                      active={networkFilter === net.id}
                       onclick={() => toggleNetwork(net.id)}
                     />
                   {/each}
@@ -816,7 +776,7 @@
                     <TypeBadge
                       size="small"
                       label={tag.name}
-                      active={tagFilter.has(tag.id)}
+                      active={tagFilter === tag.id}
                       onclick={() => toggleTag(tag.id)}
                     />
                   {/each}

@@ -23,17 +23,15 @@ import { getRoutesWithSchedule } from './routesWithSchedule';
 
 /** Filter signature used as cache key + SQL parameter binding order. */
 export interface FavoritesStationsFilter {
-  /** `undefined` = no mode filter; Set = filter to those modes. */
-  modes?: ReadonlySet<VehicleType>;
-  /** `undefined` = no network filter; Set = filter to routes that carry
-   *  at least one of the listed network ids (OR semantics). Empty Set
-   *  = match none. 1:1 per route (school / normal). */
-  networks?: ReadonlySet<string>;
-  /** `undefined` = no tag filter; Set = filter to routes that carry at
-   *  least one of the listed tag ids (OR semantics). Empty Set = match
-   *  none. 1:many per route (night / metroline / festival / airport /
+  /** `undefined` = no mode filter; VehicleType = filter to that one mode. */
+  modes?: VehicleType;
+  /** `undefined` = no network filter; string = filter to that one
+   *  network. 1:1 per route (school / normal). */
+  networks?: string;
+  /** `undefined` = no tag filter; string = filter to that one tag.
+   *  1:many per route (night / metroline / festival / airport /
    *  special). */
-  tags?: ReadonlySet<string>;
+  tags?: string;
 }
 
 export interface StationsPageQuery {
@@ -119,18 +117,9 @@ function rowToRoute(r: RouteRowBase, withSchedule: Set<string>): Route {
 }
 
 /** Cache key for the filter-cascade query. Mode + network + tag
- *  filter combination, in that order. `*` = no filter (all in scope). */
+ *  combination, in that order. `*` = no filter (all in scope). */
 function filterKey(filter: FavoritesStationsFilter): string {
-  const modes = filter.modes === undefined
-    ? '*'
-    : Array.from(filter.modes).sort().join(',') || '-';
-  const networks = filter.networks === undefined
-    ? '*'
-    : Array.from(filter.networks).sort().join(',') || '-';
-  const tags = filter.tags === undefined
-    ? '*'
-    : Array.from(filter.tags).sort().join(',') || '-';
-  return `${modes}|${networks}|${tags}`;
+  return `${filter.modes ?? '*'}|${filter.networks ?? '*'}|${filter.tags ?? '*'}`;
 }
 
 /** Routes-through-station cache. One LRU per Database handle so a
@@ -187,53 +176,41 @@ export function getRoutesThroughStations(
   const { join: tagJoin, select: tagSelect } = routeTagsJoinExpr(db);
   const { join: netJoin, select: netSelect } = routeNetworksJoinExpr(db);
 
-  // Build the WHERE clause for mode + network + tag filters. The
-  // mode filter maps VehicleType -> GTFS route_type integer for an
-  // exact match; the network and tag filters join their respective
-  // tables. SQL returns the DISTINCT (stop_id, route_id) pairs the
-  // JS side then projects to the record shape (because the SQL
+  // Build the WHERE clause for mode + network + tag filters. Single-
+  // value per type (the UI uses a single-select-with-deselect model
+  // on /favorites), so each clause is at most one IN placeholder.
+  // The mode filter maps VehicleType -> GTFS route_type integer for
+  // an exact match; the network and tag filters join their
+  // respective tables. SQL returns the DISTINCT (stop_id, route_id)
+  // pairs the JS side then projects to the record shape (the SQL
   // joins emit rows per (route, network) and per (route, tag) — we
-  // collapse those to per-route once before filtering so a route in
-  // two networks + two tags doesn't double-count).
-  const modeList = filter.modes === undefined
+  // collapse those to per-route once via GROUP BY before the
+  // filter so a route in two networks + two tags doesn't double-
+  // count).
+  const modeRouteType = filter.modes === undefined
     ? null
-    : Array.from(filter.modes)
-        .map((t) => gtfsRouteTypeFor(t))
-        .filter((n): n is number => n != null);
+    : gtfsRouteTypeFor(filter.modes);
 
   const conds: string[] = ['st.arrival_time IS NOT NULL', `st.arrival_time != ''`];
   const params: Array<string | number> = [];
-  if (modeList !== null) {
-    if (modeList.length === 0) {
-      // No mode can match — cache an empty result so subsequent
-      // calls don't repeat the work.
+  if (modeRouteType !== null) {
+    if (modeRouteType == null) {
+      // No mode can match (unknown VehicleType) — cache an empty
+      // result so subsequent calls don't repeat the work.
       const empty: Record<string, Route[]> = {};
       insertAtCap(cache, key, empty);
       return empty;
     }
-    const ph = modeList.map(() => '?').join(',');
-    conds.push(`r.route_type IN (${ph})`);
-    params.push(...modeList);
+    conds.push(`r.route_type = ?`);
+    params.push(modeRouteType);
   }
   if (filter.networks !== undefined) {
-    if (filter.networks.size === 0) {
-      const empty: Record<string, Route[]> = {};
-      insertAtCap(cache, key, empty);
-      return empty;
-    }
-    const ph = Array.from(filter.networks).map(() => '?').join(',');
-    conds.push(`rn.network_id IN (${ph})`);
-    params.push(...filter.networks);
+    conds.push(`rn.network_id = ?`);
+    params.push(filter.networks);
   }
   if (filter.tags !== undefined) {
-    if (filter.tags.size === 0) {
-      const empty: Record<string, Route[]> = {};
-      insertAtCap(cache, key, empty);
-      return empty;
-    }
-    const ph = Array.from(filter.tags).map(() => '?').join(',');
-    conds.push(`rt.tag_id IN (${ph})`);
-    params.push(...filter.tags);
+    conds.push(`rt.tag_id = ?`);
+    params.push(filter.tags);
   }
 
   const rows = selectAll<RouteRowBase & { stop_id: string }>(
