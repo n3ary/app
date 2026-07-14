@@ -497,6 +497,7 @@
                       onStopsExpand={stopsEligible ? () => toggleStops(vehicle) : undefined}
                       stopsExpanded={expandedVehicleId === vehicle.id || loadingVehicleId === vehicle.id}
                       headsignStopIds={vehicleHeadStopIds.get(vehicle.id)}
+                      excludeMarker={resolvedMarker}
                     />
                     {#if stopsEligible}
                       <!-- reduced=true: skip Collapsible's
