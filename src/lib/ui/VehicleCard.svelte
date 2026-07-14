@@ -20,6 +20,7 @@
   import { cn } from './cn';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
   import { statusBus } from '$lib/stores/statusBus.svelte';
 
   type Props = {
@@ -52,6 +53,10 @@
      *  inline at the end of the headsign. Omit when there's no
      *  upcoming-journey data (map popup, search-overlay row). */
     headsignStopIds?: readonly string[];
+    /** Marker to exclude from the headsign badge row. Pass the current
+     *  station's marker so it doesn't appear twice (once in the card
+     *  avatar, once in the headsign row). */
+    excludeMarker?: StationMarker | null;
     class?: string;
   };
 
@@ -59,6 +64,7 @@
     vehicle, urgency, atStationLabel, onclick, scheduleHref, mapHref,
     onStopsExpand, stopsExpanded = false,
     headsignStopIds,
+    excludeMarker = null,
     class: className,
   }: Props = $props();
 
@@ -248,6 +254,7 @@
           <StationMarkerBadges
             stopIds={headsignStopIds}
             markerFor={favoritesStore.markerFor}
+            excludeMarker={excludeMarker}
             size={12}
             class="shrink-0"
           />
