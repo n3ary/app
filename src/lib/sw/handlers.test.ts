@@ -87,34 +87,46 @@ afterEach(() => {
 });
 
 describe('networkFirstNavigation', () => {
-  it('returns the network response and caches it on success', async () => {
+  it('serves from cache immediately, refreshes cache in background', async () => {
+    // SWR: serve cached HTML instantly, refresh in the background.
+    // Seed the runtime cache with a stale response, mock network returning
+    // fresh. The function should return the stale response immediately,
+    // then update the cache with the fresh response.
     const req = new Request('https://app.n3ary.com/');
+    const stale = makeResponse('<html>stale</html>');
     const fresh = makeResponse('<html>fresh</html>');
+    const cache = await caches.open(RUNTIME_HTML);
+    await cache.put(req, stale);
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(fresh);
 
     const result = await networkFirstNavigation(req, PRECACHE, RUNTIME_HTML);
 
-    expect(await result.text()).toBe('<html>fresh</html>');
-    const cache = await caches.open(RUNTIME_HTML);
+    // Stale served immediately.
+    expect(await result.text()).toBe('<html>stale</html>');
+    // Background refresh fired and cached the fresh response.
     const cached = await cache.match(req);
     expect(cached).not.toBeNull();
     expect(await cached!.text()).toBe('<html>fresh</html>');
   });
 
-  it('uses cache: no-cache on the fetch so HTTP cache does not serve stale HTML', async () => {
-    // The whole point of NetworkFirst for HTML is to bypass the
-    // browser's HTTP cache. If the handler falls back to the
-    // default fetch cache, we re-introduce the staleness the
-    // strategy exists to avoid.
+  it('uses cache: no-cache and AbortSignal.timeout on the background fetch', async () => {
+    // The background refresh must bypass the HTTP cache and carry a
+    // timeout so it never blocks the return path.
     const req = new Request('https://app.n3ary.com/');
-    const fresh = makeResponse('<html>fresh</html>');
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(fresh);
+    const stale = makeResponse('<html>stale</html>');
+    const cache = await caches.open(RUNTIME_HTML);
+    await cache.put(req, stale);
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(makeResponse('<html>fresh</html>'));
 
     await networkFirstNavigation(req, PRECACHE, RUNTIME_HTML);
 
     const fetchMock = vi.mocked(globalThis.fetch);
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(init?.cache).toBe('no-cache');
+    // A signal was passed (AbortSignal.timeout) so the background fetch
+    // cannot hang indefinitely.
+    expect(init?.signal).toBeDefined();
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('falls back to the runtime cache when the network is unreachable', async () => {
@@ -202,17 +214,25 @@ describe('serveFromPrecache', () => {
 });
 
 describe('networkFirstFeedsJson', () => {
-  it('returns the network response and caches it on success', async () => {
+  it('serves from cache immediately, refreshes cache in background', async () => {
+    // SWR: seed runtime cache with stale feeds.json, mock network returning
+    // fresh. Function returns the stale version instantly; background
+    // refresh updates the cache.
     const req = new Request('https://gtfs.n3ary.com/feeds.json');
-    const fresh = makeResponse('{"feeds":[]}', 200, { 'content-type': 'application/json' });
+    const stale = makeResponse('{"feeds":[]}', 200, { 'content-type': 'application/json' });
+    const fresh = makeResponse('{"feeds":[{"id":"x"}]}', 200, { 'content-type': 'application/json' });
+    const cache = await caches.open(RUNTIME_FEEDS);
+    await cache.put(req, stale);
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(fresh);
 
     const result = await networkFirstFeedsJson(req, RUNTIME_FEEDS);
 
+    // Stale served immediately.
     expect(await result.text()).toBe('{"feeds":[]}');
-    const cache = await caches.open(RUNTIME_FEEDS);
+    // Background refresh cached the fresh response.
     const cached = await cache.match(req);
     expect(cached).not.toBeNull();
+    expect(await cached!.text()).toBe('{"feeds":[{"id":"x"}]}');
   });
 
   it('falls back to the runtime cache when the network is unreachable', async () => {
