@@ -74,6 +74,17 @@ import {
 /** Precache the shell entries the plugin injected. */
 const manifest = self.__WB_MANIFEST ?? [];
 
+// The plugin emits manifest URLs in two forms — absolute ('/foo')
+// and relative ('foo') — while FetchEvent's `url.pathname` always
+// carries the leading slash. Normalize once to pathnames so the
+// fetch-time guard below actually matches. Without this the guard
+// silently never matches, the precache is never consulted, and the
+// shell depends on the browser HTTP cache — which iOS evicts
+// aggressively, producing offline white screens on chunk loads.
+const manifestPaths = new Set(
+  manifest.map((m) => new URL(m.url, self.location.origin).pathname),
+);
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -87,6 +98,14 @@ self.addEventListener('install', (event) => {
       const sameOrigin = manifest
         .map((m) => new URL(m.url, swOrigin).href)
         .filter((url) => new URL(url).origin === swOrigin);
+      // The SPA shell: _redirects rewrites every route to index.html,
+      // so the deployed '/' boots ANY route client-side. It isn't in
+      // the injected manifest (the glob can't see prerendered output),
+      // so cache it explicitly — otherwise offline navigations fall
+      // back to precache.match('/') below and miss, and the shell's
+      // availability depends on the browser HTTP cache (which iOS
+      // evicts aggressively → white screens).
+      sameOrigin.push(new URL('/', swOrigin).href);
       // Promise.allSettled so a single failed entry doesn't fail
       // the whole install. cache.addAll would abort the batch on
       // any one failure, leaving the new SW un-activatable and
@@ -161,7 +180,7 @@ self.addEventListener('fetch', (event) => {
   if (
     url.origin === self.location.origin &&
     !url.search &&
-    manifest.some((m) => m.url === url.pathname)
+    manifestPaths.has(url.pathname)
   ) {
     event.respondWith(serveFromPrecache(url.pathname, PRECACHE_NAME));
     return;

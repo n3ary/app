@@ -45,7 +45,11 @@ export default defineConfig({
           // Precache the SvelteKit-emitted shell. The plugin's
           // default glob also picks up `client/**` from
           // .svelte-kit/output, which is what we want.
-          'client/**/*.{js,css,html,svg,png,ico,webmanifest}',
+          // `wasm` is load-bearing: the GTFS worker fetches
+          // sqlite3.wasm at init; without a precache entry an
+          // offline open dies whenever the browser HTTP cache
+          // has evicted it.
+          'client/**/*.{js,css,html,svg,png,ico,webmanifest,wasm}',
         ],
         // version.json is NOT precached. It's emitted to build/_app/
         // by the static adapter after the SW is built, so the glob

@@ -83,7 +83,12 @@ workbox). It's ~100 lines and easy to audit. Two strategies:
 
 ### Precache (build-time)
 
-- App shell HTML, the SvelteKit-emitted JS/CSS chunks, the webmanifest.
+- App shell HTML, the SvelteKit-emitted JS/CSS chunks, the webmanifest,
+  and `sqlite3.wasm` (the GTFS worker can't init without it offline).
+  The SPA shell `/` isn't in the injected manifest (the glob can't see
+  prerendered output), so the SW caches it explicitly at install time;
+  `_redirects` rewrites every route to it, which makes any offline
+  navigation bootable from the precache alone.
 - Cross-origin assets (brand icons at `branding.n3ary.com`) are NOT
   precached — they're served from the brand CDN, which has its own
   cache headers.
