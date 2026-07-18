@@ -6,18 +6,12 @@
 // In-memory shape: raw stop_id -> marker (same as before).
 // localStorage shape: `neary:stationMarkers:{feedId}` -> JSON of
 //   `{stopId: marker, ...}` (feed-qualified key).
-//
-// Migration: on first load of a given feed, if the legacy flat key
-// `neary:stationMarkers` exists, its entries are stored under the
-// feed-scoped key and the legacy key is deleted. Migration is idempotent
-// (the legacy key is gone after first migration, so subsequent loads skip it).
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { Briefcase, Crosshair, Heart, Home } from 'lucide-svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
 const STORAGE_KEY_MARKERS_PREFIX = 'neary:stationMarkers:';
-const STORAGE_KEY_MARKERS_LEGACY = 'neary:stationMarkers';
 
 export type StationMarker = 'favorite' | 'home' | 'work' | 'cityCenter';
 
@@ -28,6 +22,7 @@ export const STATION_MARKERS: readonly StationMarker[] = [
   'cityCenter',
 ] as const;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _markerIcons: Record<StationMarker, any> = {
   favorite: Heart,
   home: Home,
@@ -36,6 +31,9 @@ const _markerIcons: Record<StationMarker, any> = {
 };
 export const STATION_MARKER_ICONS: Record<StationMarker, (props: any) => any> = _markerIcons;
 
+// Whether the marker's icon should be filled or outlined. favorite
+// fills (matches the long-standing heart fill convention); the rest
+// read better outlined at the 12-16px sizes markers render at.
 export const STATION_MARKER_FILL: Record<StationMarker, 'currentColor' | 'none'> = {
   favorite: 'currentColor',
   home: 'none',
@@ -43,6 +41,10 @@ export const STATION_MARKER_FILL: Record<StationMarker, 'currentColor' | 'none'>
   cityCenter: 'none',
 };
 
+// Accent colour for stations with a marker. Used for the left-border
+// accent on station cards/rows and the badge icon tint. Uses CSS
+// variables so theme.css controls the actual colour. All non-normal
+// markers use --color-favorite (amber) for consistency.
 export const STATION_MARKER_ACCENT: Record<StationMarker | 'none', string> = {
   none: 'transparent',
   favorite: 'var(--color-favorite)',
@@ -64,6 +66,8 @@ function loadRoutes(): string[] {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter((x): x is string | number => typeof x === 'string' || typeof x === 'number')
+      // Tolerate legacy number entries so migrating users keep their
+      // favorites; everything new is written as a string.
       .map((x) => String(x));
   } catch {
     return [];
@@ -72,48 +76,25 @@ function loadRoutes(): string[] {
 
 /** Load markers for a specific feed from localStorage.
  *
- *  Migration: reads the legacy flat key once, stores under the feed-scoped
- *  key, and deletes the legacy key. Idempotent — if the scoped key already
- *  exists or the legacy key is gone, this is a no-op. */
+ *  Reads from the feed-scoped key `neary:stationMarkers:{feedId}`.
+ *  Returns empty if the key does not exist yet. */
 function loadMarkersForFeed(feedId: string): Record<string, StationMarker> {
   if (typeof localStorage === 'undefined') return {};
   const scopedKey = `${STORAGE_KEY_MARKERS_PREFIX}${feedId}`;
 
   const scoped = localStorage.getItem(scopedKey);
-  if (scoped) {
-    try {
-      const parsed: unknown = JSON.parse(scoped);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      const out: Record<string, StationMarker> = {};
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (isStationMarker(v)) out[k] = v;
-      }
-      return out;
-    } catch {
-      return {};
+  if (!scoped) return {};
+  try {
+    const parsed: unknown = JSON.parse(scoped);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, StationMarker> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (isStationMarker(v)) out[k] = v;
     }
+    return out;
+  } catch {
+    return {};
   }
-
-  // Migration: one-time lift from legacy flat key.
-  const legacy = localStorage.getItem(STORAGE_KEY_MARKERS_LEGACY);
-  if (legacy) {
-    try {
-      const parsed: unknown = JSON.parse(legacy);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      const migrated: Record<string, StationMarker> = {};
-      for (const [stopId, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (isStationMarker(v)) migrated[stopId] = v;
-      }
-      localStorage.setItem(scopedKey, JSON.stringify(migrated));
-      localStorage.removeItem(STORAGE_KEY_MARKERS_LEGACY);
-      return migrated;
-    } catch {
-      localStorage.removeItem(STORAGE_KEY_MARKERS_LEGACY);
-      return {};
-    }
-  }
-
-  return {};
 }
 
 function persistMarkersForFeed(
@@ -127,7 +108,7 @@ function persistMarkersForFeed(
     for (const [k, m] of markers) out[k] = m;
     localStorage.setItem(scopedKey, JSON.stringify(out));
   } catch {
-    // Quota / disabled — silent noop.
+    // Quota / disabled - silent noop.
   }
 }
 
@@ -152,8 +133,7 @@ class FavoritesStore {
   // ── Feed lifecycle ─────────────────────────────────────────────
 
   /** Call from +layout when the feed changes (including on first bind).
-   *  Loads markers for the new feed, migrating from the legacy flat key
-   *  if this is the first visit to this feed. Clears the in-memory map
+   *  Loads markers for the new feed. Clears the in-memory map
    *  (old feed's markers stay in localStorage under their own key). */
   loadForFeed = (feedId: string): void => {
     if (feedId === this.#currentFeedId) return;
@@ -246,7 +226,7 @@ class FavoritesStore {
     try {
       localStorage.setItem(STORAGE_KEY_ROUTES, JSON.stringify(Array.from(this.#routes)));
     } catch {
-      // Quota / disabled — silent noop.
+      // Quota / disabled - silent noop.
     }
   };
 }

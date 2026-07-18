@@ -174,7 +174,7 @@ describe('favoritesStore feed scoping', () => {
     // Original feed's markers are still in localStorage.
     const raw = localStorage.getItem('neary:stationMarkers:test-feed');
     expect(JSON.parse(raw ?? '{}')).toEqual({ 's-1': 'favorite' });
-    // Switch back to the original feed — markers restored.
+    // Switch back to the original feed - markers restored.
     favoritesStore.loadForFeed('test-feed');
     expect(favoritesStore.markerFor('s-1')).toBe('favorite');
     expect(favoritesStore.markerFor('s-2')).toBeUndefined();
@@ -186,38 +186,6 @@ describe('favoritesStore feed scoping', () => {
     expect(favoritesStore.markerFor('s-1')).toBe('favorite');
     favoritesStore.loadForFeed('test-feed');
     expect(favoritesStore.markerFor('s-1')).toBe('favorite');
-  });
-
-  it('migration: legacy flat key is lifted to feed-scoped key', () => {
-    // Simulate the old flat-format data that existed before the fix.
-    localStorage.setItem('neary:stationMarkers', JSON.stringify({
-      's-old': 'favorite',
-      's-work': 'work',
-    }));
-    // Load for a feed — triggers one-time migration.
-    favoritesStore.loadForFeed('migrated-feed');
-    expect(favoritesStore.markerFor('s-old')).toBe('favorite');
-    expect(favoritesStore.markerFor('s-work')).toBe('work');
-    // Legacy key is deleted after migration.
-    expect(localStorage.getItem('neary:stationMarkers')).toBeNull();
-    // Data is stored under the feed-scoped key.
-    const raw = localStorage.getItem('neary:stationMarkers:migrated-feed');
-    expect(JSON.parse(raw ?? '{}')).toEqual({
-      's-old': 'favorite',
-      's-work': 'work',
-    });
-  });
-
-  it('migration is idempotent (does not re-read legacy key after first migration)', () => {
-    // Simulate partial migration: legacy gone, feed-scoped already has some data.
-    localStorage.setItem('neary:stationMarkers:migrated-feed', JSON.stringify({
-      's-existing': 'cityCenter',
-    }));
-    // No legacy key — migration is skipped.
-    favoritesStore.loadForFeed('migrated-feed');
-    expect(favoritesStore.markerFor('s-existing')).toBe('cityCenter');
-    // Legacy key should not appear.
-    expect(localStorage.getItem('neary:stationMarkers')).toBeNull();
   });
 
   it('clearMarkers only clears the current feed', () => {
@@ -236,13 +204,13 @@ describe('favoritesStore feed scoping', () => {
     // can test the no-feed guard without depending on beforeEach setup.
     const { FavoritesStoreInternal } = await import('./favoritesStore.svelte');
     const freshStore = new FavoritesStoreInternal();
-    // #currentFeedId is null by default — setMarker must not throw.
+    // #currentFeedId is null by default - setMarker must not throw.
     freshStore.setMarker('s-1', 'favorite');
     expect(freshStore.markerFor('s-1')).toBeUndefined();
   });
 });
 
-describe('favoritesStore loadInitial (legacy compat)', () => {
+describe('favoritesStore direct localStorage read', () => {
   beforeEach(() => {
     favoritesStore.clearRoutes();
     favoritesStore.clearMarkers();
