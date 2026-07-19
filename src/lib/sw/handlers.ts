@@ -57,26 +57,23 @@ export const setSkipPrecacheOnNextNav = (v: boolean) => {
  * from the most recent install, which is the same shell the
  * user had online the last time they were online.
  *
- * Falls back to the precache bucket (not just the runtime
- * cache) because the runtime cache is only populated after
- * the first online visit. A user who opens the app for the
- * first time while offline has nothing in the runtime cache;
- * the precache is the only thing they have.
- */
+  * Falls back to the precache bucket (not just the runtime
+  * cache) because the runtime cache is only populated after
+  * the first online visit. A user who opens the app for the
+  * first time while offline has nothing in the runtime cache;
+  * the precache is the only thing they have.
+  */
 export interface NetworkFirstNavigationOptions {
   precacheName: string;
   runtimeHtmlCacheName: RuntimeCacheName;
   waitUntil?: WaitUntil;
-  /** Skip the precache fallback on the next navigation. Used when the
-   *  banner's Reload was clicked — the old SW is still in control
-   *  after location.reload and would serve stale precache HTML. */
-  skipPrecacheOnNextNav?: boolean;
 }
 
 export async function networkFirstNavigation(
   req: Request,
-  { precacheName, runtimeHtmlCacheName, waitUntil = () => {}, skipPrecacheOnNextNav = false }: NetworkFirstNavigationOptions,
+  opts: NetworkFirstNavigationOptions,
 ): Promise<Response> {
+  const { precacheName, runtimeHtmlCacheName, waitUntil = () => {} } = opts;
   const cache = await caches.open(runtimeHtmlCacheName);
   // Stale-while-revalidate: serve cached HTML immediately so the
   // user never sees a blank screen on flaky networks. Refresh the
@@ -108,7 +105,9 @@ export async function networkFirstNavigation(
   // control reload would otherwise serve its stale precache (precache-v<old>
   // has the old HTML, the new HTML is in precache-v<new>). One-shot: reset
   // after the first nav so normal offline fallback works on subsequent navs.
-  if (!skipPrecacheOnNextNav) {
+  if (skipPrecacheOnNextNav) {
+    skipPrecacheOnNextNav = false;
+  } else {
     const precache = await caches.open(precacheName);
     const hit = await precache.match('/');
     if (hit) {

@@ -177,17 +177,14 @@ self.addEventListener('fetch', (event) => {
     // without it the SW can be killed the moment respondWith settles
     // and the cached shell stays stale forever (the "update banner
     // insists after updating" bug).
-    // Capture and reset the skip-precache flag atomically: if the banner's
-    // Reload was clicked, the old SW is still in control after location.reload
-    // and would serve its stale precache before the new SW activates.
-    const skipPrecache = skipPrecacheOnNextNav;
-    skipPrecacheOnNextNav = false;
+    // without it the SW can be killed the moment respondWith settles
+    // and the cached shell stays stale forever (the "update banner
+    // insists after updating" bug).
     event.respondWith(
       networkFirstNavigation(req, {
         precacheName: PRECACHE_NAME,
         runtimeHtmlCacheName: RUNTIME_HTML_CACHE,
         waitUntil: event.waitUntil.bind(event),
-        skipPrecacheOnNextNav: skipPrecache,
       }),
     );
     return;
