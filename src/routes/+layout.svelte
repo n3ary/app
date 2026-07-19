@@ -4,9 +4,10 @@
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page, updated } from '$app/state';
-  import { Heart, MapPin, Settings } from 'lucide-svelte';
+  import { Heart, MapPin, RefreshCw, Settings } from 'lucide-svelte';
   import * as Comlink from 'comlink';
-  import { AppLayout, type HeaderHealth } from '$lib/ui';
+  import { AppLayout, Button, InfoCard, type HeaderHealth } from '$lib/ui';
+  import { handleAppUpdate } from '$lib/sw/appUpdate';
   import { connectionStore } from '$lib/stores/connectionStore.svelte';
   import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
@@ -24,13 +25,24 @@
   // App-update detection. SvelteKit's `updated.current` flips to true
   // when the client's poll of `_app/version.json` (interval set in
   // svelte.config.js `kit.version`) returns a name different from the
-  // one this session booted with — i.e. a new deploy is live. Reload
-  // so the next paint is from the new HTML + bundle. Transit views
-  // have no form state to lose, so silent reload is the cleanest UX.
+  // one this session booted with — i.e. a new deploy is live. Never
+  // reload a tab the rider is reading: a hidden tab reloads silently;
+  // a visible tab gets a banner with a manual Reload and the update
+  // applies itself on the next backgrounding (see appUpdate.ts).
+  let updateAvailable = $state(false);
   $effect(() => {
-    if (updated.current && typeof window !== 'undefined') {
-      window.location.reload();
-    }
+    if (!updated.current || typeof window === 'undefined') return;
+    return handleAppUpdate({
+      isHidden: () => document.visibilityState === 'hidden',
+      onVisibilityChange: (cb) => {
+        document.addEventListener('visibilitychange', cb);
+        return () => document.removeEventListener('visibilitychange', cb);
+      },
+      reload: () => window.location.reload(),
+      showPrompt: () => {
+        updateAvailable = true;
+      },
+    });
   });
 
   // PWA service worker registration. Prod only — in dev the SW
@@ -411,4 +423,25 @@
 >
   {@render children()}
 </AppLayout>
+
+<!-- Update-available banner (visible-tab half of the option-2 flow in
+     appUpdate.ts). Floats above the bottom nav; the hidden-tab half
+     reloads before this ever paints. z-40: below dialogs/search (z-50),
+     above the bottom nav (z-30). -->
+{#if updateAvailable}
+  <div class="fixed inset-x-0 z-40 px-3 pb-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))]">
+    <InfoCard variant="primary" title="Update available">
+      {#snippet icon()}<RefreshCw size={16} />{/snippet}
+      {#snippet body()}
+        A new version is ready. Reload to update — or just switch away
+        and come back, it updates on its own.
+      {/snippet}
+      {#snippet actions()}
+        <Button variant="contained" size="small" onclick={() => window.location.reload()}>
+          Reload
+        </Button>
+      {/snippet}
+    </InfoCard>
+  </div>
+{/if}
 

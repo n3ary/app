@@ -58,9 +58,13 @@ Belt-and-suspenders. The root layout
 ([src/routes/+layout.svelte](../../src/routes/+layout.svelte)) subscribes
 to `updated.current` from `$app/state`. SvelteKit's client polls
 `/_app/version.json` every 60 s; on mismatch it flips `updated.current`
-to true and the layout calls `window.location.reload()`. Catches the
-edge case where the SW itself fails to claim (browser bug, private
-mode, etc.) — the user reloads manually within a minute either way.
+to true. The layout never reloads a tab the rider is reading
+([src/lib/sw/appUpdate.ts](../../src/lib/sw/appUpdate.ts)): a hidden
+tab reloads immediately; a visible tab gets an "Update available"
+banner with a Reload button, and the first backgrounding applies the
+update silently. Catches the edge case where the SW itself fails to
+claim (browser bug, private mode, etc.) — the update lands within a
+minute either way, without yanking the board mid-read.
 
 ```js
 // svelte.config.js

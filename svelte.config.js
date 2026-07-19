@@ -29,7 +29,9 @@ const config = {
     // Lets clients detect new deploys. The client polls
     // `_app/version.json` every `pollInterval` ms; when the string
     // doesn't match the one it booted with, `updated.current` from
-    // `$app/state` flips to true, and the root layout reloads.
+    // `$app/state` flips to true, and the root layout's hidden-first
+    // update flow kicks in (src/lib/sw/appUpdate.ts — reload only
+    // when hidden, banner otherwise).
     // Bound to 60 s — enough to catch a fresh deploy within a few
     // minutes for a PWA the user comes back to, infrequent enough
     // to not show up in network panels or burn battery.
