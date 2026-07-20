@@ -1244,6 +1244,10 @@
       </Stack>
     </CardContent></Card>
   {:else}
+    <!-- Header card: outside the map card's flex column so the header
+         can grow tall without clipping or pushing the map off-screen.
+         The Stack shrinks to fit the header; the map card below it uses
+         a fixed explicit height that accounts for the outer page chrome. -->
     <Stack spacing={2}>
       <!-- Header: same chrome the schedule view uses, with a swap-
            direction icon. -->
@@ -1297,15 +1301,13 @@
           </Stack>
         </CardContent>
       </Card>
+    </Stack>
 
-      <!-- The map card is the only thing on the page besides the
-           header, so we just give it an explicit viewport-calc
-           height. The 14rem accounts for the app header bar
-           (~3.5rem), the in-page header Card + margin (~4rem),
-           the page padding (~1.5rem), and the bottom navigation
-           (~5rem) — i.e. everything between this card and the
-           viewport edges. Single rule, no flex chain to debug. -->
-      <Card class="overflow-hidden neary-map-card">
+    <!-- The map card sits below the header as a sibling. A fixed
+         height keeps Leaflet happy (known container size at init).
+         The 18rem covers outer app header (~3.5rem), the in-page
+         header card, page padding (~1.5rem), and bottom nav. -->
+    <Card class="overflow-hidden neary-map-card">
         <div bind:this={mapEl} class="neary-map"></div>
         <!-- Viewport controls overlaid on the map, top-right.
              Same IconButton styling the rest of the app uses, with a
@@ -1350,21 +1352,17 @@
           </div>
         {/if}
       </Card>
-    </Stack>
   {/if}
-  <div class="flex-1" aria-hidden="true"></div>
 </div>
 
 <style>
-  /* The map card fills all remaining vertical space in the flex
-     column. Previously used height: calc(100svh - 18rem) which
-     broke when the header card grew tall (many route/network chips)
-     and the total exceeded 18rem — the map would overflow into the
-     bottom nav. flex-1 min-h-0: the card takes exactly what is left
-     after the header card, regardless of how tall that is. */
+  /* Fixed explicit height keeps Leaflet happy (has a known container
+     size at init). The 18rem covers outer app header (~3.5rem),
+     the in-page header card, page padding (~1.5rem), and the bottom
+     nav. The header card is a sibling above this card, not nested
+     inside it, so it can grow without pushing the map off-screen. */
   :global(.neary-map-card) {
-    flex: 1 1 0;
-    min-height: 0;
+    height: calc(100svh - 18rem);
     position: relative;
   }
   .neary-map {
