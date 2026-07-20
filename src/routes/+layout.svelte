@@ -67,24 +67,6 @@
     return () => window.clearTimeout(handle);
   });
 
-  // SW version swap mid-session. Our SW skipWaiting()s and
-  // clients.claim()s existing pages, and its activate handler deletes
-  // the old precache bucket — so the moment our controller changes,
-  // this page's lazy chunks (the GTFS worker bundle, route splits)
-  // may no longer exist anywhere. Run the same hidden-first update
-  // flow the version poll uses. First-install claims are ignored: the
-  // page loaded uncontrolled, its assets came from the network, and
-  // the new SW pruned nothing of ours.
-  $effect(() => {
-    if (typeof navigator === 'undefined') return;
-    if (!('serviceWorker' in navigator)) return;
-    if (!import.meta.env.PROD) return;
-    if (navigator.serviceWorker.controller == null) return;
-    const onClaim = () => startUpdateFlow();
-    navigator.serviceWorker.addEventListener('controllerchange', onClaim);
-    return () => navigator.serviceWorker.removeEventListener('controllerchange', onClaim);
-  });
-
   // Background suspend / resume. When the page goes hidden — and in
   // particular when the OS is about to FREEZE it (Android freezes
   // standalone PWAs within seconds of backgrounding; it does not kill
