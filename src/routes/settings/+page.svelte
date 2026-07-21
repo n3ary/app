@@ -2,7 +2,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { version } from '$app/environment';
-  import { Bug, Circle, CircleDot, ExternalLink, Locate, Map, MapPin, Moon, Sun, Trash2 } from 'lucide-svelte';
+  import { updated } from '$app/state';
+  import { Bug, Circle, CircleDot, ExternalLink, Locate, Map, MapPin, Moon, RefreshCw, Sun, Trash2 } from 'lucide-svelte';
   import {
     Box, Button, Card, CardContent, Chip, Dialog, DialogContent, DialogTitle,
     IconButton, InfoCard, NoLocationCard, Spinner, Stack, Switch, ToggleGroup, Tooltip, Typography,
@@ -20,6 +21,15 @@
    *  app version. Stored as `{ version, at }` so a version bump resets the
    *  timestamp on next load. */
   const VERSION_SEEN_KEY = 'neary:version-first-seen';
+  /** localStorage key for the last manual version check timestamp. */
+  const VERSION_CHECK_KEY = 'neary:version-check-at';
+
+  /** Result of the last manual check: null = never run, 'found' = new version found, 'none' = up to date, 'error' = check failed. */
+  let checkUpdateResult = $state<null | 'found' | 'none' | 'error'>(null);
+  /** Timestamp of the last manual check. Loaded from localStorage. */
+  let lastVersionCheckAt = $state<number | null>(null);
+  /** Whether a check is currently in flight. */
+  let versionCheckInFlight = $state(false);
 
   const regionNames =
     typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function'
@@ -148,6 +158,37 @@
     }
   }
 
+  /** Force an immediate version check via SvelteKit's updated.check().
+   *  Stores the timestamp in localStorage and auto-reloads if a new
+   *  version is found. */
+  async function handleCheckUpdate(): Promise<void> {
+    if (versionCheckInFlight) return;
+    versionCheckInFlight = true;
+    checkUpdateResult = null;
+    try {
+      const hasUpdate = await updated.check();
+      const now = Date.now();
+      lastVersionCheckAt = now;
+      try {
+        localStorage.setItem(VERSION_CHECK_KEY, String(now));
+      } catch {
+        // localStorage unavailable; timestamp stays in memory
+      }
+      if (hasUpdate || updated.current) {
+        checkUpdateResult = 'found';
+        // Brief pause so the user sees "Update found" before the reload
+        await new Promise((r) => setTimeout(r, 1500));
+        location.reload();
+      } else {
+        checkUpdateResult = 'none';
+      }
+    } catch {
+      checkUpdateResult = 'error';
+    } finally {
+      versionCheckInFlight = false;
+    }
+  }
+
   // Re-poll cached ids whenever the registry changes (a feed that's
   // never been downloaded won't have an OPFS file by definition, but
   // a feed that appears in a registry refresh might now have local
@@ -199,6 +240,16 @@
       }
     } catch {
       // localStorage unavailable or corrupted; fall back to "unknown"
+    }
+    // Load the last manual version check timestamp.
+    try {
+      const raw = localStorage.getItem(VERSION_CHECK_KEY);
+      if (raw) {
+        const ts = Number(raw);
+        if (Number.isFinite(ts)) lastVersionCheckAt = ts;
+      }
+    } catch {
+      // localStorage unavailable; timestamp stays null
     }
   });
 </script>
@@ -519,11 +570,51 @@
           />
         </Stack>
 
-        <Stack spacing={0.5}>
-          <Typography variant="body2">App version</Typography>
-          <Typography variant="caption">
-            v{version} · updated {formatWhen(versionFirstSeenAt)}
-          </Typography>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1} align="center" justify="between">
+            <Box class="flex-1 min-w-0">
+              <Typography variant="body2">App version</Typography>
+              <Typography variant="caption">
+                v{version} · first seen {formatWhen(versionFirstSeenAt)}
+              </Typography>
+            </Box>
+            <Button
+              variant="outlined"
+              size="small"
+              color="primary"
+              disabled={versionCheckInFlight}
+              aria-label="Check for app updates"
+              onclick={handleCheckUpdate}
+            >
+              {#snippet startIcon()}
+                <RefreshCw
+                  size={14}
+                  class={versionCheckInFlight ? 'animate-spin' : ''}
+                />
+              {/snippet}
+              {versionCheckInFlight
+                ? 'Checking…'
+                : checkUpdateResult === 'found'
+                  ? 'Update found!'
+                  : checkUpdateResult === 'none'
+                    ? 'Up to date'
+                    : checkUpdateResult === 'error'
+                      ? 'Check failed'
+                      : 'Check for updates'}
+            </Button>
+          </Stack>
+          {#if lastVersionCheckAt && !versionCheckInFlight}
+            <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">
+              Last checked {formatWhen(lastVersionCheckAt)}
+              {#if checkUpdateResult === 'found'}
+                · update found — reloading
+              {:else if checkUpdateResult === 'none'}
+                · up to date
+              {:else if checkUpdateResult === 'error'}
+                · check failed
+              {/if}
+            </Typography>
+          {/if}
         </Stack>
 
         <!-- Bug-report CTA. Button renders as an anchor when href is set,
