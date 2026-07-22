@@ -23,6 +23,15 @@
 
   let { children } = $props();
 
+  // Restore the update banner immediately on mount, without waiting
+  // for the first auto-poll (which fires up to 60 s after page load).
+  // updated.check() sets updated.current synchronously before its fetch
+  // resolves, so consumers see updated.current=true right away.
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    void updated.check();
+  });
+
   // PWA service worker registration. Prod only — in dev the SW
   // would interfere with Vite HMR and the rebuild-on-save loop.
   // The SW itself lives at src/service-worker.ts; @vite-pwa/sveltekit
