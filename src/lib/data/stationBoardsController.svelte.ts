@@ -47,8 +47,14 @@ export function createStationBoardsController(opts: {
 }): StationBoardsController {
   let boards = $state<StationBoardInput[] | null>(null);
   // Per-stop vehicles pushed by the worker subscription. Keyed by
-  // stop.id. Empty record before the first push lands.
-  let livePerStop = $state<Record<string, Vehicle[]>>({});
+  // stop.id. Pre-seeded from boards.vehicles (scheduled-only fallback)
+  // so the first assembled render already has correct at-station vehicles
+  // rather than relying on the GPS push arriving first and showing only
+  // incoming vehicles, which would cause an incoming-first flicker in
+  // StationCard groups before at-station arrives.
+  let livePerStop = $state<Record<string, Vehicle[]>>(
+    Object.fromEntries((boards ?? []).map((b) => [b.stop.id, b.vehicles])),
+  );
 
   // ---- Subscription lifecycle -------------------------------------------
   // One persistent worker subscription per controller instance. We track
@@ -109,7 +115,10 @@ export function createStationBoardsController(opts: {
         // next setBoards doesn't pay re-registration cost; the worker
         // treats an empty stop set as a no-op push.
       }
-      livePerStop = {};
+      // Do NOT reset livePerStop to {} here — the fallback in assembled
+      // (livePerStop[stop.id] ?? vehicles) handles the no-IDs case. Keeping
+      // the last known live data avoids a flicker when switching back to
+      // the same stops (e.g. quick map → home → map nav).
       return;
     }
     applyIds(ids);
