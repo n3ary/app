@@ -156,7 +156,7 @@
 
 </script>
 
-<Card tone="elevated">
+<Card variant="route" tone="elevated">
   <CardContent>
     <Stack spacing={1}>
       <!-- Header row: title (left) + collapse toggle (right). The
