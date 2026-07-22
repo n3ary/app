@@ -3,7 +3,7 @@
   import '$lib/styles/app.css';
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+  import { page, updated } from '$app/state';
   import { Heart, MapPin, Settings } from 'lucide-svelte';
   import * as Comlink from 'comlink';
   import { AppLayout, Button, InfoCard, type HeaderHealth } from '$lib/ui';
@@ -84,6 +84,14 @@
         });
         if (reply.swVersion !== __APP_VERSION__) {
           console.info(`[pwa] version mismatch: app=${__APP_VERSION__} sw=${reply.swVersion} — reloading`);
+          // SW called skipWaiting() + clients.claim() — the page will
+          // reload. Call updated.check() now so updated.current is set
+          // BEFORE the reload: the new page boots with the banner already
+          // visible instead of showing "Checked X minutes ago" until the
+          // next auto-poll fires (up to 60 s later).
+          // updated.check() sets updated.current synchronously before
+          // its fetch resolves, so the SW reload cannot beat it.
+          void updated.check();
         }
       }).catch((err) => {
         console.warn('[pwa] service worker registration failed', err);
