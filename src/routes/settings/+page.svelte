@@ -23,6 +23,10 @@
   const VERSION_SEEN_KEY = 'neary:version-first-seen';
   /** localStorage key for the last manual version check timestamp. */
   const VERSION_CHECK_KEY = 'neary:version-check-at';
+  /** localStorage key for the detected new version string (persists across
+   *  page reloads so the "update to vX" message doesn't disappear after a
+   *  SW-triggered refresh). Cleared when a manual check finds nothing new. */
+  const VERSION_DETECTED_KEY = 'neary:version-detected';
 
   /** Result of the last check: null = never run, 'found' = new version found, 'none' = up to date, 'error' = check failed. */
   let checkUpdateResult = $state<null | 'found' | 'none' | 'error'>(null);
@@ -192,8 +196,20 @@
       if (hasUpdate || updated.current) {
         checkUpdateResult = 'found';
         detectedVersion = await fetchAppVersion();
+        if (detectedVersion) {
+          try {
+            localStorage.setItem(VERSION_DETECTED_KEY, detectedVersion);
+          } catch {
+            // localStorage unavailable
+          }
+        }
       } else {
         checkUpdateResult = 'none';
+        try {
+          localStorage.removeItem(VERSION_DETECTED_KEY);
+        } catch {
+          // localStorage unavailable
+        }
       }
     } catch {
       checkUpdateResult = 'error';
@@ -264,6 +280,15 @@
     } catch {
       // localStorage unavailable; timestamp stays null
     }
+    // Restore the detected version string so "update to vX" survives a
+    // SW-triggered or other full-page reload (the ephemeral $state would
+    // otherwise be null until the next auto-poll fires).
+    try {
+      const raw = localStorage.getItem(VERSION_DETECTED_KEY);
+      if (raw) detectedVersion = raw;
+    } catch {
+      // localStorage unavailable; stays null
+    }
     // Track when the SvelteKit auto-poll (every 60 s) finds a new
     // version. The manual button also writes here. Either way the
     // user sees the last check time in Settings.
@@ -280,6 +305,13 @@
         // set detectedVersion so the update message shows it.
         void (async () => {
           detectedVersion = await fetchAppVersion();
+          if (detectedVersion) {
+            try {
+              localStorage.setItem(VERSION_DETECTED_KEY, detectedVersion);
+            } catch {
+              // localStorage unavailable
+            }
+          }
         })();
       }
     });
