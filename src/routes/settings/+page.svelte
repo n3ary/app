@@ -289,20 +289,24 @@
     } catch {
       // localStorage unavailable; stays null
     }
-    // Track when the SvelteKit auto-poll (every 60 s) finds a new
-    // version. The manual button also writes here. Either way the
-    // user sees the last check time in Settings.
+    // Track when the SvelteKit auto-poll (every 60 s) runs. Always
+    // write the timestamp so "Checked X minutes ago" advances even when
+    // no update is found. Only fetch the detected version when the poll
+    // transitions to "update available".
+    let prevUpdatedCurrent = updated.current;
     $effect(() => {
-      if (updated.current) {
-        const now = Date.now();
-        lastVersionCheckAt = now;
-        try {
-          localStorage.setItem(VERSION_CHECK_KEY, String(now));
-        } catch {
-          // localStorage unavailable; in-memory is enough for this session
-        }
-        // version already IS the new version after reload;
-        // set detectedVersion so the update message shows it.
+      const current = updated.current;
+      if (current === prevUpdatedCurrent) return; // no change — skip
+      prevUpdatedCurrent = current;
+      const now = Date.now();
+      lastVersionCheckAt = now;
+      try {
+        localStorage.setItem(VERSION_CHECK_KEY, String(now));
+      } catch {
+        // localStorage unavailable; in-memory is enough for this session
+      }
+      if (current) {
+        // Update found — fetch the new version string.
         void (async () => {
           detectedVersion = await fetchAppVersion();
           if (detectedVersion) {
