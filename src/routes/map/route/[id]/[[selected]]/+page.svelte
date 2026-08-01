@@ -1,582 +1,32 @@
 <!-- By-route, by-direction map. URL (path only): /map/route/[id] (multi, not yet), /map/route/[id]_0|[id]_1 (single), /map/route/[id]_0|[id]_1/[v] (vehicle highlighted). Renders the shape polyline, every stop along the representative trip, the user's current GPS, and one marker per active trip positioned by domain prediction (linear interpolation between consecutive stops at reactive nowMin). Schedule-only / not-yet-active vehicles are dimmed; vehicles past their terminus drop off. Direction-swap and zoom controls live in the header card to match the schedule view's chrome. -->
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import { ArrowRightLeft, Bus, Calendar, Heart, Maximize2, Minus, Plus } from 'lucide-svelte';
   import {
-    BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
-    Stack, Typography, tagIcon, hasTagIcon,
+    BackButton, Card, CardContent, Chip, IconButton, RouteBadge, RouteMap,
+    SelectFeedCard, Spinner, Stack, Typography, tagIcon,
   } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
+  import { useRouteMapView } from '$lib/composables/useRouteMapView.svelte';
   import { useOtherDirectionExists } from '$lib/data/gtfs/otherDirectionExists.svelte';
-  import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirection';
-  import type { Network, RouteTag } from '$lib/domain/types';
-  import type { RouteMapView } from '$lib/data/gtfs/types';
-  import {
-    formatHHMM, formatRelativeMin, pickContrastingText, vehicleTypeLabel,
-    type Route,
-    type Vehicle,
-  } from '$lib/domain/types';
-  import { dateKeyInTz, minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
-  import {
-    buildTripShapePlan, deadReckonGpsAlongShape, predictPosition, predictPositionOnShape, predictPositionFromGps,
-    type TripShapePlan,
-  } from '$lib/domain/predictPosition';
-  import { predictArrivalFromGps } from '$lib/domain/predictArrivalAlongShape';
-  import { bearingBetween, measurePolyline, projectOnPolyline } from '@n3ary/gtfs-spec/shape';
-  import { haversineMeters } from '@n3ary/gtfs-spec/shape';
-  import { clockToBucket } from '$lib/domain/timeOfDay';
   import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { feedConfigStore } from '$lib/stores/feedConfigStore.svelte';
-  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
-  import { refreshBus } from '$lib/stores/refreshBus.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  import { pickContrastingText } from '$lib/domain/types';
 
-  // ── URL params ──────────────────────────────────────────────────────
-  // Same `[id]_[dir]` convention the schedule view uses — parser
-  // shared via lib/data/gtfs/parseRouteIdWithDirection.
-  const idSegment = $derived(page.params.id ?? '');
-  const parsed = $derived(parseRouteIdWithDirection(idSegment));
-  const routeId = $derived(parsed.routeId);
-  const direction = $derived(parsed.direction);
-  const selectedTripId = $derived(page.params.selected ?? null);
-  // Origin stop the user came from when they tapped 'map' on a station-card
-  // vehicle row. Painted in green on the route so the rider can recognise
-  // 'this is the stop I was at'. Null when the URL has no `?from` param
-  // (e.g. arriving via favorites, browser history, deep link). GTFS
-  // stop_id is a free-form string per spec.
-  const fromStopId = $derived<string | null>(
-    page.url.searchParams.get('from'),
-  );
-
-  // Remember the original direction + trip so that swapping twice restores
-  // the highlight. Captured once on first arrival; swapping to the other
-  // direction and back re-selects the trip the user navigated here with.
-  let homeDirection = $state<0 | 1 | null>(null);
-  let homeSelectedTripId = $state<string | null>(null);
-  $effect(() => {
-    const dir = direction;
-    const sel = selectedTripId;
-    if (dir != null && homeDirection === null) {
-      homeDirection = dir;
-      homeSelectedTripId = sel;
-    }
-  });
-
-  // ── Data ────────────────────────────────────────────────────────────
-  let view = $state<RouteMapView | null>(null);
-  let error = $state<string | null>(null);
-  let routeTags = $state<Map<string, RouteTag>>(new Map());
-  let networkMap = $state<Map<string, Network>>(new Map());
-
-  $effect(() => {
-    const fid = feedsStore.boundFeedId;
-    if (!fid) return;
-    void getGtfsRepo().getRouteTags().then((tags) => {
-      routeTags = new Map(tags.map((t) => [t.id, t]));
-    });
-    void getGtfsRepo().getNetworks().then((nets) => {
-      networkMap = new Map(nets.map((n) => [n.id, n]));
-    });
-  });
-
-  const tz = $derived(feedsStore.activeTimezone);
-  const nowMin = $derived(minSinceMidnightInTz(nowTicker.ms, tz));
-
-  // Lookback / lookahead window for the route-active-trips query.
-  // 90 min in each direction comfortably covers normal urban trip
-  // lengths plus a head/tail buffer.
-  const LOOKBACK_MIN = 90;
-  const LOOKAHEAD_MIN = 90;
-
-  $effect(() => {
-    const fid = feedsStore.boundFeedId;
-    if (!fid || direction == null || routeId.length === 0) return;
-    refreshBus.tick;
-    const rid = routeId;
-    const dir = direction;
-    const ms = nowTicker.ms;
-    // Window query depends on nowTicker for service-date pickup,
-    // but we don't want to refetch every minute — just on first
-    // load + dir change + manual refresh.
-    void ms;
-    (async () => {
-      try {
-        const repo = getGtfsRepo();
-        const nowMs = Date.now();
-        const localDate = dateKeyInTz(nowMs, tz);
-        view = await repo.getRouteMapView(
-          rid, dir, localDate,
-          minSinceMidnightInTz(nowMs, tz),
-          LOOKBACK_MIN, LOOKAHEAD_MIN,
-        );
-        error = null;
-      } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
-      }
-    })();
-  });
-
-  const route = $derived(view?.route ?? null);
-
-  // Routes per stop — fetched once when the view payload arrives so
-  // the stop popup can show route badges without a per-click async call.
-  let stopRoutes = $state<Map<string, Route[]>>(new Map());
-  $effect(() => {
-    const stops = view?.stops;
-    if (!stops || stops.length === 0) return;
-    const repo = getGtfsRepo();
-    void (async () => {
-      const entries = await Promise.all(
-        stops.map(async (s) => [s.stopId, await repo.getRoutesForStop(s.stopId)] as const),
-      );
-      stopRoutes = new Map(entries);
-    })();
-  });
-
-  // Pre-projected per-trip shape plans. Built once when the view
-  // payload arrives and reused on every nowMin tick — the per-tick
-  // cost is then a binary search + interpolation per visible
-  // vehicle. Trips with no usable shape get `null` here and the UI
-  // falls back to straight-line interpolation between stops.
-  const tripPlans = $derived.by<Map<string, TripShapePlan | null>>(() => {
-    const map = new Map<string, TripShapePlan | null>();
-    if (!view) return map;
-    for (const t of view.trips) {
-      map.set(t.tripId, buildTripShapePlan(t.stops, view.shape));
-    }
-    return map;
-  });
-
-  // Live observations on (routeId, direction) whose trip didn't
-  // surface in view.trips. Sourced from the worker's reconciliation
-  // broadcast — these are the kind:'gps-only' rows: the worker matched
-  // every scheduled trip it could via (route, dir, tripStartMin)
-  // tolerance, and anything left over on this (route, dir) is a
-  // genuine orphan. We render them at raw GPS (no shape projection
-  // — we don't have stop_times for these tripIds, and the static
-  // schedule doesn't have a matching trip we could ride a polyline
-  // along). The bus is *there* now; the next poll updates it.
-  const orphanVehicles = $derived.by(() => {
-    if (!view) return [];
-    return reconciledVehiclesStore.vehicles.filter(
-      (v) =>
-        v.kind === 'gps-only' &&
-        v.route.id === routeId &&
-        v.directionId === direction &&
-        v.position != null,
-    );
-  });
-
-  // ── Derived view-model ──────────────────────────────────────────────
-  /** Render-ready vehicles for the current nowMin. Each trip yields
-   *  one entry; the domain decides position + status, the UI maps
-   *  status → opacity / style.
-   *
-   *  `scheduled` = vehicle is at origin waiting to depart ('at-origin')
-   *  or not yet close enough to be imminent ('before', next trip only).
-   *  Scheduled vehicles show with an outlined badge so the user knows
-   *  position is a schedule estimate, not a live/interpolated position. */
-  type VehicleMarker = {
-    tripId: string;
-    headsign: string | null;
-    lat: number;
-    lon: number;
-    opacity: number;
-    selected: boolean;
-    tripStartMin: number;
-    /** True for 'before' (next only) and 'at-origin' — no movement prediction. */
-    scheduled: boolean;
-    /** Set when the vehicle has a live GPS match.
-     *   - 'good':       fresh fix (< 3 min) — high trust.
-     *   - 'stale':      3–5 min old — reduced trust (yellow border).
-     *   - 'very-stale': 5–15 min old — low trust (red border).
-     *   - null:         schedule-estimated. */
-    gpsConfidence: 'good' | 'stale' | 'very-stale' | null;
-    /** Reconciled vehicle kind, surfaced only for the debug-ids line
-     *  rendered when `userPrefs.showDebugIds` is on. Same identity
-     *  string appears on the station's VehicleCard so screenshots
-     *  of the two views can be correlated. */
-    kind: Vehicle['kind'];
-    /** GTFS direction_id (0 / 1), or -1 when unknown. Joins `kind`
-     *  on the debug line. */
-    directionId: 0 | 1 | -1;
-    /** Unix ms of the last GPS observation backing this marker, or
-     *  null when there is no GPS (schedule-only). Surfaced as 'Xs
-     *  ago' on the debug overlay so the rider can see how stale
-     *  the underlying fix is relative to where dead-reckoning has
-     *  walked the marker. */
-    gpsAsOfMs: number | null;
-    /** True when `tripStartMin` is a real origin-departure time from
-     *  the schedule, false when it's a fallback (e.g. orphan whose
-     *  live observation didn't carry a parseable start). The popup
-     *  shows 'left at HH:MM' only when this is true — a 'left at'
-     *  rendered from `nowMin` is a lie. */
-    hasOriginTime: boolean;
-    /** Minutes until this vehicle reaches the rider's origin stop
-     *  (the `?from=<stopId>` station, painted green on the map),
-     *  or null when there's no from-stop selected, the vehicle is
-     *  the scheduled-next bubble at its own origin, or the vehicle
-     *  has already passed the from-stop. The popup renders this as
-     *  an extra `arriving in N min` line so a rider tracking a bus
-     *  can see how long until it reaches them, without leaving the
-     *  map. */
-    arrivingInMin: number | null;
-  };
-  const markers = $derived.by<VehicleMarker[]>(() => {
-    if (!view) return [];
-    // Snapshot `view` into a non-null local so the nested closures
-    // below (computeArrivingInMin, the stop forEach inside the trips
-    // loop) narrow correctly under TypeScript's strict null checks.
-    const curView = view;
-    const out: VehicleMarker[] = [];
-    let nextScheduledShown = false;
-    const nowMs = nowTicker.ms;
-
-    // Pre-compute the from-stop's position (when the URL carries
-    // `?from=<stopId>`) plus the speed-cascade context, so the
-    // per-marker arrival-to-from-stop ETA below is a one-liner
-    // instead of duplicating projection / TOD-bucket lookups per
-    // marker. fromTarget is null when there's no selected origin
-    // stop, in which case computeArrivingInMin always returns null.
-    const fromTarget = ((): { lat: number; lon: number } | null => {
-      if (fromStopId == null) return null;
-      const s = curView.stops.find((x) => x.stopId === fromStopId);
-      return s ? { lat: s.lat, lon: s.lon } : null;
-    })();
-    const arrivingTodBucket = clockToBucket(
-      minSinceMidnightInTz(nowMs, tz),
-      feedConfigStore.todProfile,
-    );
-    const measuredShape = curView.shape.length >= 2 ? measurePolyline(curView.shape) : null;
-    const stopDistCache = new Map<string, number[]>();
-    const stopDistAlongM = (tripId: string, stops: RouteMapView['trips'][number]['stops']): number[] => {
-      const cached = stopDistCache.get(tripId);
-      if (cached) return cached;
-      if (!measuredShape) return [];
-      const out = stops.map((s) =>
-        typeof s.distAlongM === 'number'
-          ? s.distAlongM
-          : projectOnPolyline({ lat: s.lat, lon: s.lon }, measuredShape.points).distAlongM,
-      );
-      stopDistCache.set(tripId, out);
-      return out;
-    };
-    // Single GPS-anchored ETA call site for the popup `arriving in N min`
-    // row. Delegates the dead-reckon + per-segment + dwell walk to the
-    // shared domain helper used by station applyGpsEta, so the two views
-    // can never diverge. Schedule-only fallback (no GPS) uses the trip's
-    // own scheduled arrival at the from-stop.
-    const computeArrivingInMin = (opts: {
-      rawGpsLat: number | null;
-      rawGpsLon: number | null;
-      scheduledAtOrigin: boolean;
-      etaSource: 'gps' | 'schedule';
-      speedMs: number | null;
-      gpsAsOfMs: number | null;
-      directionId: 0 | 1 | -1;
-      scheduledFromArrivalMin: number | null;
-      dwellStopDistAlongM: ReadonlyArray<number> | null;
-    }): number | null => {
-      if (!fromTarget || opts.scheduledAtOrigin) return null;
-      if (opts.etaSource === 'schedule') {
-        if (opts.scheduledFromArrivalMin == null) return null;
-        const m = opts.scheduledFromArrivalMin - nowMin;
-        return m > 0 ? m : null;
-      }
-      if (
-        curView.shape.length < 2 ||
-        opts.rawGpsLat == null ||
-        opts.rawGpsLon == null ||
-        opts.gpsAsOfMs == null
-      ) return null;
-      const { arrival } = predictArrivalFromGps({
-        obs: {
-          lat: opts.rawGpsLat,
-          lon: opts.rawGpsLon,
-          speedMs: opts.speedMs,
-          asOfMs: opts.gpsAsOfMs,
-        },
-        polyline: curView.shape,
-        stopPos: fromTarget,
-        nowMs,
-        todBucket: arrivingTodBucket,
-        feedConfig: feedConfigStore.speedConfig,
-        vehicleDirectionId: opts.directionId === -1 ? undefined : opts.directionId,
-        dwellStopDistAlongM: opts.dwellStopDistAlongM ?? undefined,
-        dwellSecondsPerStop: feedConfigStore.dwellSec,
-        ctx: {
-          feedConfig: feedConfigStore.speedConfig,
-          timezone: tz,
-          todProfile: feedConfigStore.todProfile,
-        },
-      });
-      return arrival.minutes > 0 ? Math.round(arrival.minutes) : null;
-    };
-
-    // Hard cap on GPS-fix age before we stop showing the orphan marker
-    // at all — the same 15-min ceiling `deadReckonGpsAlongShape`
-    // enforces for tracked vehicles.
-    const STALE_HARD_MAX_MS = 15 * 60_000;
-
-    // Index reconciled vehicles by their (static) tripId so each
-    // iteration is O(1). The worker matched by (route, dir,
-    // tripStartMin) tolerance — NOT by string-equality on tripId —
-    // so live observations whose tripId drifted from static still
-    // resolve correctly here.
-    const reconciledByTripId = new Map<string, (typeof reconciledVehiclesStore.vehicles)[number]>();
-    for (const v of reconciledVehiclesStore.vehicles) {
-      if (v.tripId) reconciledByTripId.set(v.tripId, v);
-    }
-
-    // Sort by tripStartMin so the soonest not-yet-departed trip always wins
-    // the single origin slot, regardless of query order from the DB.
-    const trips = [...view.trips].sort((a, b) => a.tripStartMin - b.tripStartMin);
-    for (const t of trips) {
-      const plan = tripPlans.get(t.tripId);
-      // GPS-anchored prediction takes priority when the worker reconciled
-      // this trip to a live fix; fall back to schedule interpolation
-      // otherwise.
-      const reconciled = reconciledByTripId.get(t.tripId);
-      let p: ReturnType<typeof predictPositionOnShape> | null = null;
-      let gpsConfidence: 'good' | 'stale' | 'very-stale' | null = null;
-      if (plan && reconciled?.kind === 'tracked' && reconciled.position) {
-        const pos = reconciled.position;
-        const gps = predictPositionFromGps(
-          plan,
-          { lat: pos.lat, lon: pos.lon, speedMs: pos.speedMs ?? null, asOfMs: pos.asOf },
-          nowMs,
-          { timezone: tz },
-          feedConfigStore.dwellSec,
-        );
-        if (gps) {
-          p = gps;
-          gpsConfidence =
-            gps.freshness === 'fresh' ? 'good'
-            : gps.freshness === 'stale' ? 'stale'
-            : 'very-stale';
-        }
-        // No `else` fallback: predictPositionFromGps already walks the
-        // fix forward within the dead-reckon window. Anything older
-        // than 15 min returns null and we fall through to schedule
-        // prediction so the marker doesn't freeze on a 30-min-old
-        // GPS sample.
-      }
-      if (!p) {
-        p = plan
-          ? predictPositionOnShape(plan, nowMin)
-          : predictPosition(t.stops, nowMin);
-      }
-      if (!p) continue;
-      // Past terminus — drop entirely.
-      if (p.status === 'after') continue;
-      // 'before' and 'at-origin' are both "not yet departed from origin":
-      // show only the soonest one so bubbles don't stack at the origin stop.
-      if (p.status === 'before' || p.status === 'at-origin') {
-        if (nextScheduledShown) continue;
-        nextScheduledShown = true;
-      }
-      out.push({
-        tripId: t.tripId,
-        headsign: t.headsign,
-        lat: p.lat,
-        lon: p.lon,
-        opacity: 0.9,
-        selected: t.tripId === selectedTripId,
-        tripStartMin: t.tripStartMin,
-        scheduled: p.status === 'before' || p.status === 'at-origin',
-        gpsConfidence,
-        kind: reconciled?.kind ?? 'scheduled',
-        directionId: (reconciled?.directionId ?? (direction as 0 | 1)) as 0 | 1 | -1,
-        gpsAsOfMs: reconciled?.position?.asOf ?? null,
-        hasOriginTime: true,
-        arrivingInMin: computeArrivingInMin({
-          rawGpsLat: reconciled?.position?.lat ?? null,
-          rawGpsLon: reconciled?.position?.lon ?? null,
-          scheduledAtOrigin: p.status === 'before' || p.status === 'at-origin',
-          etaSource: reconciled?.position ? 'gps' : 'schedule',
-          speedMs: reconciled?.position?.speedMs ?? null,
-          gpsAsOfMs: reconciled?.position?.asOf ?? null,
-          directionId: (reconciled?.directionId ?? (direction as 0 | 1)) as 0 | 1 | -1,
-          scheduledFromArrivalMin:
-            fromStopId == null
-              ? null
-              : (t.stops.find((s) => s.stopId === fromStopId)?.arrivalMin ?? null),
-          dwellStopDistAlongM: stopDistAlongM(t.tripId, t.stops),
-        }),
-      });
-    }
-
-    // Orphans: live buses the worker couldn't match to any active
-    // scheduled trip on this (route, dir). Rendered at raw GPS — no
-    // shape projection because we don't have stop_times for them.
-    // Cap by STALE_HARD_MAX_MS to drop markers whose last fix is
-    // ancient.
-    for (const v of orphanVehicles) {
-      if (!v.position) continue;
-      const age = nowMs - v.position.asOf;
-      if (age > STALE_HARD_MAX_MS) continue;
-      const tripId = v.tripId ?? v.id;
-      // Orphans carry route + direction, so they get the same
-      // dead-reckon walk as tracked vehicles — on the view's shape,
-      // with the view's stop distances for dwell. The marker then
-      // agrees with its own popup ETA (which already walked) instead
-      // of sitting at the raw fix while the ETA claims it arrived.
-      const orphanStopDistAlongM = stopDistAlongM(tripId, curView.stops);
-      const walked = measuredShape
-        ? deadReckonGpsAlongShape(
-            {
-              lat: v.position.lat,
-              lon: v.position.lon,
-              speedMs: v.position.speedMs ?? null,
-              asOfMs: v.position.asOf,
-            },
-            measuredShape,
-            nowMs,
-            {
-              feedConfig: feedConfigStore.speedConfig,
-              timezone: tz,
-              todProfile: feedConfigStore.todProfile,
-            },
-            {
-              stopDistAlongM: orphanStopDistAlongM,
-              dwellSecondsPerStop: feedConfigStore.dwellSec,
-            },
-          )
-        : null;
-      out.push({
-        tripId,
-        headsign: v.headsign ?? null,
-        lat: walked?.position.lat ?? v.position.lat,
-        lon: walked?.position.lon ?? v.position.lon,
-        opacity: 0.9,
-        selected: tripId === selectedTripId,
-        // Worker sets schedule.tripStartMin on orphans when the live
-        // obs carries a parseable start time; fall back to nowMin so
-        // sort order stays defined.
-        tripStartMin: v.schedule?.tripStartMin ?? nowMin,
-        scheduled: false,
-        // Orphan freshness mirrors the reconciled bands so the marker
-        // styling matches.
-        gpsConfidence:
-          age < 3 * 60_000 ? 'good'
-          : age < 5 * 60_000 ? 'stale'
-          : 'very-stale',
-        kind: v.kind,
-        directionId: v.directionId ?? -1,
-        gpsAsOfMs: v.position.asOf,
-        hasOriginTime: v.schedule?.tripStartMin != null,
-        arrivingInMin: computeArrivingInMin({
-          rawGpsLat: v.position.lat,
-          rawGpsLon: v.position.lon,
-          scheduledAtOrigin: false,
-          etaSource: 'gps',
-          speedMs: v.position.speedMs ?? null,
-          gpsAsOfMs: v.position.asOf,
-          directionId: v.directionId ?? -1,
-          scheduledFromArrivalMin: null,
-          // Same stop list the orphan marker walks against, so the
-          // ETA's dwell term matches the walked position.
-          dwellStopDistAlongM: orphanStopDistAlongM,
-        }),
-      });
-    }
-    return out;
-  });
-
-  // True when at least one active vehicle marker sits within
-  // START_VEHICLE_RADIUS_M of the route's origin — the "start
-  // vehicle" that gets a direction arrow next to it. When false,
-  // the origin stop takes over the direction cue via a play icon
-  // (see the stops-render effect). Recomputes on every tick since
-  // `markers` does; boolean output means downstream effects only
-  // re-run on the rare transition edge, not per tick.
-  const START_VEHICLE_RADIUS_M = 200;
-  const hasStartVehicle = $derived.by(() => {
-    if (!view || markers.length === 0) return false;
-    const origin = view.stops[0];
-    if (!origin) return false;
-    for (const m of markers) {
-      if (haversineMeters(origin.lat, origin.lon, m.lat, m.lon) < START_VEHICLE_RADIUS_M) {
-        return true;
-      }
-    }
-    return false;
-  });
-
-  // Circular route: origin and terminus resolve to the same physical
-  // stop (either identical stop_id, or so close they might as well
-  // be — 200 m catches loops with paired origin / terminus stops on
-  // opposite kerbs). Detected from the shape data alone, no
-  // per-feed hint. Direction-of-travel cues are suppressed for
-  // circular routes since "start" and "end" collapse and a single
-  // arrow at one point on the loop just adds noise.
-  const CIRCULAR_MAX_M = 200;
-  const isCircular = $derived.by(() => {
-    if (!view || view.stops.length < 2) return false;
-    const first = view.stops[0];
-    const last = view.stops[view.stops.length - 1];
-    if (first.stopId === last.stopId) return true;
-    return haversineMeters(first.lat, first.lon, last.lat, last.lon) < CIRCULAR_MAX_M;
-  });
-
-  // Overall direction of travel: initial bearing on the great-circle
-  // from the route's origin stop to its terminus stop. Prefer this
-  // over `bearingAtDistance(measured, 0)` (initial segment) because
-  // the shape often wiggles for the first few metres out of the
-  // terminal — a segment-0 arrow can point 45° off from the way the
-  // route actually heads, which confuses more than it clarifies.
-  // Meaningful only when the route is not circular (endpoints
-  // collapse); the callers gate on `!isCircular` before rendering.
-  const overallBearing = $derived.by(() => {
-    if (!view || view.stops.length < 2) return 0;
-    const a = view.stops[0];
-    const b = view.stops[view.stops.length - 1];
-    return bearingBetween(a, b);
-  });
-
-  // ── Title / subtitle ───────────────────────────────────────────────
-  // Mirrors the schedule view: title is the origin station name
-  // (i.e. 'departures from here'), subtitle is the headsign —
-  // operator-published when available, falling back to the
-  // terminus stop name. The route badge on the left already
-  // carries route identity; repeating 'Bus 40' as the title was
-  // redundant.
-  const originStopName = $derived(view?.stops[0]?.stopName ?? null);
-  const terminusStopName = $derived(
-    view ? view.stops[view.stops.length - 1]?.stopName ?? null : null,
-  );
-  const headsign = $derived(view?.trips[0]?.headsign ?? terminusStopName);
-  const headerTitle = $derived(
-    originStopName
-    ?? (route ? `${vehicleTypeLabel(route.type ?? 'unknown')} ${route.shortName}` : ''),
-  );
-  const headerSubtitle = $derived(headsign ? `→ ${headsign}` : null);
-
-  // ── Navigation helpers ─────────────────────────────────────────────
-  // Does the opposite direction even exist on this route? Some lines
-  // are one-way loops (no dir 1 trips at all) so the swap button should
-  // grey out instead of taking the user to an empty map. Shared probe
-  // with the schedule view — see
-  // lib/data/gtfs/otherDirectionExists.svelte.ts.
+  const m = useRouteMapView();
   const otherDirection = useOtherDirectionExists(
-    () => routeId,
-    () => direction,
+    () => m.routeId,
+    () => m.direction,
   );
 
   function swapDirection() {
-    if (direction == null) return;
-    const otherDir = direction === 0 ? 1 : 0;
+    if (m.direction == null) return;
+    const otherDir = m.direction === 0 ? 1 : 0;
     // When swapping back to the original direction, restore the trip the user
     // arrived with so the highlight isn't lost after a double-swap.
-    const restoreTrip = otherDir === homeDirection ? homeSelectedTripId : null;
+    const restoreTrip = otherDir === m.homeDirection ? m.homeSelectedTripId : null;
     const target = restoreTrip
-      ? `/map/route/${routeId}_${otherDir}/${restoreTrip}`
-      : `/map/route/${routeId}_${otherDir}`;
+      ? `/map/route/${m.routeId}_${otherDir}/${restoreTrip}`
+      : `/map/route/${m.routeId}_${otherDir}`;
     goto(target, { replaceState: true });
   }
 
@@ -584,6 +34,12 @@
   // API. Rendered as a styled IconButton overlay in the top-right of
   // the map card (see markup below), not as Leaflet's native
   // `leaflet-bar` controls (those don't match the app's chrome).
+  // The map component exposes `mapInstance` and `shapeLayer` via
+  // bind: so we don't have to know anything about Leaflet here.
+  let mapInstance = $state<import('leaflet').Map | null>(null);
+  let L = $state<typeof import('leaflet') | null>(null);
+  let shapeLayer = $state<import('leaflet').Polyline | null>(null);
+
   function zoomIn() { mapInstance?.zoomIn(); }
   function zoomOut() { mapInstance?.zoomOut(); }
   function fitToRoute() {
@@ -601,10 +57,10 @@
    *  so the result remains pan-and-zoom-able afterwards — we never
    *  lock the viewport. */
   function focusOnVehicle() {
-    if (!mapInstance || !view || !L || !selectedTripId) return;
-    const sel = markers.find((m) => m.tripId === selectedTripId);
+    if (!mapInstance || !m.view || !L || !m.selectedTripId) return;
+    const sel = m.markers.find((mk) => mk.tripId === m.selectedTripId);
     if (!sel) return;
-    const trip = view.trips.find((t) => t.tripId === selectedTripId);
+    const trip = m.view.trips.find((t) => t.tripId === m.selectedTripId);
     if (!trip || trip.stops.length === 0) return;
     const Lref = L;
     const vehLL = Lref.latLng(sel.lat, sel.lon);
@@ -628,568 +84,8 @@
   // Selected-vehicle focus is meaningful only when there IS a selected
   // trip AND its marker is currently on the map.
   const focusOnVehicleEnabled = $derived(
-    selectedTripId != null && markers.some((m) => m.tripId === selectedTripId),
+    m.selectedTripId != null && m.markers.some((mk) => mk.tripId === m.selectedTripId),
   );
-
-  // ── Leaflet ────────────────────────────────────────────────────────
-  // Leaflet is browser-only; init in onMount. The instance + per-layer
-  // refs are non-reactive state held outside Svelte runes so we can
-  // mutate them imperatively (Leaflet's API is fully imperative).
-  let mapEl: HTMLDivElement | undefined = $state();
-  type LeafletNS = typeof import('leaflet');
-  // L MUST be $state — onMount assigns it asynchronously after the
-  // dynamic import resolves; without reactivity the init $effect
-  // below would never know L changed from null to the module and
-  // would stay stuck on its early-return.
-  let L = $state<LeafletNS | null>(null);
-  // mapInstance is $state so the shape / stops / vehicles render
-  // effects below re-run once the deferred init (gated by a
-  // ResizeObserver waiting for non-zero container size) finally
-  // assigns it. Layer refs stay plain since they're only ever
-  // touched from effects that already track mapInstance + view.
-  let mapInstance = $state<import('leaflet').Map | null>(null);
-  let shapeLayer: import('leaflet').Polyline | null = null;
-  let stopsLayer: import('leaflet').LayerGroup | null = null;
-  let vehiclesLayer: import('leaflet').LayerGroup | null = null;
-  let userMarker: import('leaflet').Marker | null = null;
-  let hasFitOnce = false;
-  let resizeObserver: ResizeObserver | null = null;
-
-  onMount(async () => {
-    try {
-      const mod = (await import('leaflet')) as unknown as { default?: LeafletNS };
-      L = (mod.default ?? (mod as unknown as LeafletNS));
-      await import('leaflet/dist/leaflet.css');
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('[map] leaflet import failed', e);
-      error = e instanceof Error ? e.message : String(e);
-    }
-  });
-
-  // Lazy init the Leaflet instance the first time the container has
-  // non-zero size. We can't just init when mapEl + L + view are all
-  // present — the Card's flex height is 0 for one frame after it
-  // mounts, and Leaflet caches that 0-size on init. Instead, gate
-  // on a ResizeObserver tick that reports a real width × height,
-  // then disconnect that gate and start observing for future
-  // resizes so the map re-tiles when the viewport changes.
-  $effect(() => {
-    if (!L || mapInstance || !mapEl || view == null) return;
-    const el = mapEl;
-    const Lref = L;
-
-    const doInit = () => {
-      try {
-        mapInstance = Lref.map(el, {
-          zoomControl: false,
-          attributionControl: true,
-          center: [46.77, 23.6],
-          zoom: 13,
-        });
-        (window as unknown as { __nearyMap?: import('leaflet').Map }).__nearyMap = mapInstance;
-        Lref.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap contributors',
-          // CORS mode so tile responses are readable: the SW's tile
-          // cache (cacheFirstOsmTile) can then stamp put-time for
-          // freshness and serve the SAME response to both Leaflet's
-          // requests and the bbox prefetch's cors fetches. OSM sends
-          // Access-Control-Allow-Origin: *.
-          crossOrigin: 'anonymous',
-        }).addTo(mapInstance);
-        stopsLayer = Lref.layerGroup().addTo(mapInstance);
-        vehiclesLayer = Lref.layerGroup().addTo(mapInstance);
-        // Vehicles pane sits above markerPane (600) so vehicle badges
-        // always paint over stop circles, but below tooltipPane (650).
-        const vehiclesPane = mapInstance.createPane('nearyVehicles');
-        vehiclesPane.style.zIndex = '620';
-        // Stop debug-id tooltips live in their own pane below the
-        // vehicles pane (z=610 < nearyVehicles z=620) so vehicle
-        // badges and their debug overlays stay readable in debug
-        // mode and aren't covered by station ids. Tooltip pointer
-        // events are disabled too — riders can still tap stop
-        // circles through the label.
-        const stopDebugPane = mapInstance.createPane('nearyStopDebug');
-        stopDebugPane.style.zIndex = '610';
-        stopDebugPane.style.pointerEvents = 'none';
-        // Future-resize listener (rotation, splitscreen, sidebar).
-        if (typeof ResizeObserver !== 'undefined') {
-          resizeObserver = new ResizeObserver(() => mapInstance?.invalidateSize());
-          resizeObserver.observe(el);
-        }
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error('[map] init failed', e);
-        error = e instanceof Error ? e.message : String(e);
-      }
-    };
-
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      doInit();
-      return;
-    }
-
-    // Container has 0 size right now — wait for the layout to give
-    // it real dimensions before initialising. ResizeObserver fires
-    // immediately on observe() and again on every size change, so
-    // the first non-zero entry triggers init and we disconnect.
-    if (typeof ResizeObserver === 'undefined') return;
-    const gate = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (!r || r.width <= 0 || r.height <= 0) return;
-      gate.disconnect();
-      doInit();
-    });
-    gate.observe(el);
-  });
-
-  onDestroy(() => {
-    resizeObserver?.disconnect();
-    resizeObserver = null;
-    mapInstance?.remove();
-    mapInstance = null;
-  });
-
-  // Re-paint the route shape + stops whenever the view-model or stop
-  // routes change. Leaflet layers are mutated in place; markers are
-  // recreated cheaply (a route has O(50) stops, an order of magnitude
-  // less than what Leaflet handles fluidly).
-  $effect(() => {
-    // Capture reactive state into local const so TypeScript narrowing
-    // holds inside forEach callbacks (rune getters don't narrow).
-    const Lref = L;
-    const currentView = view;
-    const currentRoutes = stopRoutes;
-    if (!Lref || !mapInstance || !currentView) return;
-    if (shapeLayer) {
-      shapeLayer.remove();
-      shapeLayer = null;
-    }
-    if (currentView.shape.length >= 2) {
-      const latlngs = currentView.shape.map((p) => [p.lat, p.lon] as [number, number]);
-      shapeLayer = Lref.polyline(latlngs, {
-        color: currentView.route.color,
-        weight: 5,
-        opacity: 0.85,
-      }).addTo(mapInstance);
-      if (!hasFitOnce) {
-        // Borrowed v1's tighter framing: small fixed padding so the
-        // route fills the viewport, capped at zoom 15 so a short
-        // route doesn't slam in past the point where street labels
-        // start to fight each other.
-        mapInstance.fitBounds(shapeLayer.getBounds(), {
-          padding: [12, 12],
-          maxZoom: 15,
-        });
-        hasFitOnce = true;
-      }
-    }
-    stopsLayer?.clearLayers();
-    const sl = stopsLayer;
-    if (sl) {
-      // Every stop renders as the same small circleMarker — origin and
-      // terminus get no special treatment. The route badge in the
-      // header already names origin + destination, and "next at
-      // origin" surfaces via the scheduled vehicle bubble; a separate
-      // play / square endpoint glyph was redundant.
-      //
-      // Exception: when the user navigated here from a station card
-      // (`?from=<stopId>` query param), that stop renders in the
-      // success-green colour so the rider can recognise where they
-      // were standing. Pure visual marker; no other behavioural
-      // change — the popup, hit target, and trip data are identical.
-      //
-      // Second exception: when no vehicle is currently at / near the
-      // route's origin (hasStartVehicle === false), the origin stop
-      // takes over the direction-of-travel cue and renders as a
-      // play triangle rotated to the initial-segment bearing. When
-      // a start vehicle is present, that vehicle gets the arrow (in
-      // the vehicles effect below) and the origin falls back to the
-      // regular circle so the two cues don't stack.
-      const fromStop = fromStopId;
-      const routeOriginId = currentView.stops[0]?.stopId ?? null;
-      const hasShape = currentView.shape.length >= 2;
-      currentView.stops.forEach((s) => {
-        // Both sides are strings (GTFS stop_id is a free-form text id
-        // per spec, kept as string end-to-end). Direct === compare.
-        const isFromStop = fromStop != null && s.stopId === fromStop;
-        const isRouteOrigin = routeOriginId != null && s.stopId === routeOriginId;
-        const showPlayIcon =
-          isRouteOrigin && !hasStartVehicle && !isFromStop && !isCircular && hasShape;
-        const m: import('leaflet').Marker | import('leaflet').CircleMarker = showPlayIcon
-          ? Lref.marker([s.lat, s.lon], {
-              // Play-triangle pill matching the vehicle badge: route
-              // colour fill, contrasting glyph inside, white ring,
-              // same corner radius. Only the SVG glyph rotates —
-              // the pill stays upright so it reads as a UI element,
-              // not a rotated stop marker.
-              icon: Lref.divIcon({
-                className: 'neary-stop-play',
-                html: `<div style="
-                    display:inline-flex;align-items:center;justify-content:center;
-                    width:24px;height:24px;border-radius:6px;
-                    background:${currentView.route.color};color:${pickContrastingText(currentView.route.color)};
-                    box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
-                  "><svg width="14" height="14" viewBox="0 0 20 20"
-                          style="transform:rotate(${overallBearing.toFixed(1)}deg);" aria-hidden="true">
-                    <path d="M10 2 L17 17 L3 17 Z" fill="currentColor" />
-                  </svg></div>`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
-              }),
-            })
-          : Lref.circleMarker([s.lat, s.lon], {
-              // Stops are already drawn ON TOP of the route polyline:
-              // both live in overlayPane, the polyline is added by this
-              // effect FIRST and the stops are appended AFTER, so SVG
-              // insertion order puts the stop circles above the line. No
-              // pane gymnastics needed — earlier attempts to hoist the
-              // origin into markerPane / a custom pane broke the marker
-              // entirely because Leaflet's SVG renderer isn't on
-              // markerPane by default.
-              radius: isFromStop ? 9 : 5,
-              color: '#fff',
-              weight: isFromStop ? 3 : 1.5,
-              // Hardcoded green hex (not var(--color-success)) because
-              // Leaflet's SVG renderer doesn't parse CSS custom properties
-              // or oklch() — keep parity with the GPS-good ring used in
-              // vehicleHtml below.
-              fillColor: isFromStop ? '#22c55e' : currentView.route.color,
-              fillOpacity: 1,
-            });
-        m.bindPopup(stopPopupHtml(s.stopId, s.stopName, currentRoutes.get(s.stopId) ?? []), {
-          closeButton: false,
-        });
-        // Debug overlay: render the stop_id as a permanent tooltip
-        // next to each stop circle when `userPrefs.showDebugIds` is
-        // on. Lets the rider compare against the `?from=<id>` query
-        // param (and against the station-card stop they came from)
-        // when investigating why the from-stop highlight didn't
-        // appear. The from-stop gets a `★` prefix so we can also
-        // see whether the isFromStop check itself is firing — if the
-        // star appears but the dot is still route-coloured, the
-        // match works and it's a rendering bug; if no star appears
-        // on the stop you came from, the match itself is failing.
-        // Suppressed in production so the map stays readable.
-        if (userPrefs.showDebugIds) {
-          m.bindTooltip(`${isFromStop ? '★ ' : ''}${s.stopId}`, {
-            permanent: true,
-            direction: 'right',
-            offset: [4, 0],
-            className: 'neary-stop-id-label',
-            pane: 'nearyStopDebug',
-          });
-        }
-        m.addTo(sl);
-      });
-    }
-  });
-
-  // Re-paint vehicles every nowMin tick.
-  $effect(() => {
-    if (!L || !mapInstance || !vehiclesLayer || !view) return;
-    void nowMin; // declare dependency so the effect re-runs each tick
-    const Lref = L;
-    const dir = direction;
-    const rid = routeId;
-    if (dir == null) return;
-    vehiclesLayer.clearLayers();
-    const routeColor = view.route.color;
-    const labelFg = pickContrastingText(routeColor);
-    const nowMinSnap = nowMin;
-    for (const m of markers) {
-      const debugId = userPrefs.showDebugIds
-        ? `${m.tripId} · ${m.kind[0]}${m.directionId === -1 ? '' : m.directionId}`
-          + (m.gpsAsOfMs != null
-            ? ` · ${Math.max(0, Math.round((nowTicker.ms - m.gpsAsOfMs) / 1000))}s ago`
-            : '')
-        : '';
-      const html = vehicleHtml(view.route.shortName, routeColor, labelFg, m.selected, m.opacity, m.scheduled, m.gpsConfidence, debugId);
-      const icon = Lref.divIcon({
-        className: 'neary-vehicle',
-        html,
-        iconSize: [44, 28],
-        iconAnchor: [22, 14],
-      });
-      // pane: 'nearyVehicles' (z=620) keeps vehicles above stop markers
-      // (markerPane z=600) so they're never hidden behind station icons.
-      // zIndexOffset stacks vehicles within the pane so a schedule-only
-      // marker never covers a live (GPS-backed) marker, and the
-      // selected vehicle floats above both. Leaflet otherwise uses
-      // insertion order, which is non-deterministic across ticks.
-      const stackOffset = m.selected ? 1000 : m.scheduled ? -100 : 0;
-      const marker = Lref.marker([m.lat, m.lon], {
-        icon,
-        pane: 'nearyVehicles',
-        zIndexOffset: stackOffset,
-      });
-      // offset: [0, -16] anchors the popup tail just above the badge
-      // top edge so it floats above the vehicle rather than covering it.
-      marker.bindPopup(vehiclePopupHtml(m, rid, dir, nowMinSnap), {
-        closeButton: false,
-        offset: Lref.point(0, -16),
-      });
-      marker.addTo(vehiclesLayer);
-    }
-
-    // Direction-of-travel cue when a vehicle is at / near the route's
-    // origin: pin a small arrow at that vehicle's position, rotated
-    // to the polyline's initial bearing (vehicle is close to origin,
-    // so the first-segment bearing is a good approximation of the
-    // vehicle's actual heading). Non-interactive so it never steals
-    // taps from the underlying vehicle marker. `iconAnchor` shifts
-    // the arrow just above the 44×28 vehicle badge instead of
-    // covering it. When no vehicle is near origin, the origin STOP
-    // shows a play icon instead (rendered by the stops effect).
-    // Skipped entirely for circular routes — origin and terminus
-    // collapse, so a single arrow near origin is misleading.
-    if (view && markers.length > 0 && !isCircular) {
-      const origin = view.stops[0];
-      if (origin) {
-        let best: VehicleMarker | null = null;
-        let bestDistM = Infinity;
-        for (const m of markers) {
-          const d = haversineMeters(origin.lat, origin.lon, m.lat, m.lon);
-          if (d < bestDistM) {
-            bestDistM = d;
-            best = m;
-          }
-        }
-        if (best && bestDistM < START_VEHICLE_RADIUS_M) {
-          const brg = overallBearing;
-          // Rounded pill matching the vehicle badge: route colour
-          // fill, contrasting glyph inside, white ring, same corner
-          // radius. Only the SVG glyph rotates — the pill stays
-          // upright so it reads as a UI element rather than a
-          // free-floating pointer.
-          const SIZE = 24;
-          const html = `<div style="
-              display:inline-flex;align-items:center;justify-content:center;
-              width:${SIZE}px;height:${SIZE}px;border-radius:6px;
-              background:${routeColor};color:${labelFg};
-              box-shadow:0 0 0 2px #fff, 0 1px 2px rgba(0,0,0,0.35);
-              pointer-events:none;
-            "><svg width="14" height="14" viewBox="0 0 20 20"
-                    style="transform:rotate(${brg.toFixed(1)}deg);" aria-hidden="true">
-              <path d="M10 2 L16 14 L10 11 L4 14 Z" fill="currentColor" />
-            </svg></div>`;
-          // Anchor the pill on the side OPPOSITE the direction of
-          // travel: since the route line extends from origin in the
-          // bearing direction, the opposite flank is off-route, so
-          // the pill doesn't overlap other vehicle badges that stack
-          // near the departure area. Screen-space math: bearing θ
-          // (CW from N) maps to screen direction (sin θ, -cos θ);
-          // pill sits in direction (-sin θ, cos θ). Distance R=40
-          // gives clearance around the 44×28 vehicle badge even at
-          // pure-diagonal bearings.
-          const brgRad = (brg * Math.PI) / 180;
-          const R = 40;
-          const dxCenter = -R * Math.sin(brgRad);
-          const dyCenter = R * Math.cos(brgRad);
-          const icon = Lref.divIcon({
-            className: 'neary-start-vehicle-arrow',
-            html,
-            iconSize: [SIZE, SIZE],
-            iconAnchor: [SIZE / 2 - dxCenter, SIZE / 2 - dyCenter],
-          });
-          Lref.marker([best.lat, best.lon], {
-            icon,
-            pane: 'nearyVehicles',
-            zIndexOffset: 1500,
-            interactive: false,
-            keyboard: false,
-          }).addTo(vehiclesLayer);
-        }
-      }
-    }
-  });
-
-  // User position layer. `locationStore.position` is a native
-  // `GeolocationPosition`, so coords come from `.coords.latitude` /
-  // `.coords.longitude` — NOT the LatLon shape we use everywhere
-  // else in the domain.
-  $effect(() => {
-    if (!L || !mapInstance) return;
-    const pos = locationStore.position;
-    const coords = pos?.coords;
-    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
-      userMarker?.remove();
-      userMarker = null;
-      return;
-    }
-    const latlng: [number, number] = [coords.latitude, coords.longitude];
-    if (!userMarker) {
-      userMarker = L.marker(latlng, {
-        icon: L.divIcon({
-          className: '',
-          html: '<div class="neary-user-dot"></div>',
-          iconSize: [14, 14],
-          iconAnchor: [7, 7],
-        }),
-        interactive: false,
-        zIndexOffset: -200,
-      }).addTo(mapInstance);
-    } else {
-      userMarker.setLatLng(latlng);
-    }
-  });
-
-  // ── Inline HTML helpers (kept here, not exported, since they are
-  // purely the Leaflet `divIcon` payload). ──────────────────────────
-  function vehiclePopupHtml(m: VehicleMarker, rId: string, dir: 0 | 1, nowMinVal: number): string {
-    // Source icons.
-    const clockSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-    const schedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="14" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/><circle cx="8" cy="18" r="1" fill="currentColor"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>`;
-    // Kind dot beside the headsign, matching the VehicleCard one on
-    // the station view so the visual language stays consistent across
-    // surfaces. Green for any kind backed by GPS (tracked / verified /
-    // gps-only), grey for schedule-only. Replaces the dedicated
-    // "est." / "gps" info row that used to live below — same signal
-    // in less vertical space.
-    const dotColor = m.kind === 'scheduled' ? '#888' : '#22c55e';
-    const dotTitle = m.kind === 'scheduled' ? 'Scheduled'
-      : m.kind === 'tracked' ? 'Tracked'
-      : m.kind === 'verified' ? 'Verified'
-      : 'GPS only';
-    const dot = `<span title="${dotTitle}" aria-label="${dotTitle}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>`;
-    // Headsign + kind dot + schedule button on the same row.
-    const headsignText = m.headsign
-      ? `<span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.headsign)}</span>`
-      : `<span style="flex:1;"></span>`;
-    // Routes with no usable schedule (adapter-emitted live-only
-    // `_NT*` fallback trips: empty arrival_time on every stop_time
-    // row) skip the schedule shortcut — /schedule/route would have
-    // nothing to show.
-    const schedLink = view?.route.hasSchedule !== false
-      ? `<a href="/schedule/route/${escapeHtml(rId)}_${dir}" title="View schedule" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.07);color:#555;text-decoration:none;flex-shrink:0;">${schedSvg}</a>`
-      : '';
-    const topRow = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">${headsignText}${dot}${schedLink}</div>`;
-    // Shared row template for every line below `topRow`. Three callers:
-    // countdown (scheduled-at-origin "in X min"), leftAt (departed
-    // bus's wall-clock origin time), arrivingIn (ETA to the rider's
-    // ?from-stop). Same flex / icon / coloured-label layout, just
-    // different colour + label. Factor here so adding a fourth info
-    // line is one line of code.
-    const popupRow = (color: string, label: string): string =>
-      `<div style="display:flex;align-items:center;gap:2px;color:${color};font-size:11px;margin-top:3px;">${clockSvg}<span style="margin-left:2px;">${label}</span></div>`;
-    // Countdown row, kept only for scheduled-at-origin / scheduled-
-    // before bubbles: green clock + "in X min". Tells the rider when
-    // the parked / not-yet-departed bus is expected to leave. On-route
-    // vehicles don't get this line — their dot already conveys "live".
-    const countdownHtml = m.scheduled
-      ? popupRow(
-          '#16a34a',
-          (() => {
-            const minsUntil = m.tripStartMin - nowMinVal;
-            return minsUntil <= 0 ? 'now' : formatRelativeMin(minsUntil);
-          })(),
-        )
-      : '';
-    // For vehicles that have ALREADY departed origin (everything but
-    // the scheduled-at-origin / scheduled-before bubbles, which the
-    // 'in X min' label above already covers), append the wall-clock
-    // time the trip left its first stop. Lets a rider on the map
-    // map a moving bubble back to a specific scheduled departure
-    // without opening the schedule view. Suppressed for orphans whose
-    // tripStartMin is a fallback (hasOriginTime === false) — rendering
-    // 'left at <now>' there would be a lie.
-    const leftAtHtml = !m.scheduled && m.hasOriginTime
-      ? popupRow('#888', `left at ${formatHHMM(m.tripStartMin)}`)
-      : '';
-    // 'arriving in N min' line, surfaced only when the URL carries a
-    // `?from=<stopId>` (green-painted target station) AND the vehicle
-    // is still on its way toward that stop. predictArrivalAlongShape
-    // returns negative minutes once the vehicle passes the target;
-    // the marker setter (`computeArrivingInMin` in the markers
-    // derivation) drops the value to null in that case, so this
-    // string is empty for everything that's no longer 'incoming' to
-    // the rider's origin. Green to match the green stop highlight.
-    const arrivingHtml = m.arrivingInMin != null
-      ? popupRow('#16a34a', `arriving in ${m.arrivingInMin} min`)
-      : '';
-    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:150px;">${topRow}${countdownHtml}${leftAtHtml}${arrivingHtml}</div>`;
-  }
-  function vehicleHtml(
-    shortName: string,
-    bg: string,
-    fg: string,
-    selected: boolean,
-    opacity: number,
-    scheduled: boolean,
-    gpsConfidence: 'good' | 'stale' | 'very-stale' | null,
-    debugId: string,
-  ): string {
-    // Inner ring colour reflects GPS data source so the same green /
-    // yellow / red signal a rider reads from any vehicle stays
-    // visible when the vehicle is selected. When unselected this is
-    // the only ring; selection adds a dark outer ring around it as
-    // the "you tapped this one" highlight.
-    //   good        → green   stale       → yellow   very-stale → red
-    //   null (schedule-only): white.
-    const inner =
-      gpsConfidence === 'good' ? '#22c55e' :
-      gpsConfidence === 'stale' ? '#eab308' :
-      gpsConfidence === 'very-stale' ? '#ef4444' :
-      '#fff';
-    const ring = selected
-      ? `box-shadow:0 0 0 3px ${inner}, 0 0 0 5px #111;`
-      : gpsConfidence != null
-        ? `box-shadow:0 0 0 2.5px ${inner};`
-        : 'box-shadow:0 0 0 2px #fff;';
-    // Scheduled vehicles (at-origin / next 'before'): outlined badge so
-    // the user can distinguish "waiting to depart" from "en route".
-    const colors = scheduled
-      ? `background:rgba(255,255,255,0.92);color:${bg};border:1.5px solid ${bg};`
-      : `background:${bg};color:${fg};`;
-    // Pulsing CSS class for the selected badge — the keyframe lives
-    // in the page-level style block and animates an additional
-    // box-shadow on top of the static one above, so the dark outer
-    // ring breathes outward without the badge moving. The
-    // `--neary-inner` custom property carries the GPS-confidence
-    // ring colour into the animation so the inner ring stays at its
-    // semantic colour through the pulse.
-    const selectedClass = selected ? ' neary-vehicle-selected' : '';
-    const selectedVar = selected ? `--neary-inner:${inner};` : '';
-    return `<div style="position:relative;"><div class="neary-vehicle-badge${selectedClass}" style="
-      display:inline-flex;align-items:center;justify-content:center;
-      min-width:32px;height:22px;padding:0 6px;border-radius:6px;
-      ${colors}font:600 12px/1 ui-sans-serif,system-ui;
-      opacity:${opacity};${ring}${selectedVar}
-    ">${escapeHtml(shortName)}</div>${debugId ? `<div style="position:absolute;top:24px;left:50%;transform:translateX(-50%);white-space:nowrap;font:600 9px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#111;background:rgba(255,255,255,0.9);border-radius:3px;padding:1px 3px;pointer-events:none;">${escapeHtml(debugId)}</div>` : ''}</div>`;
-  }
-  function routeBadgeHtml(r: Route): string {
-    const fg = pickContrastingText(r.color);
-    return `<span style="
-      display:inline-flex;align-items:center;justify-content:center;
-      padding:1px 5px;border-radius:4px;
-      background:${r.color};color:${fg};
-      font:600 10px/1.4 ui-sans-serif,system-ui;white-space:nowrap;
-    ">${escapeHtml(r.shortName)}</span>`;
-  }
-  function stopPopupHtml(stopId: string, name: string, routes: Route[]): string {
-    const externalLinkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
-    const badgesHtml = routes.length > 0
-      ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;">${routes.map(routeBadgeHtml).join('')}</div>`
-      : '';
-    return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:160px;">
-      <div style="display:flex;align-items:center;gap:5px;">
-        <span style="font-weight:600;flex:1;min-width:0;">${escapeHtml(name)}</span>
-        <a href="/station/${stopId}" title="Open station" aria-label="Open station ${escapeHtml(name)}" style="
-          display:inline-flex;align-items:center;justify-content:center;
-          color:#555;text-decoration:none;flex-shrink:0;">
-          ${externalLinkSvg}
-        </a>
-      </div>${badgesHtml}
-    </div>`;
-  }
-  function escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
 </script>
 
 <!-- Map control button factory + per-control icon snippets. Defined
@@ -1224,19 +120,19 @@
 <div class="mx-auto max-w-5xl w-full px-4 py-3 flex flex-col min-h-[calc(100svh-3.5rem-3rem)]">
   {#if userPrefs.feedId == null}
     <SelectFeedCard fallbackBody="Pick a feed in Settings to view the route map." />
-  {:else if direction == null}
+  {:else if m.direction == null}
     <Card><CardContent>
       <Typography variant="h6" class="text-[color:var(--color-danger)]">Map view needs a direction</Typography>
       <Typography variant="caption">URL must end in <code>_0</code> or <code>_1</code>.</Typography>
     </CardContent></Card>
-  {:else if error}
+  {:else if m.error}
     <Card><CardContent>
       <Stack spacing={1}>
         <Typography variant="h6" class="text-[color:var(--color-danger)]">Failed to load map</Typography>
-        <Typography variant="caption">{error}</Typography>
+        <Typography variant="caption">{m.error}</Typography>
       </Stack>
     </CardContent></Card>
-  {:else if view == null}
+  {:else if m.view == null}
     <Card><CardContent>
       <Stack direction="row" spacing={1} align="center">
         <Spinner size={16} />
@@ -1255,18 +151,18 @@
         <CardContent>
           <Stack direction="row" spacing={1.5} align="center" wrap>
             <BackButton />
-            <RouteBadge route={view.route} size="large" />
+            <RouteBadge route={m.view.route} size="large" />
             <Stack spacing={0.5} class="flex-1 min-w-0">
               <Stack direction="row" spacing={1} align="center" wrap>
-                <Typography variant="h5" class="truncate">{headerTitle}</Typography>
-                {#each (route?.networks ?? []) as netId (netId)}
-                  {@const net = networkMap.get(netId)}
+                <Typography variant="h5" class="truncate">{m.headerTitle}</Typography>
+                {#each (m.route?.networks ?? []) as netId (netId)}
+                  {@const net = m.networkMap.get(netId)}
                   <Chip size="small" hex={net?.color} fg={net ? pickContrastingText(net.color) : undefined}>
                     {net?.name ?? netId}
                   </Chip>
                 {/each}
-                {#each (route?.tags ?? []) as tagId (tagId)}
-                  {@const tag = routeTags.get(tagId)}
+                {#each (m.route?.tags ?? []) as tagId (tagId)}
+                  {@const tag = m.routeTags.get(tagId)}
                   {@const TagIcon = tag?.icon ? tagIcon(tag.icon) : null}
                   {@const tagColor = tag?.color}
                   {@const tagHex = tagColor ? `#${tagColor}` : undefined}
@@ -1282,9 +178,9 @@
                   {/if}
                 {/each}
               </Stack>
-              {#if headerSubtitle}
+              {#if m.headerSubtitle}
                 <Typography variant="caption" class="text-[color:var(--color-fg-muted)] truncate">
-                  {headerSubtitle}
+                  {m.headerSubtitle}
                 </Typography>
               {/if}
             </Stack>
@@ -1308,7 +204,21 @@
          The 18rem covers outer app header (~3.5rem), the in-page
          header card, page padding (~1.5rem), and bottom nav. -->
     <Card class="overflow-hidden neary-map-card">
-        <div bind:this={mapEl} class="neary-map"></div>
+        <RouteMap
+          view={m.view}
+          markers={m.markers}
+          stopRoutes={m.stopRoutes}
+          selectedTripId={m.selectedTripId}
+          fromStopId={m.fromStopId}
+          isCircular={m.isCircular}
+          overallBearing={m.overallBearing}
+          hasStartVehicle={m.hasStartVehicle}
+          nowMin={m.nowMin}
+          direction={m.direction ?? 0}
+          bind:mapInstance
+          bind:L
+          bind:shapeLayer
+        />
         <!-- Viewport controls overlaid on the map, top-right.
              Same IconButton styling the rest of the app uses, with a
              surface background + shadow so they read against any
@@ -1329,8 +239,8 @@
              flex-column so both stay thumb-reachable. Favorites work
              even for routes without a usable schedule, so this cluster
              renders whenever the view is loaded. -->
-        {#if view}
-          {@const isFavorite = favoritesStore.routeIds.has(routeId)}
+        {#if m.view}
+          {@const isFavorite = favoritesStore.routeIds.has(m.routeId)}
           <div class="neary-map-controls-bottom">
             <IconButton
               size="small"
@@ -1338,15 +248,15 @@
               title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
               aria-pressed={isFavorite}
               class="bg-[color:var(--color-surface)] text-[color:var(--color-fg)] border border-[color:var(--color-border)] shadow-lg hover:bg-[color:var(--color-border)]/60"
-              onclick={() => favoritesStore.toggleRoute(routeId)}
+              onclick={() => favoritesStore.toggleRoute(m.routeId)}
             >
               {@render heartIcon(isFavorite)}
             </IconButton>
-            {#if view.route.hasSchedule !== false}
+            {#if m.view.route.hasSchedule !== false}
               {@render mapControl(
                 'Open schedule for this route',
                 calendarIcon,
-                () => goto(`/schedule/route/${routeId}_${direction}`),
+                () => goto(`/schedule/route/${m.routeId}_${m.direction}`),
               )}
             {/if}
           </div>
@@ -1365,7 +275,8 @@
     height: calc(100svh - 18rem);
     position: relative;
   }
-  .neary-map {
+  /* .neary-map lives inside <RouteMap>; sizing follows the card. */
+  :global(.neary-map) {
     width: 100%;
     height: 100%;
   }
