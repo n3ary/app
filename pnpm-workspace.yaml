@@ -11,8 +11,32 @@ minimumReleaseAgeExclude:
 # upstream bumps to roll through, so the override keeps the lockfile
 # deterministic in the meantime. Bump to a tilde once the upstream
 # constraint catches up and this override can be deleted.
+#
+# Force a patched brace-expansion across the dep tree. Two major
+# versions are pulled in transitively (2.x by CJS minimatch, 5.x by ESM
+# minimatch) and both lines are flagged by Dependabot:
+#   - alert #3: CVE-2026-13149 (DoS via exponential-time expansion)
+#   - alert #7: CVE-2026-14257 (DoS via unbounded expansion length)
+# The selector syntax pins each major line to its own patched release
+# (2.1.3 and 5.0.8) so we don't force CJS consumers onto the ESM-only
+# 5.x line. Delete the selectors once upstream minimatch rolls the
+# patched versions into its own range and the override is redundant.
+#
+# Force a patched postcss. Alert #6 flags postcss<=8.5.17 for a path
+# traversal in sourceMappingURL auto-loading that discloses arbitrary
+# .map files. Pulled in transitively via tailwindcss/vite. Bump to
+# 8.5.18+ until upstream raises the floor.
+#
+# Force a patched fast-uri. Alert #4 flags fast-uri<=4.1.0
+# (CVE-2026-16221, host confusion via literal backslash authority
+# delimiter). Pulled in transitively via ajv. Bump to 4.1.1+ until
+# upstream raises the floor.
 overrides:
   cookie: ^0.7.0
+  brace-expansion@<3: 2.1.3
+  brace-expansion@>=3: 5.0.8
+  postcss: ^8.5.18
+  fast-uri: ^3.1.4
 
 # Minimum release age for newly published packages. Protects against
 # freshly-published typosquats slipping into the install. Set to 0
