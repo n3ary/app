@@ -18,7 +18,7 @@
   the page.
 -->
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { haversineMeters } from '@n3ary/gtfs-spec/shape';
   import type { RouteMapView } from '$lib/data/gtfs/types';
   import { locationStore } from '$lib/stores/gps/locationStore.svelte';
@@ -204,10 +204,18 @@
     const currentView = view;
     const currentRoutes = stopRoutes;
     if (!Lref || !mapInstance || !currentView) return;
-    if (shapeLayer) {
-      shapeLayer.remove();
-      shapeLayer = null;
+    // Untrack shapeLayer so the imperative `shapeLayer = ...` writes below
+    // don't re-fire this effect on every assignment. shapeLayer is
+    // $bindable, so the child→parent write also re-runs the parent's
+    // effect chain; without untrack we get effect_update_depth_exceeded
+    // the first time the route polyline is painted. Same trap exists
+    // for the init effect's `mapInstance` write, but there the guard
+    // `if (... || mapInstance || ...)` short-circuits the second run.
+    const oldShape = untrack(() => shapeLayer);
+    if (oldShape) {
+      oldShape.remove();
     }
+    shapeLayer = null;
     if (currentView.shape.length >= 2) {
       const latlngs = currentView.shape.map((p) => [p.lat, p.lon] as [number, number]);
       shapeLayer = Lref.polyline(latlngs, {
