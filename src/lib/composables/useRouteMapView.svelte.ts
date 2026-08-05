@@ -143,11 +143,12 @@ export function useRouteMapView(): {
     refreshBus.tick;
     const rid = routeId;
     const dir = direction;
-    const ms = nowTicker.ms;
-    // Window query depends on nowTicker for service-date pickup,
-    // but we don't want to refetch every minute — just on first
-    // load + dir change + manual refresh.
-    void ms;
+    // Window query service-date pickup uses Date.now() at callback time
+    // (see `nowMs` below), NOT the captured `nowTicker.ms` value, so we
+    // must not track nowTicker here — tracking it re-fires the effect
+    // every 15 s and triggers a fresh worker query + view re-paint on
+    // every tick, which is wasteful and was the documented intent of
+    // "first load + dir change + manual refresh" only.
     (async () => {
       try {
         const repo = getGtfsRepo();
