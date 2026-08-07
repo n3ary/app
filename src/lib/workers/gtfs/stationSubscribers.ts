@@ -43,12 +43,22 @@ export async function subscribeStationBoards(
   const key = Symbol();
   const sub: StationSub = { stopIds: new Set(initialStopIds), cb };
   subscribers.set(key, sub);
-  // NOTE: no immediate catch-up push here. Every `tickLive` call
-  // broadcasts to all station subscribers via `pushAllStationSubscribers`,
-  // so new subscribers automatically receive the next poll's merged
-  // data. Pushing immediately with `getReconciledSnapshot()` before the
-  // first tick would send scheduled-only vehicles (no GPS) and cause
-  // a flicker in StationCard groups before the merged push arrives.
+  // Late-subscribe catch-up. If the worker already has a merged
+  // snapshot (the user is navigating between views while data is
+  // flowing — e.g. station view -> home, then home -> station
+  // again), hand the new subscriber the same merged-with-GPS data
+  // the stream is currently showing. Without this, the new view
+  // renders scheduled-only vehicles for up to one poll cycle
+  // (15 s today) before the next tickLive broadcast arrives.
+  //
+  // The first-ever subscription, before the first tick has run,
+  // has `getReconciledSnapshot() === null`; the catch-up is
+  // skipped for that case so the new subscriber doesn't paint
+  // with an empty snapshot and then re-paint with the merged one
+  // (the regression that PR #454 closed — see that PR for the
+  // incoming-first flicker this guards against).
+  const snap = getReconciledSnapshot();
+  if (snap) void pushOne(sub, snap);
   // Proxy the whole handle so Comlink keeps it as a remote reference.
   // Per-method Comlink.proxy() doesn't help here — Comlink only checks
   // the proxy marker at the TOP of the returned value, so a plain
