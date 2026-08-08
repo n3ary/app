@@ -62,7 +62,7 @@ jobs:
           node-version: 24
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.9
+        uses: pnpm/action-setup@v6.0.10
         # No explicit `version:` - pnpm/action-setup would conflict with
         # the `packageManager: pnpm@<X.Y.Z>` field in package.json
         # (the action errors with "Multiple versions of pnpm specified"
