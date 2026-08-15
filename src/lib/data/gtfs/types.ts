@@ -7,7 +7,7 @@
  */
 
 import type { Feed } from '$lib/data/feeds';
-import type { Network, Route, RouteTag, Station, Vehicle } from '$lib/domain/types';
+import type { Network, Route, RouteTag, Station, Vehicle, VehicleType } from '$lib/domain/types';
 import type { NearyFeedConfig } from '$lib/workers/gtfs/queries/feedConfig';
 import type { ReconcileStats } from '$lib/domain/reconcile';
 
@@ -434,6 +434,85 @@ export interface GtfsRepo {
    * report a meaningful success / no-op status.
    */
   deleteFeedCache(feed: Feed): Promise<number>;
+
+  /**
+   * Plan journeys from (fromLat, fromLon) to (toLat, toLon) departing at
+   * `departMin` minutes since local midnight on `localDate` ("YYYYMMDD").
+   * Walk + transit (bus/trolley/tram) only. Returns up to `maxResults`
+   * itineraries, ranked fastest-arrival with a mild transfer penalty.
+   *
+   * Runs client-side RAPTOR (src/lib/domain/raptor.ts) over the bound
+   * feed's SQLite -- no network, works offline. The RAPTOR graph is built
+   * lazily on first call and cached per feed (plannerNetwork.ts), so
+   * views that never plan a journey pay nothing.
+   *
+   * Access/egress walking is straight-line (Haversine) in this cut; the
+   * distances feed into arrival ranking. Street-accurate walking is a
+   * follow-up that swaps the walk-cost source without touching RAPTOR.
+   */
+  planJourney(opts: PlanJourneyOptions): Promise<PlannerJourney[]>;
+}
+
+/** Input to {@link GtfsRepo.planJourney}. Coordinates are WGS84; the
+ *  caller resolves addresses / GPS / map taps to lat-lon before calling. */
+export interface PlanJourneyOptions {
+  fromLat: number;
+  fromLon: number;
+  toLat: number;
+  toLon: number;
+  /** "YYYYMMDD" in feed-local time. */
+  localDate: string;
+  /** Minutes since local midnight for the desired departure. */
+  departMin: number;
+  maxResults?: number;
+}
+
+/** One stop on a planner leg. `time` is seconds since local midnight
+ *  (may exceed 86400 for after-midnight trips). */
+export interface PlannerStopTime {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  time: number;
+}
+
+export type PlannerLeg =
+  | {
+      kind: 'walk';
+      variant: 'access' | 'egress' | 'transfer';
+      meters: number;
+      seconds: number;
+      from: { lat: number; lon: number; name?: string };
+      to: { lat: number; lon: number; name?: string };
+    }
+  | {
+      kind: 'transit';
+      routeId: string;
+      routeShortName: string;
+      routeColor: string;
+      routeType: VehicleType;
+      headsign: string | null;
+      /** Seconds waited at the boarding stop; 0 for the first vehicle. */
+      waitSec: number;
+      board: PlannerStopTime;
+      alight: PlannerStopTime;
+      /** Board -> alight inclusive, in stop order. */
+      stops: PlannerStopTime[];
+      /** Real road geometry for this leg, clipped from shapes.txt between
+       *  board and alight. Absent when the feed carries no shape for the
+       *  trip -- draw through `stops` as a fallback. */
+      shape?: Array<{ lat: number; lon: number }>;
+    };
+
+/** One itinerary from {@link GtfsRepo.planJourney}. Times are seconds
+ *  since local midnight. */
+export interface PlannerJourney {
+  departTime: number;
+  arriveTime: number;
+  durationSec: number;
+  transfers: number;
+  legs: PlannerLeg[];
 }
 
 /** Per-stop assembled vehicles, as pushed by `subscribeStationBoards`.
