@@ -43,9 +43,23 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.branch || github.head_ref }}
+          # Use the PR head SHA, not github.head_ref. For fork PRs, the
+          # branch NAME lives on the head repo and refs/heads/<name>
+          # is unreachable from the base repo's GITHUB_TOKEN; head.sha
+          # resolves via refs/pull/<N>/head which IS accessible, and
+          # works for same-repo PRs too. workflow_dispatch falls back
+          # to the user-supplied input or the dispatch's ref name.
+          ref: >-
+            ${{
+              inputs.branch
+              || (github.event_name == 'pull_request' && github.event.pull_request.head.sha)
+              || github.ref_name
+            }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Don't persist the token to .git/config; no subsequent
+          # step reuses it.
+          persist-credentials: false
 
       - name: Setup pnpm with GH Packages auth + install
         # Replaces the previous ~20-line manual setup (checkout +
