@@ -44,6 +44,7 @@ import { getNetworks } from './gtfs/queries/networks';
 import { getTags } from './gtfs/queries/routeTags';
 import { getFeedConfig } from './gtfs/queries/feedConfig';
 import { getStationBoard, getStationBoardsNear } from './gtfs/queries/stationBoards';
+import { planJourney } from './gtfs/queries/planner';
 import { getDeparturesFromStop, getOriginRoutesAtStop, getStopsByIds, getStopsNear, searchStops } from './gtfs/queries/stops';
 import { getWeeklySchedule } from './gtfs/queries/weeklySchedule';
 import { getRoutesThroughStations as getRoutesThroughStationsImpl, getStationsPage as getStationsPageImpl } from './gtfs/queries/favoritesQueries';
@@ -202,6 +203,11 @@ const api: GtfsRepo = {
       nowMs,
       windowMinutes,
     );
+  },
+
+  // -- Journey planner -------------------------------------------------
+  async planJourney(opts) {
+    return planJourney(await ensureDb(), opts);
   },
 
   // ── Per-route views ─────────────────────────────────────────────────

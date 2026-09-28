@@ -20,6 +20,7 @@ import sqlite3InitModule, {
 import type { Feed } from '$lib/data/feeds';
 import { feedDbFiles, opfsFileFor, pruneStaleFeedFiles } from '../opfsFilenames';
 import { shapeCache } from './shapeCache';
+import { clearPlannerNetwork } from './plannerNetwork';
 import { resetLiveSnapshot, stopLiveTimer } from './livePipeline';
 import { state } from './state';
 
@@ -586,6 +587,8 @@ export function closeCurrent(): void {
   // Shape polylines are feed-scoped — invalidate so the next feed
   // can't see stale entries from this one.
   shapeCache.clear();
+  // Same for the planner's RAPTOR graph.
+  clearPlannerNetwork();
   // Live-pipeline state is feed-scoped too: stop the timer and drop
   // the cached snapshot so the next feed doesn't briefly broadcast
   // stale vehicles.

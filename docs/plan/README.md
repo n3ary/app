@@ -24,5 +24,5 @@ instead — that's the long-lived record of intent.
 
 ## Active plans
 
-None. If you're looking for ongoing work, check the open issues on this
-repo and on the producer / adapter repos.
+- [planner.md](planner.md) -- journey planner (jos + bus/trolley/tram) on the
+  reserved `/planner` route. Branch `feat/planner-prototype`.

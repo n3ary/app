@@ -3,7 +3,7 @@
   import '$lib/styles/app.css';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Heart, MapPin, Settings } from 'lucide-svelte';
+  import { Heart, MapPin, Route, Settings } from 'lucide-svelte';
   import { AppLayout, type HeaderHealth } from '$lib/ui';
   import { usePwa } from '$lib/composables/usePwa.svelte';
   import { useBackgroundSuspend } from '$lib/composables/useBackgroundSuspend.svelte';
@@ -75,16 +75,18 @@
   // (/map/..., /schedule/...). Issue #203.
 
   // ── Nav + title ──────────────────────────────────────────────────────
-  type NavValue = '/' | '/favorites' | '/settings';
+  type NavValue = '/' | '/planner' | '/favorites' | '/settings';
 
   const NAV_ITEMS = [
     { value: '/', label: 'Stations', icon: stationsIcon },
+    { value: '/planner', label: 'Planner', icon: plannerIcon },
     { value: '/favorites', label: 'Favorites', icon: favoritesIcon },
     { value: '/settings', label: 'Settings', icon: settingsIcon },
   ] as const;
 
   const TITLES: Record<NavValue, string> = {
     '/': 'Stations',
+    '/planner': 'Planner',
     '/favorites': 'Favorites',
     '/settings': 'Settings',
   };
@@ -143,6 +145,7 @@
 </script>
 
 {#snippet stationsIcon()}<MapPin size={20} />{/snippet}
+{#snippet plannerIcon()}<Route size={20} />{/snippet}
 {#snippet favoritesIcon()}<Heart size={20} />{/snippet}
 {#snippet settingsIcon()}<Settings size={20} />{/snippet}
 
