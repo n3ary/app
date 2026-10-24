@@ -252,6 +252,13 @@ export interface GtfsRepo {
     localDate: string,
     fromMin: number,
     windowMinutes: number,
+    /**
+     * The previous GTFS service day, when it is still running its
+     * late-night tail (between local midnight and the rollover hour).
+     * Its trips are shifted by `offsetMin` onto the same timeline as
+     * `fromMin`. See domain/pipeline/serviceDay.ts.
+     */
+    previousServiceDay?: { date: string; offsetMin: number } | null,
   ): Promise<ScheduleTrip[]>;
 
   /**
@@ -289,8 +296,8 @@ export interface GtfsRepo {
    * directions collapse to a single set.
    */
   getActiveRouteIdsInWindow(
-    localDate: string,
-    nowMin: number,
+    nowMs: number,
+    timeZone: string,
     windowMinutes: number,
   ): Promise<string[]>;
 
@@ -367,8 +374,8 @@ export interface GtfsRepo {
   getRouteMapView(
     routeId: string,
     directionId: 0 | 1,
-    localDate: string,
-    localMin: number,
+    nowMs: number,
+    timeZone: string,
     lookbackMin: number,
     lookaheadMin: number,
   ): Promise<RouteMapView | null>;

@@ -158,6 +158,8 @@
   tabindex={interactive ? 0 : undefined}
   onclick={handleCardClick}
   onkeydown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') onclick?.(); } : undefined}
+  data-testid="vehicle-card"
+  data-route={vehicle.route.shortName}
   class={cn(
     'flex items-center gap-3 px-3 py-2 border-2 border-solid rounded-md transition-colors',
     'border-[color:var(--color-border)]',

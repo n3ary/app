@@ -205,7 +205,7 @@ const api: GtfsRepo = {
   },
 
   // ── Per-route views ─────────────────────────────────────────────────
-  async getRouteSchedule(routeId, directionId, localDate, fromMin, windowMinutes) {
+  async getRouteSchedule(routeId, directionId, localDate, fromMin, windowMinutes, previousServiceDay) {
     return getRouteSchedule(
       await ensureDb(),
       routeId,
@@ -213,13 +213,14 @@ const api: GtfsRepo = {
       localDate,
       fromMin,
       windowMinutes,
+      previousServiceDay ?? null,
     );
   },
-  async getActiveRouteIdsInWindow(localDate, nowMin, windowMinutes) {
+  async getActiveRouteIdsInWindow(nowMs, tz, windowMinutes) {
     return getActiveRouteIdsInWindow(
       await ensureDb(),
-      localDate,
-      nowMin,
+      nowMs,
+      tz,
       windowMinutes,
     );
   },
@@ -238,13 +239,13 @@ const api: GtfsRepo = {
   async getRouteDirectionEndpoints(routeId, directionId) {
     return getRouteDirectionEndpoints(await ensureDb(), routeId, directionId);
   },
-  async getRouteMapView(routeId, directionId, localDate, localMin, lookbackMin, lookaheadMin) {
+  async getRouteMapView(routeId, directionId, nowMs, tz, lookbackMin, lookaheadMin) {
     return getRouteMapView(
       await ensureDb(),
       routeId,
       directionId,
-      localDate,
-      localMin,
+      nowMs,
+      tz,
       lookbackMin,
       lookaheadMin,
     );

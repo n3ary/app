@@ -22,6 +22,7 @@
   import {
     dayOfWeekInTz, minSinceMidnightInTz, scheduleWindowFor,
   } from '$lib/domain/pipeline/timeUtils';
+  import { SERVICE_DAY_OFFSET_MIN, serviceContextFor } from '$lib/domain/pipeline/serviceDay';
 import { feedsStore } from '$lib/stores/feedsStore.svelte';
 import { nowTicker } from '$lib/stores/nowTicker.svelte';
 import { refreshBus } from '$lib/stores/refreshBus.svelte';
@@ -115,6 +116,17 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
     }),
   );
 
+  // A GTFS service day is not a calendar day. Between local midnight
+  // and the rollover hour the PREVIOUS service day is still running
+  // its night-service tail, so its trips belong in the list too -
+  // otherwise the buses that are actually running right now are
+  // missing from the schedule grid. See domain/pipeline/serviceDay.ts.
+  const previousServiceDay = $derived.by(() => {
+    const ctx = serviceContextFor(nowTicker.ms, tz);
+    if (!ctx.overlapping) return null;
+    return { date: ctx.previousServiceDate, offsetMin: -SERVICE_DAY_OFFSET_MIN };
+  });
+
   // Reset expansion state whenever view or direction changes.
   $effect(() => {
     view; direction; // reactive dependencies only — no logic here
@@ -140,13 +152,13 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
         if (dir == null) {
           // Multi-direction: both schedules in parallel; no trip timeline.
           const [d0, d1] = await Promise.all([
-            repo.getRouteSchedule(rid, 0, qp.localDate, qp.fromMin, qp.windowMin),
-            repo.getRouteSchedule(rid, 1, qp.localDate, qp.fromMin, qp.windowMin),
+            repo.getRouteSchedule(rid, 0, qp.localDate, qp.fromMin, qp.windowMin, previousServiceDay),
+            repo.getRouteSchedule(rid, 1, qp.localDate, qp.fromMin, qp.windowMin, previousServiceDay),
           ]);
           tripsByDir = { 0: d0, 1: d1 };
         } else {
           // Single-direction: fetch upcoming trips + warm the first trip's stops.
-          const trips = await repo.getRouteSchedule(rid, dir, qp.localDate, qp.fromMin, qp.windowMin);
+          const trips = await repo.getRouteSchedule(rid, dir, qp.localDate, qp.fromMin, qp.windowMin, previousServiceDay);
           tripsByDir = dir === 0 ? { 0: trips, 1: [] } : { 0: [], 1: trips };
           const stopsTripId = trips[0]?.tripId ?? null;
           if (stopsTripId) await loadTripStops(stopsTripId);
@@ -157,7 +169,7 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
             if (qp.fromMin > 0) {
               const pastWindow = Math.min(120, qp.fromMin);
               const pastFrom = qp.fromMin - pastWindow;
-              const pastTrips = await repo.getRouteSchedule(rid, dir, qp.localDate, pastFrom, pastWindow);
+              const pastTrips = await repo.getRouteSchedule(rid, dir, qp.localDate, pastFrom, pastWindow, previousServiceDay);
               lastDepartedTrip = pastTrips.filter(t => t.tripStartMin < qp.fromMin).pop() ?? null;
             }
           }
