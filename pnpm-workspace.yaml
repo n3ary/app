@@ -5,38 +5,83 @@ minimumReleaseAgeExclude:
   - '@n3ary/gtfs-spec@0.3.1'
   - '@n3ary/gtfs-spec@0.3.2'
 
-# Force a patched cookie across the dep tree. cookie<0.7.0 is flagged
-# by Dependabot as GHSA-pxg6-pf52-xh8x / CVE-2024-47764; the package
-# is pulled in transitively (via sveltekit/svelte) and we wait on the
-# upstream bumps to roll through, so the override keeps the lockfile
-# deterministic in the meantime. Bump to a tilde once the upstream
-# constraint catches up and this override can be deleted.
+# Force patched versions of the transitive packages Dependabot flags.
+# Every entry names the advisory it clears and the path the package
+# enters the tree by. None of these ranges admit the patched release
+# upstream yet, so the override is what keeps the lockfile
+# deterministic until the upstream floor is raised.
 #
-# Force a patched brace-expansion across the dep tree. Two major
-# versions are pulled in transitively (2.x by CJS minimatch, 5.x by ESM
-# minimatch) and both lines are flagged by Dependabot:
-#   - alert #3: CVE-2026-13149 (DoS via exponential-time expansion)
-#   - alert #7: CVE-2026-14257 (DoS via unbounded expansion length)
-# The selector syntax pins each major line to its own patched release
-# (2.1.3 and 5.0.8) so we don't force CJS consumers onto the ESM-only
-# 5.x line. Delete the selectors once upstream minimatch rolls the
-# patched versions into its own range and the override is redundant.
+# cookie: <0.7.0 is flagged as GHSA-pxg6-pf52-xh8x / CVE-2024-47764.
+# Pulled in transitively via sveltekit/svelte.
 #
-# Force a patched postcss. Alert #6 flags postcss<=8.5.17 for a path
-# traversal in sourceMappingURL auto-loading that discloses arbitrary
-# .map files. Pulled in transitively via tailwindcss/vite. Bump to
-# 8.5.18+ until upstream raises the floor.
+# brace-expansion: two major lines are pulled in transitively (2.x by
+# CJS minimatch, 5.x by ESM minimatch) and both carry DoS advisories
+# (CVE-2026-13149 exponential-time expansion, CVE-2026-14257 unbounded
+# expansion length, plus the later nested-group and parseCommaParts
+# recursion advisories). The selector syntax pins each major line to
+# its own patched release so we don't force CJS consumers onto the
+# ESM-only 5.x line. Delete the selectors once upstream minimatch rolls
+# the patched versions into its own range.
 #
-# Force a patched fast-uri. Alert #4 flags fast-uri<=4.1.0
-# (CVE-2026-16221, host confusion via literal backslash authority
-# delimiter). Pulled in transitively via ajv. Bump to 4.1.1+ until
-# upstream raises the floor.
+# postcss: path traversal in sourceMappingURL auto-loading that
+# discloses arbitrary .map files (<=8.5.22), plus the incomplete-fix
+# follow-up at 8.5.23. Pulled in transitively via vite.
+#
+# fast-uri: host confusion / SSRF via percent-encoded scheme, IPv6 and
+# repeated hostname decoding (<=3.1.5). Pulled in transitively via ajv.
+#
+# markdown-it: quadratic-time parsing DoS in the inline-HTML,
+# smartquotes and link-reference-definition paths (<=14.3.2). Pulled in
+# transitively via jsdoc (protobufjs-cli) and markdown-it-anchor.
+#
+# devalue: quadratic expansion, prototype-key rejection bypass and
+# sparse-array amplification in stringify/uneval (<=5.9.2). Pulled in
+# transitively via svelte and @sveltejs/kit.
+#
+# source-map-js: event-loop DoS via indexed source-map section offsets
+# (<1.2.2). Pulled in transitively via postcss, css-tree and
+# @tailwindcss/node.
+#
+# undici: a run of advisories (<7.29.1) — TLS certificate validation
+# bypass, cross-user cookie disclosure, downstream response
+# desynchronization. Pulled in transitively via jsdom.
+#
+# nanoid: custom generators can loop indefinitely when size is zero
+# (<3.3.18). Pulled in transitively via postcss.
+#
+# csv-parse: prototype replacement still reachable via the columns path
+# (<7.0.2). Pulled in transitively via @n3ary/gtfs-spec.
+#
+# browserslist: uncaught crash / prototype write via an untrusted
+# browserslist-stats.json (<=4.28.6). Pulled in transitively via
+# @babel/helper-compilation-targets, core-js-compat and
+# update-browserslist-db.
+#
+# baseline-browser-mapping: process termination on invalid input
+# (<2.11.0). Pulled in transitively via browserslist.
+#
+# serialize-javascript: XSS via an unescaped </script at the end of a
+# serialized function body (<7.1.3). Pulled in transitively via
+# workbox-build > @rollup/plugin-terser.
+#
+# zod: memory exhaustion while validating oversized constrained
+# collections (<4.6.6). Pulled in transitively via @n3ary/gtfs-spec.
 overrides:
   cookie: ^0.7.0
-  brace-expansion@<3: 2.1.3
-  brace-expansion@>=3: 5.0.8
-  postcss: ^8.5.18
-  fast-uri: ^3.1.4
+  brace-expansion@<3: 2.1.7
+  brace-expansion@>=3: 5.0.12
+  postcss: ^8.5.23
+  fast-uri: ^3.1.6
+  markdown-it: ^14.3.3
+  devalue: ^5.9.3
+  source-map-js: ^1.2.2
+  undici: ^7.29.1
+  nanoid: ^3.3.18
+  csv-parse: ^7.0.2
+  browserslist: ^4.28.7
+  baseline-browser-mapping: ^2.11.0
+  serialize-javascript: ^7.1.3
+  zod: ^4.6.6
 
 # Minimum release age for newly published packages. Protects against
 # freshly-published typosquats slipping into the install. Set to 0
