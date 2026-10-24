@@ -26,11 +26,18 @@
 //    regardless of route.
 //
 // External surface:
-//   - `bumpEpoch()` is called from the suspend/resume composable's
-//     `onResume` to re-fire the bind effect when the worker has
-//     released its OPFS handles (e.g. after Android froze the page).
-//   - `clearLastBound()` is called from `onSuspend` so the bind effect
-//     knows the previous bind's state is no longer authoritative.
+//   - `pauseBinding()` / `resumeBinding()` bracket a background
+//     suspend. While paused the bind effect is inert: a backgrounded
+//     page must not start a bind (it would push a "Loading schedule..."
+//     progress entry and arm the boot watchdog for a page nobody is
+//     looking at). The binding key is deliberately NOT cleared, so the
+//     resume doesn't need to re-bind at all - the worker re-opens its
+//     own DB (see useGtfsLifecycle).
+//   - `bumpEpoch()` re-fires the bind effect. Used by the resume
+//     FALLBACK path (when re-opening the DB failed and the feed has to
+//     be bound from scratch).
+//   - `clearLastBound()` forgets the current bind so the next
+//     `bumpEpoch()` really re-binds. Same fallback path.
 
 import { untrack } from 'svelte';
 import * as Comlink from 'comlink';
@@ -47,6 +54,8 @@ import { userPrefs } from '$lib/stores/userPrefs.svelte';
 export function useGtfsBind(): {
   bumpEpoch: () => void;
   clearLastBound: () => void;
+  pauseBinding: () => void;
+  resumeBinding: () => void;
 } {
   let lastBoundFeedKey = $state<string | null>(null);
   // Bumped on every resume-from-background: re-fires the bind effect
@@ -57,6 +66,9 @@ export function useGtfsBind(): {
   // the boot watchdog's healthy check: a visible error is a terminal
   // state, not a hang.
   let bindFailed = $state(false);
+  // True while the page is backgrounded and the worker is suspended.
+  // The bind effect is inert in that window - see the header comment.
+  let paused = $state(false);
 
   $effect(() => {
     void feedsStore.load();
@@ -74,6 +86,13 @@ export function useGtfsBind(): {
 
   $effect(() => {
     void bindEpoch; // resume trigger — see bumpEpoch()
+    // Backgrounded page: the worker is suspended and nobody is looking.
+    // Stay inert - a bind here would push a "Loading schedule..."
+    // progress entry and arm the boot watchdog for a page the user
+    // can't see, and it would re-arm `lastBoundFeedKey` so the resume
+    // re-bind is skipped (leaving the app unbound until the watchdog
+    // reloads the page).
+    if (paused) return;
     const id = userPrefs.feedId;
     if (id == null) {
       // User deselected (e.g. deleted the active feed from Settings).
@@ -218,5 +237,18 @@ export function useGtfsBind(): {
     lastBoundFeedKey = null;
   }
 
-  return { bumpEpoch, clearLastBound };
+  /** Called when the page goes to the background. Freezes the bind
+   *  effect for the duration of the suspend. */
+  function pauseBinding() {
+    paused = true;
+  }
+
+  /** Called when the page comes back. Un-freezes the bind effect; the
+   *  binding key survived the suspend, so this does NOT re-bind - the
+   *  worker reopens its DB on its own (see repo.resume()). */
+  function resumeBinding() {
+    paused = false;
+  }
+
+  return { bumpEpoch, clearLastBound, pauseBinding, resumeBinding };
 }

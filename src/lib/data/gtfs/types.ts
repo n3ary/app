@@ -84,6 +84,24 @@ export interface GtfsRepo {
    *  re-opens the OPFS file — no re-download. */
   suspend(): Promise<void>;
 
+  /**
+   * Background resume - the counterpart of {@link GtfsRepo.suspend}.
+   *
+   * Re-opens the DB the suspend closed and refreshes live data. The
+   * OPFS file is still on disk, so this is a pool re-acquire + DB open:
+   * **no re-download and no re-bind**. The live poll restarts and fires
+   * one cycle immediately, so the fresh snapshot lands on the main
+   * thread without the UI having to leave its current state.
+   *
+   * Queries that arrive while the worker is suspended wait for this to
+   * complete rather than failing, so a page effect that re-runs on the
+   * way back to the foreground resolves normally.
+   *
+   * Resolves immediately when nothing was bound before the suspend (the
+   * main thread then falls back to a full bind).
+   */
+  resume(): Promise<void>;
+
   /** All routes, sorted by short_name (numeric where possible). */
   getRoutes(): Promise<Route[]>;
 

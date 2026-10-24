@@ -35,15 +35,20 @@ test('service worker is generated with the versioned precache bucket', async ({
   request,
 }) => {
   // 1. SW file is served at /service-worker.js with JS content
-  //    AND the versioned bucket name is in the source. If the
-  //    `__APP_VERSION__` `define` in vite.config.ts is missing,
-  //    the bucket name is `precache-vundefined` and the test
-  //    fails — a real regression, not a flake.
+  //    AND the app version is baked into its source. If the
+  //    `__APP_VERSION__` `define` in vite.config.ts is missing, the
+  //    bucket name is built from `undefined` and the version literal
+  //    never appears — a real regression, not a flake.
+  //
+  //    The bucket name itself is assembled from a template literal in
+  //    the minified build, so the SOURCE cannot be matched against the
+  //    full `precache-v<version>` string. Assert on the version literal
+  //    instead; the next test checks the runtime bucket name.
   const swResponse = await request.get('/service-worker.js');
   expect(swResponse.status()).toBe(200);
   const swBody = await swResponse.text();
   expect(swBody).toMatch(/precache-v/);
-  expect(swBody).toContain(`precache-v${EXPECTED_VERSION}`);
+  expect(swBody).toContain(EXPECTED_VERSION);
 });
 
 test('service worker registers and creates a cache', async ({ page }) => {
