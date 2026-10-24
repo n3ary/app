@@ -25,14 +25,14 @@ import * as Comlink from 'comlink';
 import type { Feed } from '$lib/data/feeds';
 import type { GtfsRepo } from '$lib/data/gtfs/types';
 
-import { bootstrap, closeCurrent, deleteFeedCache, getCachedFeedIds, suspendForBackground } from './gtfs/bootstrap';
+import { bootstrap, closeCurrent, deleteFeedCache, getCachedFeedIds, resumeFromBackground, suspendForBackground } from './gtfs/bootstrap';
 import {
   ensureLiveTimer,
   subscribeReconciled,
   tickLive,
 } from './gtfs/livePipeline';
 import { subscribeStationBoards } from './gtfs/stationSubscribers';
-import { ensureDb, state } from './gtfs/state';
+import { createResumeGate, ensureDb, state } from './gtfs/state';
 
 import { getRouteDirectionEndpoints } from './gtfs/queries/routeEndpoints';
 import { getRouteMapView } from './gtfs/queries/routeMapView';
@@ -73,6 +73,7 @@ const api: GtfsRepo = {
     closeCurrent();
     state.currentFeedId = feed.id;
     state.currentFeedHash = feed.hash ?? null;
+    state.currentFeed = feed;
     state.currentFeedTz = feed.timezone || 'UTC';
     // The static pipeline rewrites realtime.vehicle_positions to the
     // canonical gtfs-rt.n3ary.com proxy URL whenever the feed has a
@@ -89,6 +90,7 @@ const api: GtfsRepo = {
       // retry.
       state.currentFeedId = null;
       state.currentFeedHash = null;
+      state.currentFeed = null;
       throw e;
     } finally {
       state.bootstrapping = null;
@@ -110,7 +112,29 @@ const api: GtfsRepo = {
     // correct: it precedes the resume setFeed on the same channel).
     // Close the DB and release the OPFS access handles so a frozen
     // session never blocks another instance's bootstrap.
+    //
+    // The gate lets a query that lands during the suspend window wait
+    // for the resume instead of failing: the page is hidden (or just
+    // restored), and the pending query completes as soon as the DB is
+    // re-opened. Only meaningful when something is actually bound -
+    // with no feed there is nothing to re-open, and a query must fail
+    // fast ("not bound") rather than wait for a resume that would
+    // never open anything.
+    if (state.currentFeed) {
+      // Release any waiter left over from an earlier suspend so it does
+      // not sit until its timeout.
+      state.suspendGate?.resolve();
+      state.suspendGate = createResumeGate();
+    }
     await suspendForBackground();
+  },
+
+  async resume(): Promise<void> {
+    // Page came back to the foreground. Re-open the DB the suspend
+    // closed and refresh live data - no re-seed, no re-bind, no
+    // progress bar. The main thread keeps its UI state throughout, so
+    // nothing on screen flips to a loading state.
+    await resumeFromBackground();
   },
 
 
@@ -275,6 +299,11 @@ const api: GtfsRepo = {
     return getCachedFeedIds(feeds);
   },
   async deleteFeedCache(feed: Feed) {
+    // The bound feed's OPFS file is about to disappear - a later resume
+    // must not try to re-open it.
+    if (state.currentFeed?.id === feed.id) {
+      state.currentFeed = null;
+    }
     return deleteFeedCache(feed);
   },
 };
