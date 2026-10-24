@@ -42,6 +42,7 @@ function obs(opts: {
   routeId?: string;
   directionId?: 0 | 1;
   startTime?: string;
+  startDate?: string;
   asOfMs?: number;
   lat?: number;
   lon?: number;
@@ -53,6 +54,7 @@ function obs(opts: {
     routeId: opts.routeId ?? '14',
     directionId: opts.directionId ?? 1,
     startTime: opts.startTime ?? '',
+    startDate: opts.startDate ?? '',
     lat: opts.lat ?? 46.77,
     lon: opts.lon ?? 23.62,
     bearing: null,

@@ -31,7 +31,7 @@ import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirect
 import { getGtfsRepo } from '$lib/data/gtfs/repo';
 import type { Network, Route, RouteTag } from '$lib/domain/types';
 import { vehicleTypeLabel } from '$lib/domain/types';
-import { dateKeyInTz, minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
+import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
 import { clockToBucket } from '$lib/domain/timeOfDay';
 import {
   buildTripShapePlan,
@@ -153,10 +153,8 @@ export function useRouteMapView(): {
       try {
         const repo = getGtfsRepo();
         const nowMs = Date.now();
-        const localDate = dateKeyInTz(nowMs, tz);
         view = await repo.getRouteMapView(
-          rid, dir, localDate,
-          minSinceMidnightInTz(nowMs, tz),
+          rid, dir, nowMs, tz,
           LOOKBACK_MIN, LOOKAHEAD_MIN,
         );
         error = null;
