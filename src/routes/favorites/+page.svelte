@@ -84,50 +84,86 @@
 
   function setTab(next: FavoritesTab) {
     if (next === activeTab) return;
-    const y = window.scrollY;
-    stashScroll(activeTab);
+    // Offset the rider is leaving from. The browser scrolls the focused
+    // trigger into view when the tab is activated, and the trigger
+    // strip sits at the TOP of the page - so by the time this handler
+    // runs, scrollY may already be 0. `pendingScrollY` holds the offset
+    // captured on pointerdown (before focus, before the browser's
+    // scroll), so a rider deep in a list keeps their place. Keyboard
+    // activation has no pointerdown, so fall back to the live offset.
+    const from = pendingScrollY ?? window.scrollY;
+    pendingScrollY = null;
+    stashScroll(activeTab, from);
     activeTab = next;
     const url = new URL(page.url);
     if (next === 'routes') url.searchParams.delete('tab');
     else url.searchParams.set('tab', next);
     // Use SvelteKit's replaceState (not the raw history API and
     // not goto) so the page store stays in sync without triggering
-    // a full navigation. With both tabs always mounted (visibility:
-    // hidden on the inactive one), the document height is stable
-    // across tab swaps so `window.scrollY` is preserved naturally
-    // -- no manual scroll restore is needed (issue #344). `goto`
-    // with `noScroll: true` was resetting scrollY to 0 on same-page
-    // query changes despite the noScroll option, and the raw
-    // `window.history.replaceState` triggers a SvelteKit dev-mode
-    // warning that it conflicts with the router.
+    // a full navigation. `goto` with `noScroll: true` was resetting
+    // scrollY to 0 on same-page query changes despite the noScroll
+    // option, and the raw `window.history.replaceState` triggers a
+    // SvelteKit dev-mode warning that it conflicts with the router.
     replaceState(url, {});
-    // The browser's "scroll focused element into view" behavior
-    // fires on the click that activated the tab trigger (the
-    // tab is at the top of the page, the user is mid-list, so
-    // the browser scrolls to y=0). One rAF is enough to restore:
-    // the document height is stable across the swap (visibility-
-    // based mounting), so there's no second paint commit to
-    // invalidate the restore.
-    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'auto' }));
+    // Where to land in the incoming tab: its own remembered offset if
+    // the rider has been there before, otherwise the offset they are
+    // leaving from - swapping tabs must never throw them back to the
+    // top of a long list (issue #344).
+    restoreScrollWhenStable(scrollByTab.get(next) ?? from);
   }
 
   // ------ Scroll preservation per tab ---------------------------------------------------------------------------------------------------
 
-  // Scroll preservation across tab swaps. Both tabs are always
-  // mounted in the catalog area (the inactive one is
-  // `visibility: hidden`); the document height is the max of both
-  // tabs' content. Because the height doesn't change on tab swap,
-  // the user's `window.scrollY` is preserved naturally -- no
-  // `scrollByTab` map, no rAF restore loop, no race with a second
-  // paint commit invalidating the restored y. Filtering (which can
-  // shrink the visible tab's height) doesn't change the document
-  // height either, because the OTHER tab's content is still in
-  // the layout and still contributing.
+  // Scroll preservation across tab swaps. Only the active panel is in
+  // the layout (the inactive one is `display: none`) so the shorter tab
+  // leaves no blank gap under it. That also means the incoming tab's
+  // content is already mounted and rendered - only hidden - so a swap
+  // has no lazy-load paint cycle to race. It does mean the document
+  // height changes, so the scroll position cannot be preserved by the
+  // browser on its own and is restored explicitly here.
   const scrollByTab = new Map<FavoritesTab, number>();
-  function stashScroll(tab: FavoritesTab) {
-    if (typeof window === 'undefined') return;
-    scrollByTab.set(tab, window.scrollY);
+  function stashScroll(tab: FavoritesTab, y: number) {
+    scrollByTab.set(tab, y);
   }
+
+  // rAF loop: scroll to `target` once the document has stopped growing
+  // for two consecutive frames. A single rAF can fire before the
+  // height settles - the incoming panel is re-laid-out when it becomes
+  // `display: block`, and the browser re-anchors the scroll against
+  // the new height - so the restore has to wait for the layout to
+  // stabilise. Bounded so a runaway resize can't trap the loop.
+  function restoreScrollWhenStable(target: number) {
+    if (typeof window === 'undefined') return;
+    let lastHeight = document.documentElement.scrollHeight;
+    let stableFrames = 0;
+    let frame = 0;
+    const maxFrames = 30;
+    const tick = () => {
+      frame++;
+      const h = document.documentElement.scrollHeight;
+      stableFrames = h === lastHeight ? stableFrames + 1 : 0;
+      lastHeight = h;
+      if (stableFrames >= 2 || frame >= maxFrames) {
+        window.scrollTo({ top: target, behavior: 'auto' });
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // Offset captured on pointerdown, before the browser moves the
+  // scroll to reveal the focused tab trigger.
+  let pendingScrollY: number | null = null;
+
+  $effect(() => {
+    const onPointerDown = () => {
+      pendingScrollY = window.scrollY;
+    };
+    document.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () =>
+      document.removeEventListener('pointerdown', onPointerDown, { capture: true });
+  });
 
   // ------ Shared filter state (visible on both tabs) ------------------------------------------------------
 
