@@ -20,7 +20,8 @@ import sqlite3InitModule, {
 import type { Feed } from '$lib/data/feeds';
 import { feedDbFiles, opfsFileFor, pruneStaleFeedFiles } from '../opfsFilenames';
 import { shapeCache } from './shapeCache';
-import { resetLiveSnapshot, stopLiveTimer } from './livePipeline';
+import { ensureLiveTimer, resetLiveSnapshot, stopLiveTimer } from './livePipeline';
+import { getFeedConfig } from './queries/feedConfig';
 import { state } from './state';
 
 // ------------------------------------------------------------------------
@@ -625,5 +626,62 @@ export async function suspendForBackground(): Promise<void> {
     } catch (e) {
       console.warn('[gtfs.worker] pauseVfs failed', e);
     }
+  }
+}
+
+/**
+ * Background resume - the counterpart of {@link suspendForBackground}.
+ *
+ * Re-opens the DB the suspend closed and restarts the live pipeline. The
+ * OPFS file is still on disk, so this is a pool re-acquire + DB open:
+ * **no re-download, no progress bar, no re-bind**. The feed-scoped state
+ * `closeCurrent()` cleared (timezone, realtime URL, dwell seconds) is
+ * restored from the feed object we kept across the suspend.
+ *
+ * `ensureLiveTimer()` restarts the 15 s poll and fires one immediately,
+ * so live data refreshes in the background and the fresh snapshot lands
+ * on the main thread without the UI having to leave its current state.
+ */
+export async function resumeFromBackground(): Promise<void> {
+  if (state.resumePromise) return state.resumePromise;
+
+  const feed = state.currentFeed;
+  if (!feed) {
+    // Nothing was bound before the suspend - the main thread will do a
+    // full bind. Unblock any query waiting on the suspend gate.
+    state.suspendGate?.resolve();
+    state.suspendGate = null;
+    return;
+  }
+
+  state.resumePromise = (async () => {
+    if (!state.currentDb) {
+      // bootstrap() unpauses the OPFS pool and re-opens the existing
+      // file. It only downloads when the file is missing from OPFS,
+      // which after a suspend it never is.
+      state.bootstrapping = bootstrap(feed);
+      try {
+        state.currentDb = await state.bootstrapping;
+      } finally {
+        state.bootstrapping = null;
+      }
+      state.currentFeedTz = feed.timezone || 'UTC';
+      state.currentFeedRtUrl = feed.realtime?.vehicle_positions ?? null;
+      state.currentDwellSec = getFeedConfig(state.currentDb).timing?.dwell_sec ?? 20;
+    }
+    // Restart the poll loop and refresh live data right away. The
+    // eagerly-fired tick inside ensureLiveTimer() is what makes the UI
+    // update on resume instead of waiting out a full poll interval.
+    ensureLiveTimer();
+  })();
+
+  try {
+    await state.resumePromise;
+  } finally {
+    state.resumePromise = null;
+    // Release anyone waiting on the suspend gate. Done even on failure:
+    // the waiters get a loud "not bound" error rather than hanging.
+    state.suspendGate?.resolve();
+    state.suspendGate = null;
   }
 }
