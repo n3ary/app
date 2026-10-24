@@ -41,6 +41,16 @@ export async function suspendGtfs(): Promise<void> {
   await cached.suspend();
 }
 
+/** Resume the GTFS worker after a backgrounding page comes back.
+ *
+ *  Re-opens the DB the suspend closed and refreshes live data. Unlike
+ *  `setFeed` this never re-downloads and never re-binds: the OPFS file
+ *  is still on disk, so the resume is a pool re-acquire + DB open. */
+export async function resumeGtfs(): Promise<void> {
+  if (!cached) return;
+  await cached.resume();
+}
+
 if (import.meta.hot) {
   // Self-accept so Vite doesn't escalate updates here to a full page
   // reload (which would force the feed-bind cold path).

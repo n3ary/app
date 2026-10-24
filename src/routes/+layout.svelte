@@ -6,13 +6,11 @@
   import { Heart, MapPin, Settings } from 'lucide-svelte';
   import { AppLayout, type HeaderHealth } from '$lib/ui';
   import { usePwa } from '$lib/composables/usePwa.svelte';
-  import { useBackgroundSuspend } from '$lib/composables/useBackgroundSuspend.svelte';
+  import { useGtfsLifecycle } from '$lib/composables/useGtfsLifecycle.svelte';
   import { useLayoutSideEffects } from '$lib/composables/useLayoutSideEffects.svelte';
   import { useGtfsBind } from '$lib/composables/useGtfsBind.svelte';
   import { useRefreshFeedback } from '$lib/composables/useRefreshFeedback.svelte';
-  import { getGtfsRepo, suspendGtfs } from '$lib/data/gtfs/repo';
   import { connectionStore } from '$lib/stores/connectionStore.svelte';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
   import { locationStore } from '$lib/stores/gps/locationStore.svelte';
   import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
   import { userPrefs } from '$lib/stores/userPrefs.svelte';
@@ -39,34 +37,16 @@
   const { startRefresh } = useRefreshFeedback();
 
   // Background suspend/resume: when the page is hidden / pagehide /
-  // Page-Lifecycle freeze, release the GTFS worker's OPFS handles and
-  // bump the bind epoch on resume so the feed re-binds.
-  useBackgroundSuspend({
-    onSuspend: () => {
-      // Stop pages from querying a suspending worker, and force the
-      // bind effect into a full re-bind on resume.
-      feedsStore.boundFeedId = null;
-      gtfs.clearLastBound();
-      // Disarm the watchdog — the OS may freeze this tab for seconds
-      // to minutes without firing any JS. A pre-freeze timer that fires
-      // after thaw reloads a hidden tab and the user sees a flash of
-      // the loading screen instead of their previous state.
-      window.__nearyBoot?.disarm();
-      void suspendGtfs().catch((e) => {
-        console.warn('[pwa] GTFS suspend failed', e);
-      });
-    },
-    onResume: () => {
-      // No feed selected: the picker is a healthy state, nothing
-      // re-binds — don't arm the watchdog (nothing is coming to
-      // disarm it).
-      if (userPrefs.feedId == null) return;
-      // The re-bind is a boot-class operation again: re-arm the stall
-      // watchdog so a wedged resume can't hang silently.
-      window.__nearyBoot?.arm();
-      gtfs.bumpEpoch();
-    },
-  });
+  // Page-Lifecycle freeze, release the GTFS worker's OPFS handles; on
+  // the way back, re-open them and refresh live data behind the scenes.
+  //
+  // Neither half touches the UI's bound state: `feedsStore.boundFeedId`
+  // stays set across the suspend, so no page flips back to its loading
+  // branch and nothing on screen flickers. The resume re-opens the DB
+  // the suspend closed (the OPFS file is still on disk - no re-download)
+  // and the live poll fires a cycle immediately, so the fresh snapshot
+  // lands on its own.
+  useGtfsLifecycle(gtfs);
 
   // Tab-swap reset: deliberately NOT wired. Returning from /favorites
   // or /settings back to / should restore the rider's previous
