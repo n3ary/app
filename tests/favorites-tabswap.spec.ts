@@ -1,28 +1,34 @@
 /*
- * favorites-tabswap.spec.ts -- Playwright probe for the visibility-based
- * tab mounting that keeps the user's scroll position stable across
- * tab swaps (issue #344).
+ * favorites-tabswap.spec.ts -- Playwright probe for the scroll
+ * preservation across a tab swap (issue #344).
  *
- * The mechanism: both tabs are always mounted in the catalog area
- * (the inactive one is `visibility: hidden`). Document height is
- * the max of both tabs' content, so `window.scrollY` is preserved
- * naturally. The `setTab` function adds a single rAF restore to
- * defeat the browser's "scroll focused element into view" behavior
- * (the tab trigger is at the top of the page; the user is mid-list).
+ * The requirement is user-facing: the rider is deep in a long list,
+ * taps the other tab, and must NOT be thrown back to the top.
  *
- * This probe is best-effort. The Tabs control's tab is a `button`
- * at the top of the page; the user has scrolled past it. Real
- * device testing on iPhone PWA is the source of truth (see
- * agent memory: "Headless Playwright does NOT simulate iOS PWA
- * standalone"). The probe runs the same flow in headless chromium
- * and asserts the `window.scrollY` round-trips.
+ * The inactive tab panel is `display: none` (so the shorter tab leaves
+ * no blank gap under it), which means the document height DOES change
+ * across a swap. Scroll preservation therefore has to be explicit: the
+ * page remembers each tab's scroll offset and restores the target
+ * tab's own offset after the swap.
+ *
+ * Test note: the tab is activated from inside the page
+ * (`button.click()`) rather than through Playwright's `click()`. Playwright
+ * scrolls the target into view before clicking it, which would move the
+ * page to the tab strip (scrollY = 0) before the app ever sees the
+ * event - the app's own restore would then have nothing to restore.
+ * The in-page click exercises the app's handler alone.
+ *
+ * The earlier probe asserted the document HEIGHT was stable, which
+ * `display: none` makes impossible - it skipped whenever the stations
+ * catalog failed to populate (no feed bound in CI) and therefore never
+ * actually validated the behaviour it was written for. It now asserts
+ * the scroll position, which is what the rider notices.
  */
 
 import { test, expect, type Page } from '@playwright/test';
 
 const FEEDS_URL = 'https://gtfs.n3ary.com/feeds.json';
 const STATIONS_TAB = '/favorites?tab=stations';
-const ROUTES_TAB = '/favorites';
 const STATION_ROW_SELECTOR = '[data-testid="favorite-station-row"]';
 
 async function selectFirstFeed(page: Page): Promise<string | null> {
@@ -51,9 +57,39 @@ async function waitForCatalog(page: Page): Promise<number> {
   return await page.locator(STATION_ROW_SELECTOR).count();
 }
 
-test.describe('favorites tabs -- scroll preserved across tab swap (visibility-based mounting)', () => {
-  test('document height is stable across Stations<->Routes swap (visibility-based mounting)', async ({ page }) => {
-    test.setTimeout(60_000);
+/**
+ * Activate a tab from inside the page, reproducing the browser's
+ * event order for a control that is NOT in the viewport:
+ *
+ *   pointerdown -> focus -> the browser scrolls the focused control
+ *   into view -> click
+ *
+ * The middle step is the one that matters: the tab strip sits at the
+ * top of the page, so activating it scrolls the page to the top
+ * BEFORE the app's click handler runs. The app therefore has to
+ * remember the pre-tap offset itself (captured on pointerdown) - the
+ * offset its handler reads is already 0.
+ *
+ * Playwright's own `click()` cannot be used here: it scrolls the
+ * target into view before clicking, which would move the page for the
+ * same reason but without the pointerdown the app listens for.
+ */
+async function activateTab(page: Page, label: string): Promise<void> {
+  await page.evaluate((l) => {
+    const btn = [...document.querySelectorAll('button[role="tab"]')].find((b) =>
+      b.textContent?.includes(l),
+    ) as HTMLElement | undefined;
+    if (!btn) throw new Error(`tab "${l}" not found`);
+    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    btn.click();
+  }, label);
+  await page.waitForTimeout(800);
+}
+
+test.describe('favorites tabs -- scroll preserved across tab swap', () => {
+  test('the scroll position survives a Stations <-> Routes swap', async ({ page }) => {
+    test.setTimeout(120_000);
     const feedId = await selectFirstFeed(page);
     test.skip(feedId === null, `feeds.json unreachable or empty at ${FEEDS_URL}`);
     if (!feedId) return;
@@ -65,15 +101,28 @@ test.describe('favorites tabs -- scroll preserved across tab swap (visibility-ba
     test.skip(rowCount === 0, 'stations catalog did not populate');
     if (rowCount === 0) return;
 
-    // The visibility-based mounting means both tabs are always in
-    // the layout. The document height should be the max of both
-    // tabs' content. When the user taps the other tab, the height
-    // doesn't change (the swapped-out tab is still in the layout
-    // with visibility: hidden).
-    const beforeHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-    await page.locator('button[role="tab"]').filter({ hasText: 'Routes' }).first().click({ force: true });
-    await page.waitForTimeout(500);
-    const afterHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-    expect(Math.abs(afterHeight - beforeHeight)).toBeLessThan(2);
+    // Scroll into the middle of the stations list.
+    await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'auto' }));
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(() => window.scrollY);
+    expect(before, 'could not scroll the stations catalog').toBeGreaterThan(100);
+
+    // Swap to the Routes tab (never visited before -> the rider's
+    // current depth carries over).
+    await activateTab(page, 'Routes');
+    const after = await page.evaluate(() => window.scrollY);
+    expect(
+      after,
+      `scroll jumped on tab swap (before=${before}, after=${after}) - the rider was thrown back to the top`,
+    ).toBeGreaterThan(100);
+
+    // Swap back: the Stations tab's own remembered offset comes back.
+    await activateTab(page, 'Stations');
+    const back = await page.evaluate(() => window.scrollY);
+    expect(
+      Math.abs(back - before),
+      `returning to Stations did not restore the scroll (before=${before}, back=${back})`,
+    ).toBeLessThan(40);
   });
 });
+
