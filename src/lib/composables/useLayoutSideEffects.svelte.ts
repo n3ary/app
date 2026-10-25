@@ -25,8 +25,8 @@
 //   neary.setLocation(<lat>, <lon>)        // pin a mock GPS fix
 //   neary.clearLocation()                  // resume real GPS
 
-import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
+import { getGtfsRepo } from '$lib/data/gtfs/repo';
+import { favoritesStore } from '$lib/stores/favoritesStore.svelte';import { feedsStore } from '$lib/stores/feedsStore.svelte';
 import { locationStore } from '$lib/stores/gps/locationStore.svelte';
 import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
 import { refreshBus } from '$lib/stores/refreshBus.svelte';
@@ -63,6 +63,12 @@ export function useLayoutSideEffects(): void {
       setLocation: (lat: number, lon: number, accuracy = 25) =>
         locationStore.setMockPosition(lat, lon, accuracy),
       clearLocation: () => locationStore.clearMockPosition(),
+      // The worker facade. Handy for poking the feed from the console
+      // (e.g. `neary.repo.getStationBoard('46', Date.now(), 1440)`),
+      // and it lets a test drive a query with an explicit clock
+      // instead of the worker's own - the worker's wall clock can't be
+      // faked from the page.
+      repo: getGtfsRepo(),
       stores: {
         locationStore, feedsStore, statusBus, userPrefs, refreshBus,
         reconciledVehiclesStore, favoritesStore, stationsViewStore,

@@ -317,7 +317,9 @@ export function mergeReconciledIntoStationBoard(inputs: StationMergeInputs): Veh
     orphans.push({
       ...v,
       headsign: v.headsign ?? rep.headsign,
-      eta: etaSeed,
+      // Keep the ETA the reconciler already seeded from the observation
+      // when this per-station path can't derive one of its own.
+      eta: etaSeed ?? v.eta,
       dropOffOnly: v.dropOffOnly ?? rep.dropOffOnly,
     });
   }

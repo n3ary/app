@@ -14,6 +14,7 @@
 import type { Database } from '@sqlite.org/sqlite-wasm';
 import type { RouteMapTrip, RouteMapView, ScheduleTripStop } from '$lib/data/gtfs/types';
 import { timeToMinutes } from '$lib/domain/pipeline/timeUtils';
+import { serviceContextFor, serviceWindowsFor } from '$lib/domain/pipeline/serviceDay';
 import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '$lib/domain/types';
 import { activeServicesOn } from '../activeServices';
 import { shapeCache } from '../shapeCache';
@@ -24,8 +25,8 @@ export function getRouteMapView(
   db: Database,
   routeId: string,
   directionId: 0 | 1,
-  localDate: string,
-  localMin: number,
+  nowMs: number,
+  tz: string,
   lookbackMin: number,
   lookaheadMin: number,
 ): RouteMapView | null {
@@ -93,12 +94,18 @@ export function getRouteMapView(
   };
 
   // 1) Active trips on (route, direction). Origin departure within
-  // [localMin - lookbackMin, localMin + lookaheadMin], AND not yet
+  // [nowMin - lookbackMin, nowMin + lookaheadMin], AND not yet
   // past the end stop. Empty when no calendar is active today
   // (services=[]) OR when every trip is either past or out of
   // window — in either case we still want to render the route
   // structure (see step 3 below), so don't early-return here.
-  const services = activeServicesOn(db, localDate);
+  //
+  // A GTFS service day is not a calendar day: during the post-midnight
+  // window yesterday's service day is still running its night-service
+  // tail, so it is queried too and its times are shifted a day back
+  // onto the shared timeline. See domain/pipeline/serviceDay.ts.
+  const ctx = serviceContextFor(nowMs, tz);
+  const localMin = ctx.nowMin;
   type TripRow = {
     trip_id: string;
     trip_headsign: string | null;
@@ -107,7 +114,11 @@ export function getRouteMapView(
     trip_end_time: string;
   };
   let activeTripRows: Array<TripRow & { tripStartMin: number; tripEndMin: number }> = [];
-  if (services.length > 0) {
+  const lowerMin = localMin - lookbackMin;
+  const upperMin = localMin + lookaheadMin;
+  for (const win of serviceWindowsFor(ctx)) {
+    const services = activeServicesOn(db, win.date);
+    if (services.length === 0) continue;
     const placeholders = services.map(() => '?').join(',');
     const tripRows = selectAll<TripRow>(
       db,
@@ -122,15 +133,21 @@ export function getRouteMapView(
          AND t.service_id IN (${placeholders});`,
       [routeId, directionId, ...services],
     );
-    const lowerMin = localMin - lookbackMin;
-    const upperMin = localMin + lookaheadMin;
-    activeTripRows = tripRows
-      .map((row) => ({
-        ...row,
-        tripStartMin: timeToMinutes(row.trip_start_time),
-        tripEndMin: timeToMinutes(row.trip_end_time),
-      }))
-      .filter((row) => row.tripStartMin >= lowerMin && row.tripStartMin <= upperMin && row.tripEndMin >= localMin)
+    activeTripRows = activeTripRows
+      .concat(
+        tripRows
+          .map((row) => ({
+            ...row,
+            tripStartMin: timeToMinutes(row.trip_start_time) + win.offsetMin,
+            tripEndMin: timeToMinutes(row.trip_end_time) + win.offsetMin,
+          }))
+          .filter(
+            (row) =>
+              row.tripStartMin >= lowerMin &&
+              row.tripStartMin <= upperMin &&
+              row.tripEndMin >= localMin,
+          ),
+      )
       .sort((a, b) => a.tripStartMin - b.tripStartMin);
   }
 

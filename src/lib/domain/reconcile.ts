@@ -3,6 +3,7 @@
 import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
 import type { Vehicle } from './types';
 import { minSinceMidnightInTz, timeToMinutes } from './pipeline/timeUtils';
+import { observationTimeOffsetMin, serviceContextFor } from './pipeline/serviceDay';
 import { projectOnPolyline, type MeasuredPolyline } from '@n3ary/gtfs-spec/shape';
 
 const TOLERANCE_FLOOR_MIN = 1;
@@ -42,6 +43,13 @@ export function reconcileWithLive(
   const nowMinSinceMidnight =
     options.nowMs != null && options.timezone
       ? minSinceMidnightInTz(options.nowMs, options.timezone)
+      : undefined;
+  // Which service day "now" belongs to. Needed to place a live
+  // observation's GTFS start time on the same timeline as "now" - a
+  // night-service trip's service date is the PREVIOUS calendar date.
+  const serviceCtx =
+    options.nowMs != null && options.timezone
+      ? serviceContextFor(options.nowMs, options.timezone)
       : undefined;
 
   // Index scheduled `scheduled` rows by (routeId, directionId). tripEndMin feeds route-order's linear interpolation; falls back to tripStartMin (zero duration) when scheduledArrival is missing, which degrades route-order to timing-only.
@@ -170,7 +178,15 @@ export function reconcileWithLive(
       rep.travelTimeMin != null &&
       nowMinSinceMidnight != null
     ) {
-      const expectedArrivalMin = obsStartMin + rep.travelTimeMin;
+      // A trip of the PREVIOUS service day (a night-service trip that
+      // departs at "25:10" has the previous calendar date as its
+      // service date) sits a day behind on the shared timeline. Shift
+      // it so the ETA is measured in the same frame as "now" - without
+      // this a night bus's seed ETA came out ~24 h too large.
+      const offset = serviceCtx
+        ? observationTimeOffsetMin(obs.startDate, serviceCtx)
+        : 0;
+      const expectedArrivalMin = obsStartMin + offset + rep.travelTimeMin;
       etaSeed = {
         minutes: Math.round(expectedArrivalMin - nowMinSinceMidnight),
         distanceMeters: 0,

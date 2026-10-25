@@ -44,6 +44,12 @@ export interface LiveVehicleObservation {
    *  (routeId, directionId, startTime) since trip_ids can differ
    *  between the static-GTFS source and the GTFS-RT feed. */
   startTime: string;
+  /** GTFS-RT `TripDescriptor.start_date` - the SERVICE DATE of the trip
+   *  (not the trip's first departure, per the GTFS-RT spec). This is
+   *  what tells us which service day the observation belongs to: a
+   *  night-service trip that departs at "25:10" has a start_date of the
+   *  PREVIOUS calendar date. Empty when the feed doesn't populate it. */
+  startDate: string;
   /** Last reported position. */
   lat: number;
   lon: number;
@@ -138,6 +144,7 @@ export function parseVehiclePositions(buf: Uint8Array): VehiclePositionsSnapshot
       routeId: v.trip?.routeId ?? '',
       directionId: claimedDir === 0 || claimedDir === 1 ? claimedDir : -1,
       startTime: v.trip?.startTime ?? '',
+      startDate: v.trip?.startDate ?? '',
       lat: v.position.latitude ?? 0,
       lon: v.position.longitude ?? 0,
       bearing: v.position.bearing ?? null,
