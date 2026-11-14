@@ -37,6 +37,14 @@ export interface ScheduleRow {
   trip_headsign: string | null;
   stop_lat: number;
   stop_lon: number;
+  /**
+   * Minutes to add to this row's GTFS times to place them on the shared
+   * timeline. -1440 for rows that belong to the PREVIOUS service day
+   * (see domain/pipeline/serviceDay.ts) - their GTFS times are already
+   * measured from that day's midnight, so they sit a day behind "now".
+   * Undefined / 0 for rows of the current service day.
+   */
+  time_offset_min?: number;
 }
 
 export interface ScheduleScannerInputs {
@@ -60,9 +68,13 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
 
   const out: Vehicle[] = [];
   for (const r of rows) {
-    const arrivalMin = timeToMinutes(r.arrival_time);
-    const departureMin = timeToMinutes(r.departure_time);
-    const tripEndMin = timeToMinutes(r.trip_end_time);
+    // Rows from the previous service day are a day behind on the shared
+    // timeline - shift their times so every comparison against "now"
+    // is in the same frame. See domain/pipeline/serviceDay.ts.
+    const offset = r.time_offset_min ?? 0;
+    const arrivalMin = timeToMinutes(r.arrival_time) + offset;
+    const departureMin = timeToMinutes(r.departure_time) + offset;
+    const tripEndMin = timeToMinutes(r.trip_end_time) + offset;
 
     // Drop rows with unparseable arrival_time — adapter-emitted live-only fallback trips (`..._NT001`) ship without per-stop times. Without a real time we'd emit `NaN min` into the UI.
     if (!Number.isFinite(arrivalMin)) continue;
@@ -89,7 +101,7 @@ export function scanSchedule(inputs: ScheduleScannerInputs): Vehicle[] {
       scheduledDeparture: departureMin,
       headsign: r.trip_headsign ?? undefined,
       directionId: r.direction_id === 0 || r.direction_id === 1 ? r.direction_id : -1,
-      tripStartMin: timeToMinutes(r.trip_start_time),
+      tripStartMin: timeToMinutes(r.trip_start_time) + offset,
       isFirstStop: r.stop_sequence === r.first_seq,
       isLastStop: r.stop_sequence === r.last_seq || undefined,
     };

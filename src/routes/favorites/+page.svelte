@@ -439,8 +439,11 @@
     (async () => {
       try {
         const repo = getGtfsRepo();
-        const [localDate, fromMin] = key.split('|');
-        const ids = await repo.getActiveRouteIdsInWindow(localDate, Number(fromMin), 60);
+        // The worker resolves the service day itself - a GTFS service
+        // day is not a calendar day, so between midnight and the end of
+        // the night service the active set still belongs to the
+        // PREVIOUS date. See domain/pipeline/serviceDay.ts.
+        const ids = await repo.getActiveRouteIdsInWindow(nowTicker.ms, tz, 60);
         const next = new Set(ids);
         // Skip the write when the active set hasn't actually changed.
         // Without this, every nowTicker pulse produces a fresh Set
