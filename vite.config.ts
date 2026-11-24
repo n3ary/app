@@ -204,6 +204,34 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(VERSION),
   },
+  // csv-stringify / csv-parse ship two builds behind the same specifier:
+  // a Node-flavored one (the "import" export condition -> lib/) and a
+  // browser-safe one (./browser/esm -> dist/esm/) that carries an
+  // inline Buffer polyfill. The Node build evaluates
+  // `Buffer.from([239, 187, 191])` -- the UTF-8 BOM -- at MODULE SCOPE,
+  // so merely importing it throws "ReferenceError: Buffer is not
+  // defined" in a browser.
+  //
+  // Why this bites here and not anywhere else: @n3ary/gtfs-spec loads
+  // both libraries through a dynamic import (so its own Node-side
+  // consumers keep working), but Vite INLINES dynamic imports into the
+  // worker bundle -- the GTFS worker is built as a single chunk. The
+  // Node build therefore ran at worker startup and took the whole
+  // worker down with it. The app then sat on "Loading schedule for
+  // <feed>..." forever: the Comlink proxy never came up, so the feed
+  // never bound and OPFS stayed empty.
+  //
+  // Aliasing to the browser build restores what the dynamic import was
+  // supposed to buy: a spec package that a browser-side consumer (the
+  // GTFS worker) can load without dragging in Node globals.
+  resolve: {
+    alias: [
+      { find: /^csv-stringify$/, replacement: 'csv-stringify/browser/esm' },
+      { find: /^csv-stringify\/sync$/, replacement: 'csv-stringify/browser/esm/sync' },
+      { find: /^csv-parse$/, replacement: 'csv-parse/browser/esm' },
+      { find: /^csv-parse\/sync$/, replacement: 'csv-parse/browser/esm/sync' },
+    ],
+  },
   // OPFS-SAHPool SQLite-WASM doesn't need COOP/COEP (uses sync file APIs
   // worker-side, no SharedArrayBuffer). Keep dev simple — no special headers.
   server: {
