@@ -15,8 +15,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
-    "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "2.70.2",
+    "@sveltejs/adapter-static": "^3.0.11",
+    "@sveltejs/kit": "2.70.4",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/svelte": "^5.2.10",
