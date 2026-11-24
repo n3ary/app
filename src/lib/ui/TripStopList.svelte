@@ -16,6 +16,7 @@
 <script lang="ts">
   import { ArrowUpRight, ExternalLink } from '@lucide/svelte';
   import type { ScheduleTripStop } from '#lib/data/gtfs/types.ts';
+  import { stationUrl } from '#lib/domain/stationUrl.ts';
   import { formatHHMM } from '#lib/domain/types.ts';
   import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
   import Chip from './Chip.svelte';
@@ -45,7 +46,7 @@
          ExternalLink icon is kept (inside the anchor) so the
          tap-to-open affordance is visually obvious. -->
     <a
-      href={`/station/${s.stopId}`}
+      href={stationUrl(s.stopId)}
       aria-label={`Open station ${s.stopName}`}
       class="block no-underline text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] rounded-md"
     >

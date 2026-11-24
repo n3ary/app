@@ -10,6 +10,7 @@
   import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
   import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
   import type { Route } from '#lib/domain/types.ts';
+  import { stationUrl } from '#lib/domain/stationUrl.ts';
   import { compareRouteShortName } from '#lib/domain/types.ts';
   import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
   import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
@@ -223,7 +224,7 @@
 
   function selectStop(id: string) {
     onclose();
-    goto(`/station/${id}`);
+    goto(stationUrl(id));
   }
   function openRouteSchedule(route: Route) {
     onclose();
