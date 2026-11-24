@@ -6,7 +6,7 @@ import {
   pruneStaleFeedFiles,
   type SahPoolLike,
 } from './opfsFilenames';
-import type { Feed } from '$lib/data/feeds';
+import type { Feed } from '#lib/data/feeds.ts';
 
 function feed(overrides: Partial<Feed> = {}): Feed {
   return {

@@ -8,7 +8,7 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Feed } from '$lib/data/feeds';
+import type { Feed } from '#lib/data/feeds.ts';
 
 /** Deferred hand-off used across a background suspend. The worker closes
  *  its DB (and releases the OPFS handles) when the page is backgrounded;

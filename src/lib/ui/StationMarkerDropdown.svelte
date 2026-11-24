@@ -21,11 +21,11 @@
   import type { Snippet } from 'svelte';
   import { Popover } from 'bits-ui';
   import { Bus, Heart } from 'lucide-svelte';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
   import {
     STATION_MARKERS, STATION_MARKER_ICONS, STATION_MARKER_FILL,
     STATION_MARKER_ACCENT,
-  } from '$lib/stores/favoritesStore.svelte';
+  } from '#lib/stores/favoritesStore.svelte.ts';
   import { cn } from './cn';
 
   type Props = {

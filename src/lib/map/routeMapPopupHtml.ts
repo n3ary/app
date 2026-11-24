@@ -17,7 +17,7 @@ import {
   formatRelativeMin,
   pickContrastingText,
   type Route,
-} from '$lib/domain/types';
+} from '#lib/domain/types.ts';
 
 /** Render-ready vehicle for the current nowMin. Mirrors the shape
  *  produced by useRouteMapView's `markers` derivation. Kept here too

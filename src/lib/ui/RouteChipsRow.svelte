@@ -1,6 +1,6 @@
 <!-- RouteChipsRow: badge strip with overflow +N. Visible count = min(naturalFit, maxVisible). The natural fit alone is the cap by default -- a "+N" chip appears only when the catalogue genuinely overflows. maxVisible is an opt-in hard override for callers that need a specific upper bound. -->
 <script lang="ts">
-  import type { Route } from '$lib/domain/types';
+  import type { Route } from '#lib/domain/types.ts';
   import RouteBadge from './RouteBadge.svelte';
   import { naturalFit } from './routeChipLayout';
 

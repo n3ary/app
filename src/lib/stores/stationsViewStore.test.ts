@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { stationsViewStore } from './stationsViewStore.svelte';
-import { DEFAULT_CONFIG } from '$lib/domain/config';
+import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
 
 describe('stationsViewStore hysteresis (issue #203)', () => {
   beforeEach(() => {

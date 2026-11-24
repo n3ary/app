@@ -1,6 +1,6 @@
 <!-- Single source for "go one level up" on detail views. Try history.back() when previous was added in this tab (history.length > 1); otherwise navigate to `fallback` (default `/`) so a deep-link or page-refresh doesn't strand the user on the browser's blank "no history" stub. Escape fires the same handler. -->
 
-<!-- Intra-view navigation (tab swaps, direction swaps) MUST use `goto(..., { replaceState: true })` so "back" returns to where the user came from instead of walking every tab they touched. -->
+<!-- Intra-view navigation (tab swaps, direction swaps) MUST use `goto(..., { replace: true })` so "back" returns to where the user came from instead of walking every tab they touched. -->
 <script lang="ts">
   import { ArrowLeft } from 'lucide-svelte';
   import { goto } from '$app/navigation';

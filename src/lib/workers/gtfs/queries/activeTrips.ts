@@ -11,10 +11,10 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Route, Vehicle } from '$lib/domain/types';
-import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '$lib/domain/types';
-import { timeToMinutes } from '$lib/domain/pipeline/timeUtils';
-import { serviceContextFor, serviceWindowsFor } from '$lib/domain/pipeline/serviceDay';
+import type { Route, Vehicle } from '#lib/domain/types.ts';
+import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '#lib/domain/types.ts';
+import { timeToMinutes } from '#lib/domain/pipeline/timeUtils.ts';
+import { serviceContextFor, serviceWindowsFor } from '#lib/domain/pipeline/serviceDay.ts';
 import { activeServicesOn } from '../activeServices';
 import { selectAll } from '../sqlHelpers';
 import { getRoutesWithSchedule } from './routesWithSchedule';

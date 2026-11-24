@@ -32,8 +32,8 @@
  *     app opens or reconnects.
  */
 
-import type { Feed } from '$lib/data/feeds';
-import { OSM_TILE_CACHE_NAME, OSM_TILE_MAX_AGE_MS } from '$lib/sw/handlers';
+import type { Feed } from '#lib/data/feeds.ts';
+import { OSM_TILE_CACHE_NAME, OSM_TILE_MAX_AGE_MS } from '#lib/sw/handlers.ts';
 
 export interface TileCoord {
   z: number;

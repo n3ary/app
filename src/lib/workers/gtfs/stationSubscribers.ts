@@ -18,9 +18,9 @@
 
 import * as Comlink from 'comlink';
 
-import type { ReconciledSnapshot, StationBoardPush } from '$lib/data/gtfs/types';
-import { DEFAULT_CONFIG } from '$lib/domain/config';
-import type { Vehicle } from '$lib/domain/types';
+import type { ReconciledSnapshot, StationBoardPush } from '#lib/data/gtfs/types.ts';
+import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
+import type { Vehicle } from '#lib/domain/types.ts';
 
 import { assembleLiveBoards } from './queries/assembleLiveBoards';
 import { getStationBoard } from './queries/stationBoards';

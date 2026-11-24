@@ -3,21 +3,21 @@
 // Architecture: heavy merge + GPS-ETA + per-tick scheduled-board re-query all run inside the worker. Main subscribes once via `repo.subscribeStationBoards(stopIds, cb)`; the worker pushes `Array<{ stopId, vehicles }>` every live tick AND on every stop-set change (so a fresh selection paints within a microtask instead of waiting up to one poll). No per-tick IPC request from main. Shape polylines / stop-distance arrays never cross the boundary.
 
 import * as Comlink from 'comlink';
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
 import type {
   StationBoardPush,
   StationBoardsSubscription,
   StopWithDistance,
-} from '$lib/data/gtfs/types';
+} from '#lib/data/gtfs/types.ts';
 import {
   bucketLiveBoardMemo,
   routesFromVehicles,
   type BoardRow,
-} from '$lib/domain/stationBoard';
-import type { Route, Vehicle } from '$lib/domain/types';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { nowTicker } from '$lib/stores/nowTicker.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
+} from '#lib/domain/stationBoard.ts';
+import type { Route, Vehicle } from '#lib/domain/types.ts';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
 export type StationBoardInput = {
   stop: StopWithDistance;

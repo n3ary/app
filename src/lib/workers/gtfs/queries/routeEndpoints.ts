@@ -9,7 +9,7 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { RouteDirectionEndpoints } from '$lib/data/gtfs/types';
+import type { RouteDirectionEndpoints } from '#lib/data/gtfs/types.ts';
 import { selectAll } from '../sqlHelpers';
 
 export function getRouteDirectionEndpoints(

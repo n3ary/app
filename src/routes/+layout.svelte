@@ -1,19 +1,19 @@
 <!-- Root layout. Every route renders inside AppLayout (Header + StatusBar + scrollable main + BottomNavigation). Per-route title and refresh handler derive from the route path; health state comes from the stores the relevant routes populate. -->
 <script lang="ts">
-  import '$lib/styles/app.css';
+  import '#lib/styles/app.css';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { Heart, MapPin, Settings } from 'lucide-svelte';
-  import { AppLayout, type HeaderHealth } from '$lib/ui';
-  import { usePwa } from '$lib/composables/usePwa.svelte';
-  import { useGtfsLifecycle } from '$lib/composables/useGtfsLifecycle.svelte';
-  import { useLayoutSideEffects } from '$lib/composables/useLayoutSideEffects.svelte';
-  import { useGtfsBind } from '$lib/composables/useGtfsBind.svelte';
-  import { useRefreshFeedback } from '$lib/composables/useRefreshFeedback.svelte';
-  import { connectionStore } from '$lib/stores/connectionStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  import { AppLayout, type HeaderHealth } from '#lib/ui/index.ts';
+  import { usePwa } from '#lib/composables/usePwa.svelte.ts';
+  import { useGtfsLifecycle } from '#lib/composables/useGtfsLifecycle.svelte.ts';
+  import { useLayoutSideEffects } from '#lib/composables/useLayoutSideEffects.svelte.ts';
+  import { useGtfsBind } from '#lib/composables/useGtfsBind.svelte.ts';
+  import { useRefreshFeedback } from '#lib/composables/useRefreshFeedback.svelte.ts';
+  import { connectionStore } from '#lib/stores/connectionStore.svelte.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { reconciledVehiclesStore } from '#lib/stores/reconciledVehiclesStore.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
   let { children } = $props();
 

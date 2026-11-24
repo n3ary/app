@@ -34,7 +34,7 @@
    to both Routes (routes serving marked stations) and Stations tabs.
 -->
 <script lang="ts">
-  import { goto, replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import { Heart } from 'lucide-svelte';
@@ -42,26 +42,26 @@
     Card, CardContent, Chip, Collapsible, FavoriteRouteRow, FavoriteStationRow,
     FavoritesCard, SelectFeedCard, Spinner, Stack, Tabs, TripStopList, Typography,
     TypeBadge, tagIcon, hasTagIcon,
-  } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';
-  import type { Network, Route, RouteTag, VehicleType } from '$lib/domain/types';
-  import { vehicleTypeLabel } from '$lib/domain/types';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { STATIONS_PAGE_SIZE } from '$lib/ui/favoritesListConstants';
+  } from '#lib/ui/index.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import type { ScheduleTripStop, StopWithDistance } from '#lib/data/gtfs/types.ts';
+  import type { Network, Route, RouteTag, VehicleType } from '#lib/domain/types.ts';
+  import { vehicleTypeLabel } from '#lib/domain/types.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { STATIONS_PAGE_SIZE } from '#lib/ui/favoritesListConstants.ts';
   import {
     parseFavoritesTab,
     sortRoutesForPicker,
     sortStationsAlphabetically,
     sortStationsForPicker,
     type FavoritesTab,
-  } from '$lib/domain/favoritesListLayout';
-  import { scheduleWindowFor } from '$lib/domain/pipeline/timeUtils';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { favoritesStore, STATION_MARKERS, STATION_MARKER_ICONS } from '$lib/stores/favoritesStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  } from '#lib/domain/favoritesListLayout.ts';
+  import { scheduleWindowFor } from '#lib/domain/pipeline/timeUtils.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { favoritesStore, STATION_MARKERS, STATION_MARKER_ICONS } from '#lib/stores/favoritesStore.svelte.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
   // ------ Tab state + URL deep-link ---------------------------------------------------------------------------------------------------------
 
@@ -74,10 +74,10 @@
   // No URL -> state sync effect. setTab is the only writer of
   // activeTab after mount; initialTab() seeds it from the URL on
   // mount; browser back/forward triggers a re-mount of the page
-  // component, which re-calls initialTab(). Earlier we had a
-  // `fromUrl !== activeTab` sync effect, but it raced with
-  // replaceState: SvelteKit's replaceState updates the browser
-  // history and `page.state` but not `page.url` synchronously,
+  // component, which re-initialises it. Earlier we had a
+  // `fromUrl !== activeTab` sync effect, but it raced with the
+  // shallow navigation: SvelteKit's shallow `goto` updates the
+  // browser history and `page.state` but not `page.url` synchronously,
   // so on the same tick the effect saw the old URL and clobbered
   // activeTab back to it -- which is why a click on the Routes
   // tab was silently ignored.
@@ -95,16 +95,25 @@
     pendingScrollY = null;
     stashScroll(activeTab, from);
     activeTab = next;
-    const url = new URL(page.url);
+    // `page.url` is a ReadonlyURL in SvelteKit 3, so copy it before
+    // mutating the query string.
+    const url = new URL(page.url.href);
     if (next === 'routes') url.searchParams.delete('tab');
     else url.searchParams.set('tab', next);
-    // Use SvelteKit's replaceState (not the raw history API and
-    // not goto) so the page store stays in sync without triggering
-    // a full navigation. `goto` with `noScroll: true` was resetting
-    // scrollY to 0 on same-page query changes despite the noScroll
-    // option, and the raw `window.history.replaceState` triggers a
-    // SvelteKit dev-mode warning that it conflicts with the router.
-    replaceState(url, {});
+    // Update the URL and `page.state` without triggering a full
+    // navigation, so the page store stays in sync. SvelteKit 3
+    // deprecated `replaceState` in favour of a shallow `goto`:
+    // `shallow: true` updates the URL and page state without
+    // navigating, `replace: true` keeps the tab swap out of the
+    // back/forward stack ("back" should leave the page, not walk the
+    // tabs the rider touched), and `reset: false` preserves the
+    // scroll position -- a real navigation resets scrollY to 0 on
+    // same-page query changes even with `noScroll: true`, which used
+    // to throw the rider back to the top of a long list. The raw
+    // `window.history.replaceState` is not an option either: it
+    // triggers a SvelteKit dev-mode warning that it conflicts with
+    // the router.
+    void goto(url, { shallow: true, replace: true, state: {}, reset: false });
     // Where to land in the incoming tab: its own remembered offset if
     // the rider has been there before, otherwise the offset they are
     // leaving from - swapping tabs must never throw them back to the

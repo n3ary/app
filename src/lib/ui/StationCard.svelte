@@ -12,16 +12,16 @@
     ArrowDownLeft, ArrowUpRight, AlertTriangle, Bus, ChevronDown, Clock,
     MapPin, type Icon as LucideIcon,
   } from 'lucide-svelte';
-  import type { Route, Station, Vehicle } from '$lib/domain/types';
-  import { compareRouteShortName } from '$lib/domain/types';
+  import type { Route, Station, Vehicle } from '#lib/domain/types.ts';
+  import { compareRouteShortName } from '#lib/domain/types.ts';
   import {
     bucketLabel, etaUrgency, type ArrivalBucket,
-  } from '$lib/domain/buckets';
-  import type { BoardRow } from '$lib/domain/stationBoard';
-  import type { ScheduleTripStop } from '$lib/data/gtfs/types';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { favoritesStore, STATION_MARKER_ACCENT } from '$lib/stores/favoritesStore.svelte';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
+  } from '#lib/domain/buckets.ts';
+  import type { BoardRow } from '#lib/domain/stationBoard.ts';
+  import type { ScheduleTripStop } from '#lib/data/gtfs/types.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { favoritesStore, STATION_MARKER_ACCENT } from '#lib/stores/favoritesStore.svelte.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
   import Avatar from './Avatar.svelte';
   import Box from './Box.svelte';
   import Card from './Card.svelte';

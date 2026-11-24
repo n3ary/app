@@ -13,7 +13,11 @@ minimumReleaseAgeExclude:
 # deterministic until the upstream floor is raised.
 #
 # cookie: <0.7.0 is flagged as GHSA-pxg6-pf52-xh8x / CVE-2024-47764.
-# Pulled in transitively via sveltekit/svelte.
+# Pulled in transitively via sveltekit/svelte. No override needed since
+# SvelteKit 3 -- cookie is only reachable through @sveltejs/kit, which
+# now depends on cookie ^2.0.1, comfortably above the patched floor.
+# (The old `cookie: ^0.7.0` override pinned kit's cookie to the 0.x
+# line and broke the build: kit 3 calls cookie v2's `parseCookie`.)
 #
 # brace-expansion: two major lines are pulled in transitively (2.x by
 # CJS minimatch, 5.x by ESM minimatch) and both carry DoS advisories
@@ -77,7 +81,6 @@ overrides:
   # post-timeout filesystem traversal). 11.1.0 -> 14.0.2. glob@8.1.0
   # stays on 8.x - different major, outside the advisory range.
   glob@>=9: ^14.0.2
-  cookie: ^0.7.0
   brace-expansion@<3: 2.1.7
   brace-expansion@>=3: 5.0.12
   postcss: ^8.5.23

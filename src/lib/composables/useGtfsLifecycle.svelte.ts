@@ -25,9 +25,9 @@
  */
 
 import { useBackgroundSuspend } from './useBackgroundSuspend.svelte';
-import { resumeGtfs, suspendGtfs } from '$lib/data/gtfs/repo';
-import { nowTicker } from '$lib/stores/nowTicker.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
+import { resumeGtfs, suspendGtfs } from '#lib/data/gtfs/repo.ts';
+import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
 export interface GtfsBindHandle {
   bumpEpoch: () => void;

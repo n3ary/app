@@ -31,7 +31,7 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { RouteTag } from '$lib/domain/types';
+import type { RouteTag } from '#lib/domain/types.ts';
 import { selectAll } from '../sqlHelpers';
 
 type Row = {

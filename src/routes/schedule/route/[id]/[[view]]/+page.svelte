@@ -6,28 +6,28 @@
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
     Stack, ToggleGroup, TripStopList, Typography, tagIcon, hasTagIcon,
-  } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import { useOtherDirectionExists } from '$lib/data/gtfs/otherDirectionExists.svelte';
-  import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirection';
-  import type { Network, Route, RouteTag } from '$lib/domain/types';
+  } from '#lib/ui/index.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import { useOtherDirectionExists } from '#lib/data/gtfs/otherDirectionExists.svelte.ts';
+  import { parseRouteIdWithDirection } from '#lib/data/gtfs/parseRouteIdWithDirection.ts';
+  import type { Network, Route, RouteTag } from '#lib/domain/types.ts';
   import {
     formatHHMM, formatRelativeMin, isNightRoute, pickContrastingText, vehicleTypeLabel,
-  } from '$lib/domain/types';
-  import { scheduleUrgency } from '$lib/domain/buckets';
-  import { urgencyClass } from '$lib/ui/urgencyClass';
+  } from '#lib/domain/types.ts';
+  import { scheduleUrgency } from '#lib/domain/buckets.ts';
+  import { urgencyClass } from '#lib/ui/urgencyClass.ts';
   import type {
     RouteDirectionEndpoints, ScheduleTrip, ScheduleTripStop, WeeklySchedule,
-  } from '$lib/data/gtfs/types';
+  } from '#lib/data/gtfs/types.ts';
   import {
     dayOfWeekInTz, minSinceMidnightInTz, scheduleWindowFor,
-  } from '$lib/domain/pipeline/timeUtils';
-  import { SERVICE_DAY_OFFSET_MIN, serviceContextFor } from '$lib/domain/pipeline/serviceDay';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { nowTicker } from '$lib/stores/nowTicker.svelte';
-import { refreshBus } from '$lib/stores/refreshBus.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
-import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  } from '#lib/domain/pipeline/timeUtils.ts';
+  import { SERVICE_DAY_OFFSET_MIN, serviceContextFor } from '#lib/domain/pipeline/serviceDay.ts';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
+import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
 
   // ── URL params ──────────────────────────────────────────────────────
   // The `id` segment carries both route id and (optional) direction:
@@ -196,7 +196,7 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
     if (fetchedView !== 'today') return; // wait for today's fetch
     if (tripsByDir[direction].length > 0) return;
     autoSwapped = true;
-    goto(`/schedule/route/${routeId}_${direction}/tomorrow`, { replaceState: true });
+    goto(`/schedule/route/${routeId}_${direction}/tomorrow`, { replace: true });
   });
 
   async function loadTripStops(tripId: string) {
@@ -414,7 +414,7 @@ import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
     const id = dir == null ? rId : `${rId}_${dir}`;
     const path = v === 'today' || dir == null ? `/schedule/route/${id}` : `/schedule/route/${id}/${v}`;
     const sameRoute = rId === routeId;
-    goto(path, { replaceState: sameRoute });
+    goto(path, { replace: sameRoute });
   }
   function swapDirection() {
     if (direction == null) return;

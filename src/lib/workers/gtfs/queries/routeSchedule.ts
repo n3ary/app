@@ -7,9 +7,9 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { ScheduleTrip } from '$lib/data/gtfs/types';
-import { timeToMinutes } from '$lib/domain/pipeline/timeUtils';
-import { serviceContextFor, serviceWindowsFor } from '$lib/domain/pipeline/serviceDay';
+import type { ScheduleTrip } from '#lib/data/gtfs/types.ts';
+import { timeToMinutes } from '#lib/domain/pipeline/timeUtils.ts';
+import { serviceContextFor, serviceWindowsFor } from '#lib/domain/pipeline/serviceDay.ts';
 import { activeServicesOn } from '../activeServices';
 import { selectAll } from '../sqlHelpers';
 

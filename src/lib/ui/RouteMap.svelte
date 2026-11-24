@@ -20,17 +20,17 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
   import { haversineMeters } from '@n3ary/gtfs-spec/shape';
-  import type { RouteMapView } from '$lib/data/gtfs/types';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { nowTicker } from '$lib/stores/nowTicker.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
-  import { pickContrastingText, type Route } from '$lib/domain/types';
+  import type { RouteMapView } from '#lib/data/gtfs/types.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
+  import { pickContrastingText, type Route } from '#lib/domain/types.ts';
   import {
     stopPopupHtml,
     vehicleHtml,
     vehiclePopupHtml,
     type VehicleMarker,
-  } from '$lib/map/routeMapPopupHtml';
+  } from '#lib/map/routeMapPopupHtml.ts';
 
   type LeafletNS = typeof import('leaflet');
   type LeafletMap = import('leaflet').Map;

@@ -1,13 +1,13 @@
 <!-- FavoriteRouteRow: single source of truth for the favorited-route row, so a change to the heart / Calendar / tap action propagates to /favorites, the search overlay, and home in one edit. -->
 <script lang="ts">
   import { Calendar, Heart } from 'lucide-svelte';
-  import type { Route } from '$lib/domain/types';
-  import { vehicleTypeLabel } from '$lib/domain/types';
+  import type { Route } from '#lib/domain/types.ts';
+  import { vehicleTypeLabel } from '#lib/domain/types.ts';
   import { cn } from './cn';
   import { iconButtonClass } from './iconButtonClass';
   import RouteBadge from './RouteBadge.svelte';
   import StationMarkerBadges from './StationMarkerBadges.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
 
   type Props = {
     route: Route;

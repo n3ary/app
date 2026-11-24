@@ -1,18 +1,18 @@
 <!-- End-to-end GTFS pipeline proof. Browser page (not Node script) so iOS Safari / OPFS coverage is exercised too. Workflow: load manifest (row counts, generated_at, file size); call repo.getRoutes() (real SQL select); pick the hardcoded Cluj test stop; render stops within 500 m sorted by Haversine; render next 60 min of departures. Status flows through the global StatusBar (loading kind) while SQL warms up. -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Feed } from '$lib/data/feeds';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import type { StopWithDistance, UpcomingDeparture } from '$lib/data/gtfs/types';
-  import type { Route } from '$lib/domain/types';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  import type { Feed } from '#lib/data/feeds.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import type { StopWithDistance, UpcomingDeparture } from '#lib/data/gtfs/types.ts';
+  import type { Route } from '#lib/domain/types.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
   import {
     Box, Card, CardContent, Chip, List, ListItem, ListItemText,
     RouteBadge, Stack, Typography,
     formatBytes,
-  } from '$lib/ui';
+  } from '#lib/ui/index.ts';
   import { MapPin } from 'lucide-svelte';
 
   // Demo "user location" — a central European city centre. Generic

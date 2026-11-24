@@ -2,7 +2,7 @@
 <script lang="ts">
   import Tooltip from './Tooltip.svelte';
   import { cn } from './cn';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
 
   type State = 'ok' | 'stale' | 'error' | 'idle' | 'off';
 

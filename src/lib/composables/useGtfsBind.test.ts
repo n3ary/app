@@ -23,7 +23,7 @@ const workerCalls: string[] = [];
 let resolveBind: (() => void) | null = null;
 let resumeShouldFail = false;
 
-vi.mock('$lib/data/gtfs/repo', () => ({
+vi.mock('#lib/data/gtfs/repo.ts', () => ({
   getGtfsRepo: () => ({
     setFeed: vi.fn(() => {
       workerCalls.push('setFeed');
@@ -45,14 +45,14 @@ vi.mock('$lib/data/gtfs/repo', () => ({
   }),
 }));
 
-vi.mock('$lib/map/offlineTiles', () => ({
+vi.mock('#lib/map/offlineTiles.ts', () => ({
   scheduleTilePrefetch: vi.fn(),
 }));
 
 import Host from './useGtfsBind.testHost.svelte';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { statusBus } from '$lib/stores/statusBus.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
 const bootCalls: string[] = [];
 

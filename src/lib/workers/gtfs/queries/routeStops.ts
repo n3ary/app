@@ -5,8 +5,8 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { ScheduleTripStop } from '$lib/data/gtfs/types';
-import { timeToMinutes } from '$lib/domain/pipeline/timeUtils';
+import type { ScheduleTripStop } from '#lib/data/gtfs/types.ts';
+import { timeToMinutes } from '#lib/domain/pipeline/timeUtils.ts';
 import { selectAll } from '../sqlHelpers';
 
 export function getStopsAlongTrip(db: Database, tripId: string): ScheduleTripStop[] {

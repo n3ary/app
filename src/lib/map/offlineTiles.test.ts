@@ -18,8 +18,8 @@ import {
   deleteTileCache,
   PREFETCH_INTERVAL_MS,
 } from './offlineTiles.js';
-import { OSM_TILE_CACHE_NAME } from '$lib/sw/handlers';
-import type { Feed } from '$lib/data/feeds';
+import { OSM_TILE_CACHE_NAME } from '#lib/sw/handlers.ts';
+import type { Feed } from '#lib/data/feeds.ts';
 
 const ORADEA_BBOX: Feed['bbox'] = {
   minLat: 46.89047,

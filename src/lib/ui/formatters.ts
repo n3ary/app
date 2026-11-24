@@ -30,7 +30,7 @@ export function formatBytes(n: number | null | undefined): string {
  *  precise than the date itself, so this hands off rather than
  *  showing both. Time component is dropped once a date is shown
  *  because at that age sub-minute precision isn't useful.
- *  Uses the app-wide locale (see `$lib/i18n/locale`) so weekday and
+ *  Uses the app-wide locale (see `#lib/i18n/locale.ts`) so weekday and
  *  month abbreviations match the user's browser settings — and stay
  *  consistent with every other Intl-driven output in the app. */
 export function formatWhen(ms: number | null | undefined): string {

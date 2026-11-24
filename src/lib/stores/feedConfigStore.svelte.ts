@@ -1,8 +1,8 @@
 // Reads per-feed timing/speed config from the SQLite blob (written by the gtfs pipeline) and exposes it as Svelte 5 reactive state. Falls back to app-side defaults for feeds/blobs pre-dating the _neary_config table.
 
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
-import { DEFAULT_FEED_SPEED_CONFIG, type FeedSpeedConfig } from '$lib/domain/speedCascade';
-import { DEFAULT_TOD_PROFILE, type TodProfile } from '$lib/domain/timeOfDay';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+import { DEFAULT_FEED_SPEED_CONFIG, type FeedSpeedConfig } from '#lib/domain/speedCascade.ts';
+import { DEFAULT_TOD_PROFILE, type TodProfile } from '#lib/domain/timeOfDay.ts';
 import { feedsStore } from './feedsStore.svelte';
 
 function createFeedConfigStore() {

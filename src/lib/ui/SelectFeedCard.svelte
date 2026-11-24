@@ -2,10 +2,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { Bus } from 'lucide-svelte';
-  import { findNearestFeed } from '$lib/domain/feedCoverage';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  import { findNearestFeed } from '#lib/domain/feedCoverage.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
   import Button from './Button.svelte';
   import InfoCard from './InfoCard.svelte';
 

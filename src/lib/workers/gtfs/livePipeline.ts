@@ -19,13 +19,13 @@
 
 import * as Comlink from 'comlink';
 
-import type { ReconciledSnapshot } from '$lib/data/gtfs/types';
-import { fetchVehiclePositions, RtUnavailableError } from '$lib/data/live/gtfsRtClient';
-import { DEFAULT_CONFIG } from '$lib/domain/config';
-import { enrichObservations } from '$lib/domain/enrichObservations';
-import { reconcileWithLive } from '$lib/domain/reconcile';
+import type { ReconciledSnapshot } from '#lib/data/gtfs/types.ts';
+import { fetchVehiclePositions, RtUnavailableError } from '#lib/data/live/gtfsRtClient.ts';
+import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
+import { enrichObservations } from '#lib/domain/enrichObservations.ts';
+import { reconcileWithLive } from '#lib/domain/reconcile.ts';
 import { measurePolyline, type MeasuredPolyline } from '@n3ary/gtfs-spec/shape';
-import type { Vehicle } from '$lib/domain/types';
+import type { Vehicle } from '#lib/domain/types.ts';
 
 import { getActiveTrips } from './queries/activeTrips';
 import { getShapesForTrips } from './queries/shapes';

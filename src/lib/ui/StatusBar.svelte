@@ -1,6 +1,6 @@
 <!-- Single-line strip pinned below the header. Replaces toasts and per-view loading spinners. Driven by statusBus so any module can post an entry. Concurrent loading entries collapse into one line. Severity: error (red, no dismiss) > loading/progress (primary, no dismiss) > warning (amber ~6s) > info (~4s) > success (~2.5s). Idle = 0 height. -->
 <script lang="ts">
-  import { statusBus, type StatusEntry } from '$lib/stores/statusBus.svelte';
+  import { statusBus, type StatusEntry } from '#lib/stores/statusBus.svelte.ts';
   import { cn } from './cn';
 
   // Pick the highest-priority active entry; collapse all `loading` entries

@@ -7,29 +7,29 @@
     Box, Button, Card, CardContent, FavoritesCard, IconButton,
     InfoCard, NoLocationCard, SelectFeedCard, Spinner, Stack, StationCard,
     Typography,
-  } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import { getUpcomingStops, getUpcomingStopsForRouteDir } from '$lib/data/gtfs/upcomingStops';
-  import { createStationBoardsController } from '$lib/data/stationBoardsController.svelte';
-  import type { StationBoardInput } from '$lib/data/stationBoardsController.svelte';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import { compareRouteShortName } from '$lib/domain/types';
-  import type { Route } from '$lib/domain/types';
-  import { selectBoardsForView } from '$lib/domain/stationSelection';
-  import { sortStationsAlphabetically } from '$lib/domain/favoritesListLayout';
-  import { DEFAULT_CONFIG } from '$lib/domain/config';
-  import { isPositionInFeedBbox, distanceToFeedBboxKm, findNearestFeed } from '$lib/domain/feedCoverage';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { feedConfigStore } from '$lib/stores/feedConfigStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { readLastKnownPosition, type LastKnownPosition } from '$lib/stores/gps/lastKnownPosition';
-  import { enableLocationPromptDismissedStore } from '$lib/stores/gps/enableLocationPromptDismissedStore.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { refreshBus } from '$lib/stores/refreshBus.svelte';
-  import { searchOverlayStore } from '$lib/stores/searchOverlayStore.svelte';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
-  import { stationsViewStore } from '$lib/stores/stationsViewStore.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  } from '#lib/ui/index.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import { getUpcomingStops, getUpcomingStopsForRouteDir } from '#lib/data/gtfs/upcomingStops.ts';
+  import { createStationBoardsController } from '#lib/data/stationBoardsController.svelte.ts';
+  import type { StationBoardInput } from '#lib/data/stationBoardsController.svelte.ts';
+  import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
+  import { compareRouteShortName } from '#lib/domain/types.ts';
+  import type { Route } from '#lib/domain/types.ts';
+  import { selectBoardsForView } from '#lib/domain/stationSelection.ts';
+  import { sortStationsAlphabetically } from '#lib/domain/favoritesListLayout.ts';
+  import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
+  import { isPositionInFeedBbox, distanceToFeedBboxKm, findNearestFeed } from '#lib/domain/feedCoverage.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { feedConfigStore } from '#lib/stores/feedConfigStore.svelte.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { readLastKnownPosition, type LastKnownPosition } from '#lib/stores/gps/lastKnownPosition.ts';
+  import { enableLocationPromptDismissedStore } from '#lib/stores/gps/enableLocationPromptDismissedStore.svelte.ts';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+  import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+  import { searchOverlayStore } from '#lib/stores/searchOverlayStore.svelte.ts';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+  import { stationsViewStore } from '#lib/stores/stationsViewStore.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
   // Query a single, wide radius that covers BOTH the primary nearby
   // search and the favorite-route fallback. The domain selector then

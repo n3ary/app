@@ -9,8 +9,8 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { StopWithDistance } from '$lib/data/gtfs/types';
-import type { Vehicle } from '$lib/domain/types';
+import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
+import type { Vehicle } from '#lib/domain/types.ts';
 import { selectAll } from '../sqlHelpers';
 import { getStationArrivals } from './stationArrivals';
 import { getStopsNear } from './stops';

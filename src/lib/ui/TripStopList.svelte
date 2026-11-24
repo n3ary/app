@@ -15,9 +15,9 @@
 -->
 <script lang="ts">
   import { ArrowUpRight, ExternalLink } from 'lucide-svelte';
-  import type { ScheduleTripStop } from '$lib/data/gtfs/types';
-  import { formatHHMM } from '$lib/domain/types';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
+  import type { ScheduleTripStop } from '#lib/data/gtfs/types.ts';
+  import { formatHHMM } from '#lib/domain/types.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
   import Chip from './Chip.svelte';
   import Stack from './Stack.svelte';
   import StationMarkerBadge from './StationMarkerBadge.svelte';

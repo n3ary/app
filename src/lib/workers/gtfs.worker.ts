@@ -22,8 +22,8 @@
 
 import * as Comlink from 'comlink';
 
-import type { Feed } from '$lib/data/feeds';
-import type { GtfsRepo } from '$lib/data/gtfs/types';
+import type { Feed } from '#lib/data/feeds.ts';
+import type { GtfsRepo } from '#lib/data/gtfs/types.ts';
 
 import { bootstrap, closeCurrent, deleteFeedCache, getCachedFeedIds, resumeFromBackground, suspendForBackground } from './gtfs/bootstrap';
 import {

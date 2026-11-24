@@ -1,5 +1,5 @@
 /*
- * service-worker.ts — PWA shell + version-aware cache invalidation.
+ * service-worker/index.ts — PWA shell + version-aware cache invalidation.
  *
  * The hand-rolled bits: why not workbox? Because the only runtime
  * strategies we need are NetworkFirst for navigations + NetworkFirst
@@ -67,7 +67,7 @@ import {
   networkFirstFeedsJson,
   cacheFirstOsmTile,
   OSM_TILE_CACHE_NAME,
-} from './lib/sw/handlers.js';
+} from '../lib/sw/handlers.js';
 
 /** Precache the shell entries the plugin injected. */
 const manifest = self.__WB_MANIFEST ?? [];
@@ -167,7 +167,11 @@ self.addEventListener('activate', (event) => {
 // navigation handler detects the param, bypasses its own cache, and fetches
 // fresh HTML. The new SW then caches the fresh HTML in its own bucket.
 self.addEventListener('message', (event) => {
-  if (!event.source) return;
+  // Capture the source up front: TypeScript cannot carry the
+  // `event.source` null-narrowing into the async .then()/.catch()
+  // callbacks below, because `source` is a mutable property.
+  const source = event.source;
+  if (!source) return;
   if (event.data?.type === 'CHECK_VERSION') {
     const { appVersion } = event.data as { type: string; appVersion: string };
     console.info(`[sw] CHECK_VERSION: app=${appVersion} sw=${VERSION} match=${appVersion === VERSION}`);
@@ -187,16 +191,16 @@ self.addEventListener('message', (event) => {
           // Signal the app to reload. The app adds ?__sw_reload= to the URL,
           // which the navigation handler detects to bypass the old runtime
           // HTML cache on this post-update reload.
-          void event.source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
+          void source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
         })
         .catch(() => {
           // version.json fetch failed — reload anyway, the mount-time
           // updated.check() will sort it out.
           console.info('[sw] version.json fetch failed — requesting app reload');
-          void event.source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
+          void source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
         });
     }
-    void event.source.postMessage({ type: 'VERSION_CHECKED', swVersion: VERSION });
+    void source.postMessage({ type: 'VERSION_CHECKED', swVersion: VERSION });
   }
 });
 
@@ -225,7 +229,11 @@ self.addEventListener('fetch', (event) => {
           })
           .catch(() => {
             // Network down on post-update reload — fall back to precache.
-            return caches.open(PRECACHE_NAME).then((c) => c.match('/') ?? Response.error());
+            // `Cache.match` returns a Promise, so the `??` only works on
+            // the awaited value -- without the await the fallback
+            // resolved to `undefined` and the navigation failed instead
+            // of serving the cached shell.
+            return caches.open(PRECACHE_NAME).then(async (c) => (await c.match('/')) ?? Response.error());
           }),
       );
       return;

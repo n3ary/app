@@ -7,15 +7,15 @@
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { Minus, Plus } from 'lucide-svelte';
-  import type { Route } from '$lib/domain/types';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
+  import type { Route } from '#lib/domain/types.ts';
+  import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
   import {
     Button, Card, CardContent, FavoriteRouteRow, FavoriteStationRow,
     Spinner, Stack, Typography,
-  } from '$lib/ui';
+  } from '#lib/ui/index.ts';
 
   type Props = {
     routes: Route[];

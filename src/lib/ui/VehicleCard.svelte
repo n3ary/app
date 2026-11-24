@@ -10,18 +10,18 @@
 -->
 <script lang="ts">
   import { ArrowRight, Calendar, Map as MapIcon } from 'lucide-svelte';
-  import type { Vehicle } from '$lib/domain/types';
-  import { formatHHMM, formatRelativeMin } from '$lib/domain/types';
-  import type { AtStationLabel, Urgency } from '$lib/domain/buckets';
+  import type { Vehicle } from '#lib/domain/types.ts';
+  import { formatHHMM, formatRelativeMin } from '#lib/domain/types.ts';
+  import type { AtStationLabel, Urgency } from '#lib/domain/buckets.ts';
   import RouteBadge from './RouteBadge.svelte';
   import StationMarkerBadges from './StationMarkerBadges.svelte';
   import { urgencyClass } from './urgencyClass';
   import { iconButtonClass } from './iconButtonClass';
   import { cn } from './cn';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
 
   type Props = {
     vehicle: Vehicle;

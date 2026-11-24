@@ -15,10 +15,10 @@
 // just renders and dispatches.
 
 import { untrack } from 'svelte';
-import { nowTicker } from '$lib/stores/nowTicker.svelte';
-import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-import { refreshBus } from '$lib/stores/refreshBus.svelte';
-import { statusBus } from '$lib/stores/statusBus.svelte';
+import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+import { reconciledVehiclesStore } from '#lib/stores/reconciledVehiclesStore.svelte.ts';
+import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+import { statusBus } from '#lib/stores/statusBus.svelte.ts';
 
 const REFRESH_ID = 'refresh';
 const REFRESH_TIMEOUT_MS = 8_000;

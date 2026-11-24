@@ -2,10 +2,10 @@
 
 import * as Comlink from 'comlink';
 
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
-import type { ReconciledSnapshot } from '$lib/data/gtfs/types';
-import type { ReconcileStats } from '$lib/domain/reconcile';
-import type { Vehicle } from '$lib/domain/types';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+import type { ReconciledSnapshot } from '#lib/data/gtfs/types.ts';
+import type { ReconcileStats } from '#lib/domain/reconcile.ts';
+import type { Vehicle } from '#lib/domain/types.ts';
 
 class ReconciledVehiclesStore {
   vehicles = $state<Vehicle[]>([]);
