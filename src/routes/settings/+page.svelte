@@ -10,6 +10,7 @@
     formatBytes, formatWhen,
   } from '#lib/ui/index.ts';
   import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import { requestAppReload } from '#lib/composables/usePwa.svelte.ts';
   import { deleteTileCache, getTileCacheStatus } from '#lib/map/offlineTiles.ts';
   import type { Feed } from '#lib/data/feeds.ts';
   import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
@@ -187,7 +188,8 @@
 
   /** Force an immediate version check via SvelteKit's updated.check().
    *  Stores the timestamp in localStorage. Does NOT auto-reload —
-   *  the user decides when to refresh. */
+   *  the user decides when to refresh, via the "Update now" button that
+   *  appears once an update is detected. */
   async function handleCheckUpdate(): Promise<void> {
     if (versionCheckInFlight) return;
     versionCheckInFlight = true;
@@ -667,25 +669,46 @@
         </Stack>
 
         <Stack spacing={1}>
-          <!-- Row 1: version + button -->
+          <!-- Row 1: version + buttons -->
           <Stack direction="row" spacing={2} align="center" justify="between">
             <Typography variant="body2" class="font-mono">v{version}</Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              color="primary"
-              disabled={versionCheckInFlight}
-              aria-label="Check for app updates"
-              onclick={handleCheckUpdate}
-            >
-              {#snippet startIcon()}
-                <RefreshCw
-                  size={14}
-                  class={versionCheckInFlight ? 'animate-spin' : ''}
-                />
-              {/snippet}
-              {versionCheckInFlight ? 'Checking…' : 'Check for updates'}
-            </Button>
+            <Stack direction="row" spacing={2} align="center">
+              <!-- When a newer version is deployed, offer the action that
+                   actually applies it. The app detects the update (via
+                   updated.check()) but detection alone never changed the
+                   running bundle -- the service worker handshake does
+                   that -- so a user who wanted to update on demand had no
+                   way to do it. requestAppReload() navigates with the
+                   __sw_reload param, which makes the service worker fetch
+                   fresh HTML instead of serving its cached shell. -->
+              {#if checkUpdateResult === 'found' || updated.current}
+                <Button
+                  variant="contained"
+                  size="small"
+                  color="primary"
+                  aria-label="Apply the available update"
+                  onclick={requestAppReload}
+                >
+                  Update now
+                </Button>
+              {/if}
+              <Button
+                variant="outlined"
+                size="small"
+                color="primary"
+                disabled={versionCheckInFlight}
+                aria-label="Check for app updates"
+                onclick={handleCheckUpdate}
+              >
+                {#snippet startIcon()}
+                  <RefreshCw
+                    size={14}
+                    class={versionCheckInFlight ? 'animate-spin' : ''}
+                  />
+                {/snippet}
+                {versionCheckInFlight ? 'Checking…' : 'Check for updates'}
+              </Button>
+            </Stack>
           </Stack>
           <!-- Row 2: when this version was first seen -->
           <Typography variant="caption" class="text-[color:var(--color-fg-muted)]">

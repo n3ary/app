@@ -22,8 +22,8 @@
 //    own baked __APP_VERSION__ and decides:
 //      - versions match -> SW stays waiting, activates on next nav,
 //        no reload, user sees nothing
-//      - versions differ -> SW calls skipWaiting + clients.claim,
-//        page reloads on the new shell
+//      - versions differ -> SW asks the app to reload with a cache-bust,
+//        the page reloads on the new shell
 //
 //    `updateViaCache: 'none'` tells the browser to bypass its own
 //    HTTP cache for the SW file itself. Without this the browser
@@ -37,8 +37,62 @@
 //    that param to bypass its runtime HTML cache for the post-update
 //    reload (see src/service-worker/index.ts for why we do this instead of
 //    skipWaiting + clients.claim() on first paint).
+//
+//    The handshake has to be triggered from the SW's lifecycle events, not
+//    from a one-shot check right after register() resolves -- see
+//    `registerServiceWorker` below for why.
 
 import { updated } from '$app/state';
+
+/** Set once the app has asked for a reload, so the RELOAD_APP reply and
+ *  the controllerchange event can't both trigger a second navigation. */
+let reloadRequested = false;
+
+/**
+ * Reload the page onto the newly deployed shell.
+ *
+ * The `__sw_reload` param is what makes this work: the service worker's
+ * navigation handler sees it and fetches the HTML straight from the
+ * network instead of serving the stale copy from its runtime HTML cache.
+ * Without the param a plain reload hands back the OLD shell (the
+ * navigation handler is stale-while-revalidate), so the app would keep
+ * running the old bundle and the "update available" state would come
+ * straight back.
+ *
+ * Exported so the settings page can offer the same action to a user who
+ * wants to update on demand.
+ */
+export function requestAppReload(): void {
+  if (reloadRequested) return;
+  reloadRequested = true;
+  const url = new URL(location.href);
+  url.searchParams.set('__sw_reload', String(Date.now()));
+  location.href = url.href;
+}
+
+/** Handle a message from a service worker. */
+function handleSwMessage(data: { type?: string; swVersion?: string } | null): void {
+  if (data?.type === 'VERSION_CHECKED') {
+    console.info(`[pwa] sw version: ${data.swVersion}`);
+  } else if (data?.type === 'RELOAD_APP') {
+    console.info('[pwa] SW requested reload - reloading with cache-bust');
+    requestAppReload();
+  }
+}
+
+/**
+ * Ask one service worker to compare its baked version with the app's.
+ *
+ * Each handshake needs its own MessageChannel: port2 is transferred to the
+ * worker on postMessage and cannot be transferred twice, so a shared
+ * channel would throw on the second handshake.
+ */
+function askSwVersion(worker: ServiceWorker | null): void {
+  if (!worker) return;
+  const channel = new MessageChannel();
+  channel.port1.onmessage = (e) => handleSwMessage(e.data);
+  worker.postMessage({ type: 'CHECK_VERSION', appVersion: __APP_VERSION__ }, [channel.port2]);
+}
 
 export function usePwa(): void {
   // Check for a new deploy immediately on mount, without waiting for the
@@ -71,49 +125,82 @@ export function usePwa(): void {
     // route hydration. The SW will pick up the page on the next
     // navigation if it installs faster than the first paint.
     const handle = window.setTimeout(() => {
-      void navigator.serviceWorker.register('/service-worker.js', {
-        scope: '/',
-        type: 'module',
-        updateViaCache: 'none',
-      }).then(async (reg) => {
-        // A new SW downloaded but is waiting (skipWaiting is NOT called
-        // in the SW install handler — see src/service-worker/index.ts). Send our
-        // app version to the SW and let it decide whether to activate.
-        // If versions match the SW stays waiting and activates on the
-        // next navigation. If they differ the SW calls skipWaiting +
-        // clients.claim itself and the page reloads.
-        if (!reg?.waiting) return;
-        // SW responds with its own version and any reload instruction.
-        // Use a one-shot message listener so we don't accumulate handlers.
-        const channel = new MessageChannel();
-        channel.port1.onmessage = async (e) => {
-          const data = e.data;
-          if (data?.type === 'VERSION_CHECKED') {
-            console.info(`[pwa] sw version: ${data.swVersion}`);
-          } else if (data?.type === 'RELOAD_APP') {
-            // SW confirmed full deploy and wants us to reload. Add a
-            // __sw_reload param so the OLD SW's navigation handler
-            // bypasses its runtime HTML cache on this post-update reload
-            // and fetches fresh HTML. See src/service-worker/index.ts for why
-            // we do this instead of skipWaiting + clients.claim().
-            console.info('[pwa] SW requested reload — reloading with cache-bust');
-            void updated.check();
-            // Navigate to the same page with a __sw_reload param so the
-            // SW's navigation handler bypasses its runtime HTML cache.
-            // location.reload() doesn't accept a URL arg — use URL reassignment.
-            const reloadUrl = new URL(location.href);
-            reloadUrl.searchParams.set('__sw_reload', String(data.timestamp));
-            location.href = reloadUrl.href;
-          }
-        };
-        reg.waiting!.postMessage(
-          { type: 'CHECK_VERSION', appVersion: __APP_VERSION__ },
-          [channel.port2],
-        );
-      }).catch((err) => {
-        console.warn('[pwa] service worker registration failed', err);
-      });
+      void registerServiceWorker();
     }, 0);
     return () => window.clearTimeout(handle);
   });
+}
+
+/**
+ * Register the service worker and wire the version handshake to the
+ * worker's lifecycle events.
+ *
+ * WHY NOT JUST `if (reg.waiting)`: `register()` resolves as soon as the
+ * registration exists. The browser's update algorithm (fetch the script,
+ * compare bytes, install the new worker) is kicked off by that call but
+ * runs in the background, and `registration.waiting` is only set once the
+ * new worker has reached the `installed` state. So reading `reg.waiting`
+ * straight after `register()` resolves is a race, and it usually loses --
+ * `reg.waiting` is still null. The new worker then installs, parks
+ * itself in `waiting` (the SW deliberately does not call skipWaiting),
+ * and NOTHING ever asks it to compare versions: the app shows
+ * "update available" and the app never updates itself, no matter how many
+ * times the user restarts it.
+ *
+ * So the handshake is driven off the events that can produce a waiting
+ * worker: one parked by an earlier visit, the one installing right now,
+ * and any the browser finds later.
+ */
+async function registerServiceWorker(): Promise<void> {
+  try {
+    const reg = await navigator.serviceWorker.register('/service-worker.js', {
+      scope: '/',
+      type: 'module',
+      updateViaCache: 'none',
+    });
+
+    // Ask each distinct waiting worker exactly once. Two events can fire
+    // for the same worker (the `updatefound` listener and the direct
+    // `reg.installing` check), and the SW would answer both -- which
+    // would mean two reload requests.
+    let asked: ServiceWorker | null = null;
+    const askWaiting = (): void => {
+      const worker = reg.waiting;
+      if (!worker || worker === asked) return;
+      asked = worker;
+      askSwVersion(worker);
+    };
+
+    // A worker parked by an earlier visit (e.g. the user closed the app
+    // before the handshake could run).
+    askWaiting();
+
+    // A worker installing right now.
+    const current = reg.installing;
+    if (current) {
+      current.addEventListener('statechange', () => {
+        if (current.state === 'installed') askWaiting();
+      });
+    }
+
+    // Any worker the browser finds from now on.
+    reg.addEventListener('updatefound', () => {
+      const installing = reg.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed') askWaiting();
+      });
+    });
+
+    // Safety net: when a waiting worker finally activates it takes over
+    // as this page's controller. The page is still running the old
+    // bundle at that point, so reload onto the new shell. (The SW does
+    // not call clients.claim(), so this only fires on a real update.)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      console.info('[pwa] controller changed - reloading onto the new shell');
+      requestAppReload();
+    });
+  } catch (err) {
+    console.warn('[pwa] service worker registration failed', err);
+  }
 }

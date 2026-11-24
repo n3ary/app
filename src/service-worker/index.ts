@@ -68,6 +68,7 @@ import {
   cacheFirstOsmTile,
   OSM_TILE_CACHE_NAME,
 } from '../lib/sw/handlers.js';
+import { replyOnHandshakeChannel } from '../lib/sw/handshake.js';
 
 /** Precache the shell entries the plugin injected. */
 const manifest = self.__WB_MANIFEST ?? [];
@@ -167,11 +168,27 @@ self.addEventListener('activate', (event) => {
 // navigation handler detects the param, bypasses its own cache, and fetches
 // fresh HTML. The new SW then caches the fresh HTML in its own bucket.
 self.addEventListener('message', (event) => {
+  // The app sends CHECK_VERSION with a MessageChannel port transferred
+  // alongside the message, and listens for the reply on the other end of
+  // that port. Replying via `event.source.postMessage()` would deliver
+  // the message to the page's `navigator.serviceWorker` 'message' event
+  // instead -- a channel the app never listens on -- so the RELOAD_APP
+  // reply would never arrive and the app would never update itself.
+  // `replyOnHandshakeChannel` sends it on the transferred port, falling
+  // back to the client for callers that do not transfer one.
+  //
   // Capture the source up front: TypeScript cannot carry the
   // `event.source` null-narrowing into the async .then()/.catch()
   // callbacks below, because `source` is a mutable property.
   const source = event.source;
-  if (!source) return;
+  if (!event.ports[0] && !source) return;
+  const reply = (data: {
+    type: 'RELOAD_APP' | 'VERSION_CHECKED';
+    timestamp?: number;
+    swVersion?: string;
+  }): void => {
+    replyOnHandshakeChannel({ ports: event.ports, source }, data);
+  };
   if (event.data?.type === 'CHECK_VERSION') {
     const { appVersion } = event.data as { type: string; appVersion: string };
     console.info(`[sw] CHECK_VERSION: app=${appVersion} sw=${VERSION} match=${appVersion === VERSION}`);
@@ -191,16 +208,16 @@ self.addEventListener('message', (event) => {
           // Signal the app to reload. The app adds ?__sw_reload= to the URL,
           // which the navigation handler detects to bypass the old runtime
           // HTML cache on this post-update reload.
-          void source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
+          reply({ type: 'RELOAD_APP', timestamp: Date.now() });
         })
         .catch(() => {
           // version.json fetch failed — reload anyway, the mount-time
           // updated.check() will sort it out.
           console.info('[sw] version.json fetch failed — requesting app reload');
-          void source.postMessage({ type: 'RELOAD_APP', timestamp: Date.now() });
+          reply({ type: 'RELOAD_APP', timestamp: Date.now() });
         });
     }
-    void source.postMessage({ type: 'VERSION_CHECKED', swVersion: VERSION });
+    reply({ type: 'VERSION_CHECKED', swVersion: VERSION });
   }
 });
 
