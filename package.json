@@ -1,7 +1,7 @@
 {
   "name": "neary",
   "private": true,
-  "version": "26.11.24-7",
+  "version": "26.11.24-8",
   "packageManager": "pnpm@11.5.2",
   "type": "module",
   "imports": {
@@ -20,7 +20,7 @@
     "@playwright/test": "^1.65.1",
     "@sveltejs/adapter-static": "^4.0.1",
     "@sveltejs/kit": "3.4.0",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.2",
     "@tailwindcss/vite": "^4.3.5",
     "@testing-library/svelte": "^5.2.10",
     "@types/node": "^26.1.0",
