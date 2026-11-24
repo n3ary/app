@@ -36,11 +36,28 @@ async function setVisibility(page: Page, state: 'visible' | 'hidden'): Promise<v
   }, state);
 }
 
-/** Read a value out of the app's debug store hooks. */
+/** Read a value out of the app's debug store hooks.
+ *
+ *  The app publishes `window.neary` from a layout effect, which runs
+ *  after hydration. `page.goto()` resolves at the `load` event, which
+ *  can be BEFORE that effect has run -- so the first evaluation of a
+ *  poll right after the goto used to throw "app did not boot" and
+ *  abort the poll instead of retrying. Wait for the boot here (bounded,
+ *  so a genuinely dead app still fails loudly) and only then read. */
 async function readState<T>(page: Page, fn: (stores: any) => T): Promise<T> {
-  return page.evaluate((src) => {
-    const stores = (window as any).neary?.stores;
-    if (!stores) throw new Error('window.neary.stores missing - app did not boot');
+  return page.evaluate(async (src) => {
+    const stores = await new Promise<any>((resolve, reject) => {
+      const deadline = Date.now() + 10_000;
+      const check = (): void => {
+        const s = (window as any).neary?.stores;
+        if (s) return resolve(s);
+        if (Date.now() > deadline) {
+          return reject(new Error('window.neary.stores missing - app did not boot'));
+        }
+        requestAnimationFrame(check);
+      };
+      check();
+    });
     // eslint-disable-next-line no-new-func
     return new Function('stores', `return (${src})(stores);`)(stores);
   }, fn.toString());
