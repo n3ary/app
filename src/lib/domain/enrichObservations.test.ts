@@ -36,6 +36,7 @@ function obs(opts: Partial<LiveVehicleObservation> & { tripId: string }): LiveVe
     routeId: opts.routeId ?? '14',
     directionId: opts.directionId ?? 0,
     startTime: opts.startTime ?? '',
+    startDate: opts.startDate ?? '',
     lat: 46.77,
     lon: 23.62,
     bearing: null,
