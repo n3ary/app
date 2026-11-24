@@ -38,7 +38,7 @@
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "comlink": "^4.4.2",
-    "gtfs-realtime-bindings": "2.1.0",
+    "gtfs-realtime-bindings": "3.0.0",
     "leaflet": "^1.9.4",
     "lucide-svelte": "^1.0.1"
   },
