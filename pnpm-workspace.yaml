@@ -4,6 +4,7 @@ minimumReleaseAgeExclude:
   - '@n3ary/gtfs-spec@0.3.0'
   - '@n3ary/gtfs-spec@0.3.1'
   - '@n3ary/gtfs-spec@0.3.2'
+  - '@n3ary/gtfs-spec@0.7.5'
 
 # Force patched versions of the transitive packages Dependabot flags.
 # Every entry names the advisory it clears and the path the package
