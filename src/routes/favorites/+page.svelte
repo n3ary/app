@@ -46,6 +46,7 @@
   import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
   import type { ScheduleTripStop, StopWithDistance } from '#lib/data/gtfs/types.ts';
   import type { Network, Route, RouteTag, VehicleType } from '#lib/domain/types.ts';
+  import { stationUrl } from '#lib/domain/stationUrl.ts';
   import { vehicleTypeLabel } from '#lib/domain/types.ts';
   import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
   import { STATIONS_PAGE_SIZE } from '#lib/ui/favoritesListConstants.ts';
@@ -708,7 +709,7 @@
   });
 
   function selectStation(id: string) {
-    goto(`/station/${id}`);
+    goto(stationUrl(id));
   }
 
 

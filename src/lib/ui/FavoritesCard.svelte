@@ -7,6 +7,7 @@
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { Minus, Plus } from '@lucide/svelte';
+  import { stationUrl } from '#lib/domain/stationUrl.ts';
   import type { Route } from '#lib/domain/types.ts';
   import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
   import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
@@ -237,7 +238,7 @@
               {:else}
                 <FavoriteStationRow
                   stop={stop}
-                  onbodyclick={() => goto(`/station/${stop.id}`)}
+                  onbodyclick={() => goto(stationUrl(stop.id))}
                   routes={stopRoutes[stop.id]}
                   hasGps={false}
                   variant="card"
