@@ -10,12 +10,12 @@ Tech stack and non-functional targets. Authoritative dependency list is
 | Framework | Svelte 5 + SvelteKit | Tiny runtime, fine-grained reactivity, single-file components, best iOS PWA story |
 | Styling | Tailwind v4 + CSS custom properties | Skinning = swap one `theme.css` |
 | Headless behaviors | bits-ui | Accessible primitives, Svelte 5 native |
-| Icons | lucide-svelte | Per-icon tree-shake |
+| Icons | `@lucide/svelte` | Per-icon tree-shake |
 | Local DB | SQLite-WASM (`@sqlite.org/sqlite-wasm`) + OPFS | Real GTFS as real tables, worker-isolated |
 | DB transport | Comlink-wrapped Web Worker | UI never blocks |
 | Map | Leaflet 1.9 | Small, panes solve layering |
 | Network | Native `fetch` | No axios |
-| PWA | `@vite-pwa/sveltekit` + Workbox | Service worker + version polling |
+| PWA | `@vite-pwa/sveltekit` (build pipeline only) + a hand-rolled SW | Precaching + version handshake. The plugin injects the precache manifest; every runtime strategy is ours — see [pwa.md](../specs/pwa.md) |
 | GTFS-RT | `gtfs-realtime-bindings` | Protobuf decode |
 | TypeScript | 6.x | strict mode on |
 
@@ -23,7 +23,7 @@ Tech stack and non-functional targets. Authoritative dependency list is
 
 | Layer | Pick |
 |---|---|
-| Build | Vite (rolldown-vite) |
+| Build | Vite 8 (Rolldown) |
 | Tests | Vitest + `@testing-library/svelte` |
 | Lint | none |
 

@@ -40,7 +40,7 @@ flowchart TB
   subgraph Browser["Browser (user device)"]
     direction TB
     pwa["PWA<br/>SvelteKit static bundle"]:::browser
-    sw["Service Worker<br/>(Workbox)"]:::browser
+    sw["Service Worker<br/>(hand-rolled)"]:::browser
     opfs[("OPFS<br/>*.sqlite3 + feeds-meta.json")]:::browser
     localstorage[("localStorage<br/>userPrefs, favorites")]:::browser
   end
@@ -80,7 +80,7 @@ flowchart TB
 | **Hetzner CX23 (nbg1)** — `@gtfs/rt` Fastify server | Polls each feed's `realtime.vehicle_positions` URL, applies per-feed adapter quirks, validates against the spec, serves cleaned protobuf at `/rt/<feed>/vehicle_positions` | n3ary (this org) | €5.49/month (CX23) | Live RT offline (UI shows schedule-only data) |
 | **Per-feed RT endpoints** (e.g. `cluj-rt-feed.gtfs.ro`) | Live protobuf per operator; polled by the Hetzner server | Operators | Free | Live view falls back to schedule-only for that feed |
 | **Browser — PWA bundle** | The actual app | User device | Free | — |
-| **Browser — Service Worker** (Workbox) | Asset caching + `_app/version.json` polling | User device | Free | PWA may serve stale assets after a deploy |
+| **Browser — Service Worker** (hand-rolled; `@vite-pwa/sveltekit` is used only to inject the precache manifest) | Asset caching + the `CHECK_VERSION` / `RELOAD_APP` update handshake | User device | Free | PWA may serve stale assets after a deploy |
 | **Browser — OPFS** | `feeds-meta.json` + per-feed `*.sqlite3` blobs | User device | Free | App can't load feeds (forces re-download on next launch) |
 | **Browser — localStorage** | `userPrefs` (theme, feedId, toggles) + `favorites` per-feed | User device | Free | App may not remember settings between sessions |
 

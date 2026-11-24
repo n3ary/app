@@ -3,6 +3,8 @@
 Reasoning behind the PWA setup. Implementation:
 [vite.config.ts](../../vite.config.ts),
 [src/service-worker/index.ts](../../src/service-worker/index.ts),
+[src/lib/composables/usePwa.svelte.ts](../../src/lib/composables/usePwa.svelte.ts),
+[src/lib/sw/handshake.ts](../../src/lib/sw/handshake.ts),
 [src/routes/+layout.svelte](../../src/routes/+layout.svelte),
 [static/manifest.json](../../static/manifest.json).
 
@@ -39,52 +41,97 @@ this". It's:
 
 ## Update propagation
 
-Two layers, both keyed on the same `package.json` version.
+Two layers, both keyed on the same `package.json` version. The service
+worker applies the update; SvelteKit's polling only *notices* it.
 
-### Service worker (primary)
+### Service worker handshake (primary)
 
 The SW in [src/service-worker/index.ts](../../src/service-worker/index.ts) precaches
 the app shell + manifest in a bucket named `precache-v<version>`.
 On `activate`, every other `precache-v*` bucket is dropped, so an
-outdated shell never gets served from cache. `skipWaiting` +
-`clients.claim` make the new SW take over on the next paint — the
-PWA staleness trap (saved app crashes / white-screens on first open
-after a deploy) goes away because the new HTML is what's served,
-not the old cached shell.
+outdated shell never gets served from cache.
+
+**The SW deliberately does NOT call `skipWaiting()` and does NOT call
+`clients.claim()`.** That is the whole design, not an oversight:
+
+- `skipWaiting` + `clients.claim` would activate the new worker under
+  the running page. The page would then reload through the *old*
+  worker's navigation handler, which serves HTML from the runtime HTML
+  cache — so the user lands back on the OLD shell and the
+  "update available" state comes straight back. That was the original
+  "update banner insists after updating" bug.
+- Instead, the app and the SW negotiate. The app sends `CHECK_VERSION`
+  with its `__APP_VERSION__`; the SW compares it against its own baked
+  version, confirms the deploy is complete by re-reading
+  `/_app/version.json`, and replies `RELOAD_APP`. The app then
+  navigates with `?__sw_reload=<timestamp>`.
+- The `__sw_reload` param is what makes the reload bite: the (still
+  active, old) SW's navigation handler sees the param, strips it, and
+  fetches the HTML straight from the network instead of serving the
+  cached copy. The fresh shell is then written back into the runtime
+  HTML cache.
+
+Three details make the handshake actually work. Each one was a real,
+separately-shipped bug:
+
+1. **The handshake is event-driven, not a one-shot check.**
+   `registration.waiting` is only set once a new worker reaches the
+   `installed` state, so reading it right after `register()` resolves is
+   a race that usually loses — the worker is still installing and
+   `waiting` is null. The new worker then parks in `waiting` and
+   nothing ever asks it anything, so the app detects the update and
+   never applies it, no matter how often the user restarts it. The app
+   therefore asks each *distinct* waiting worker exactly once, driven
+   from `updatefound`, from the installing worker's `statechange`, and
+   once for a worker already parked by an earlier visit.
+2. **The reply goes back on the transferred port.** The app sends
+   `CHECK_VERSION` with a `MessageChannel` and listens on
+   `port1.onmessage`. Replying via `event.source.postMessage()`
+   delivers to the page's `navigator.serviceWorker` `message` event —
+   a channel the app never reads — so `RELOAD_APP` never arrives. The
+   reply goes out on `event.ports[0]`, with `event.source` only as a
+   fallback ([handshake.ts](../../src/lib/sw/handshake.ts)).
+3. **There is an affordance.** Detection is not an update. Settings
+   shows an **Update now** button next to *Check for updates* whenever
+   an update is pending; it calls the same `requestAppReload()` the
+   handshake uses.
+
+A `controllerchange` listener is the safety net: when a waiting worker
+finally activates it takes over as the page's controller, and the page
+reloads onto the new shell.
 
 ### SvelteKit version polling (secondary)
 
-Belt-and-suspenders. The root layout
-([src/routes/+layout.svelte](../../src/routes/+layout.svelte)) subscribes
-to `updated.current` from `$app/state`. SvelteKit's client polls
-`/_app/version.json` every 60 s; on mismatch it flips `updated.current`
-to true. Since SvelteKit 3 it also flips `updated.current` when the tab
-regains focus or becomes visible, so the update is noticed on the way
-back into the app rather than only on the poll tick. The layout never
-reloads a tab the rider is reading
-([src/lib/sw/appUpdate.ts](../../src/lib/sw/appUpdate.ts)): a hidden
-tab reloads immediately; a visible tab gets an "Update available"
-banner with a Reload button, and the first backgrounding applies the
-update silently. Catches the edge case where the SW itself fails to
-claim (browser bug, private mode, etc.) — the update lands within a
-minute either way, without yanking the board mid-read.
+Belt-and-suspenders. [src/routes/+layout.svelte](../../src/routes/+layout.svelte)
+calls `usePwa()`, which runs `updated.check()` on mount so a fresh
+deploy is noticed immediately instead of on the first auto-poll tick.
+SvelteKit's client polls `/_app/version.json` every 60 s and flips
+`updated.current` to true on a mismatch. Since SvelteKit 3 it also
+re-checks when the tab regains focus or becomes visible, so the update
+is noticed on the way back into the app rather than only on the poll
+tick.
 
-Two guards keep the banner honest:
+`updated.current` is consumed by **Settings only** — the *Check for
+updates* button, the *Update now* button, and the result line under the
+version. There is no global banner and the app never reloads a tab the
+rider is reading on its own; applying the update is always either the
+service-worker handshake or an explicit tap. That is deliberate: the
+board is often the thing the user is mid-read on.
 
-- **Re-nag suppression.** After acting on an update (any reload path —
-  the banner's Reload goes through the flow's own reload), the flow
-  stays quiet for 30 min even if the poll still reports a mismatch:
-  the served shell legitimately lags `version.json` while the new SW
-  installs (precaching is slow on patchy signal), so an immediate
-  re-prompt means "couldn't apply yet", not "another update". The
-  timestamp lives in `sessionStorage` (survives the reload the flow
-  triggers, resets on a new session).
+> [!NOTE]
+> There is no re-nag suppression. The spec used to claim a 30-minute
+> quiet window backed by `sessionStorage`; no such code exists and none
+> is needed, because the "update available" state is only surfaced in
+> Settings and the handshake applies the update on its own.
+
+One guard keeps the SW honest:
+
 - **`waitUntil` for background refreshes.** Every piece of SW
   background work (the runtime-HTML revalidate in particular) is
   handed to `FetchEvent.waitUntil`. Without it the browser can kill
   the SW the instant `respondWith` settles — iOS does this
   aggressively — the refresh dies mid-flight, the cached shell stays
-  stale forever, and the banner reappears after every reload no
+  stale forever, and the update state reappears after every reload no
   matter how often the user updates.
 
 ```js
@@ -99,12 +146,16 @@ Two guards keep the banner honest:
 
 Why 60 s: long enough to be invisible in network panels and battery use,
 short enough that a returning user catches a fresh deploy within a few
-minutes.
+minutes. SvelteKit 3 defaults this to one hour, so the 60 s bound is
+pinned explicitly rather than inherited.
 
 ## Service worker details
 
 [src/service-worker/index.ts](../../src/service-worker/index.ts) is hand-rolled (not
-workbox). It's ~100 lines and easy to audit. Two strategies:
+workbox). `@vite-pwa/sveltekit` is used only as the build pipeline: its
+`buildSW` strategy injects the precache manifest (`self.__WB_MANIFEST`)
+into our source and emits the bundle at `/service-worker.js`. Every
+runtime strategy below is ours, in [handlers.ts](../../src/lib/sw/handlers.ts).
 
 ### Precache (build-time)
 
@@ -158,19 +209,25 @@ workbox). It's ~100 lines and easy to audit. Two strategies:
   sqlite is local. Caching at the SW would serve stale vehicles or
   double-cache large files; we don't.
 
+### Navigation: stale-while-revalidate, not network-first
+
+`networkFirstNavigation` in [handlers.ts](../../src/lib/sw/handlers.ts)
+serves the cached HTML **first** and refreshes it in the background
+under `waitUntil`, so a flaky connection never produces a blank screen.
+It falls back to the precache bucket (not just the runtime cache)
+because the runtime cache is only populated after the first online
+visit. The `__sw_reload` param is the one path that bypasses the cache
+and refetches from the network.
+
 ### Activation
 
-- `install` → precache, then `skipWaiting` so the new SW activates
-  on the next open without waiting for existing tabs to close.
-- `activate` → delete any other `precache-v*` cache, then
-  `clients.claim` so the new SW takes over the current page.
-  The next paint uses the new shell, fixing the saved-PWA crash
-  on first open after a deploy. Because claiming also deletes the
-  running page's precache out from under it, the layout listens for
-  `controllerchange` and runs the hidden-first update flow
-  ([appUpdate.ts](../../src/lib/sw/appUpdate.ts)) the moment a new SW
-  takes over — a claimed page never keeps running on pruned assets.
-  First-install claims are ignored (nothing of ours was pruned).
+- `install` → precache, and **stop**. No `skipWaiting`: the new worker
+  parks in `waiting` until the app's handshake releases it.
+- `activate` → delete any other `precache-v*` cache (and any stale
+  `runtime-html-v*` bucket). No `clients.claim()`: the page keeps its
+  own controller until it reloads onto the new shell.
+- The old shell is never served from a pruned precache because the
+  precache lookup is keyed on the manifest baked into the *active* SW.
 
 ### Registration
 
@@ -244,7 +301,7 @@ What's offline-safe and what isn't:
 | User has feeds.json cached, never picked a feed, opens offline | **Partial.** Shell + feed picker load, but no sqlite is downloaded. They can't pick a feed. |
 | Map view, offline | **Works** for the feed's bbox at prefetched zooms and for any tile the user previously viewed; uncached areas show the gray grid. Route shapes, stops and vehicles are local data and always render. |
 | User has never visited, opens offline | **Fails.** No shell, no data, no fallback. |
-| Saved PWA user, post-deploy, opens online | **Works.** SW detects new version, activates, claims clients, next paint uses new shell. |
+| Saved PWA user, post-deploy, opens online | **Works.** The SW parks in `waiting`, the handshake compares versions and asks the page to reload with `__sw_reload`, and the next paint uses the new shell. |
 | Saved PWA user, post-deploy, opens offline (new shell not yet precached) | **Degraded but recoverable.** Old shell loads, points at asset paths the network can't serve. The boot watchdog auto-reloads twice, then shows a blocking Reload overlay instead of a dead white screen; once reconnected the next open repairs itself. |
 
 ## Cache headers
@@ -253,6 +310,12 @@ What's offline-safe and what isn't:
 the service worker, and `index.html` from CDN caching. Without these
 overrides the version poll would lag the CDN TTL and the update story
 silently breaks.
+
+The same file carries the security headers (CSP, HSTS, nosniff, …) for
+the whole site. The deploy workflow **appends** the service-worker
+no-cache rule to it rather than overwriting it — writing the file with
+`>` used to drop the CSP and every per-path cache rule from the live
+site.
 
 ## iOS safe-area
 
@@ -278,7 +341,15 @@ icons + name there; the PWA plugin picks it up at build time.
 
 ## Test
 
-[tests/pwa.spec.ts](../../tests/pwa.spec.ts) is a Playwright smoke test.
-It serves the production build, asserts the SW is generated and
-registers, and verifies the precache bucket name matches the current
-version. Run locally with `pnpm exec playwright test`.
+Two Playwright suites, run against the production build:
+
+- [tests/pwa.spec.ts](../../tests/pwa.spec.ts) — smoke test. Asserts the
+  SW is generated, registers, and creates the versioned precache bucket.
+- [tests/pwa-update.spec.ts](../../tests/pwa-update.spec.ts) — the update
+  regression test. Serves a build over a test-owned static server,
+  swaps in a slow-double service worker that never calls
+  `skipWaiting`, and asserts the page navigates with `__sw_reload=`
+  after the handshake. It fails on the pre-fix code (the worker parks
+  in `waiting` and the URL never changes).
+
+Run locally with `pnpm exec playwright test`.

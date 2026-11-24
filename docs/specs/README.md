@@ -13,7 +13,7 @@ is in the code, there's no spec doc here.
 | [live-data-pipeline.md](live-data-pipeline.md) | Reconciler rationale, source-of-truth for tz handling, freshness rules |
 | [multi-source-live-data.md](multi-source-live-data.md) | Multi-URL `realtime.vehicle_positions`, per-tick merge, no provider-specific clients, no client-side keys |
 | [ci-and-versioning.md](ci-and-versioning.md) | Release-bot model, deploy guard (`actor == n3ary-release-bot[bot]`), post-deploy cache purge + `cf-cache-status: MISS` smoke test. Workflow YAML is short; the *why* behind each step (and the failure modes that motivated the purge + verify) lives here |
-| [pwa.md](pwa.md) | SvelteKit version polling, Cloudflare Pages cache headers, iOS safe-area |
+| [pwa.md](pwa.md) | The service-worker update handshake (why no `skipWaiting`/`clients.claim`), SvelteKit version polling, Cloudflare Pages cache headers, iOS safe-area |
 
 What is NOT a spec here (read the code instead):
 
