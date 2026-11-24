@@ -29,7 +29,7 @@
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.6",
-    "vitest": "^4.1.11"
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@n3ary/gtfs-spec": "^0.3.2",
