@@ -37,7 +37,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
-  import { Heart } from 'lucide-svelte';
+  import { Heart } from '@lucide/svelte';
   import {
     Card, CardContent, Chip, Collapsible, FavoriteRouteRow, FavoriteStationRow,
     FavoritesCard, SelectFeedCard, Spinner, Stack, Tabs, TripStopList, Typography,

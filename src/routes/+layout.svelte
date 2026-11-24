@@ -3,7 +3,7 @@
   import '#lib/styles/app.css';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Heart, MapPin, Settings } from 'lucide-svelte';
+  import { Heart, MapPin, Settings } from '@lucide/svelte';
   import { AppLayout, type HeaderHealth } from '#lib/ui/index.ts';
   import { usePwa } from '#lib/composables/usePwa.svelte.ts';
   import { useGtfsLifecycle } from '#lib/composables/useGtfsLifecycle.svelte.ts';

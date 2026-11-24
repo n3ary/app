@@ -2,7 +2,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { ArrowRightLeft, ChevronDown, Map as MapIcon } from 'lucide-svelte';
+  import { ArrowRightLeft, ChevronDown, Map as MapIcon } from '@lucide/svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, SelectFeedCard, Spinner,
     Stack, ToggleGroup, TripStopList, Typography, tagIcon, hasTagIcon,

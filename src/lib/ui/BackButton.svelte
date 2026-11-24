@@ -2,7 +2,7 @@
 
 <!-- Intra-view navigation (tab swaps, direction swaps) MUST use `goto(..., { replace: true })` so "back" returns to where the user came from instead of walking every tab they touched. -->
 <script lang="ts">
-  import { ArrowLeft } from 'lucide-svelte';
+  import { ArrowLeft } from '@lucide/svelte';
   import { goto } from '$app/navigation';
   import IconButton from './IconButton.svelte';
 

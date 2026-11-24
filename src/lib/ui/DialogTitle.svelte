@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { Dialog as Bits } from 'bits-ui';
-  import { X } from 'lucide-svelte';
+  import { X } from '@lucide/svelte';
   import { cn } from './cn';
 
   type Props = {

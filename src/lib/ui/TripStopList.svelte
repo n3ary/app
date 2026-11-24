@@ -14,7 +14,7 @@
   station on /station/[id] to avoid redundancy).
 -->
 <script lang="ts">
-  import { ArrowUpRight, ExternalLink } from 'lucide-svelte';
+  import { ArrowUpRight, ExternalLink } from '@lucide/svelte';
   import type { ScheduleTripStop } from '#lib/data/gtfs/types.ts';
   import { formatHHMM } from '#lib/domain/types.ts';
   import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';

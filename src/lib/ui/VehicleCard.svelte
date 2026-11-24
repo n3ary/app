@@ -9,7 +9,7 @@
   union; this component reads it.
 -->
 <script lang="ts">
-  import { ArrowRight, Calendar, Map as MapIcon } from 'lucide-svelte';
+  import { ArrowRight, Calendar, Map as MapIcon } from '@lucide/svelte';
   import type { Vehicle } from '#lib/domain/types.ts';
   import { formatHHMM, formatRelativeMin } from '#lib/domain/types.ts';
   import type { AtStationLabel, Urgency } from '#lib/domain/buckets.ts';

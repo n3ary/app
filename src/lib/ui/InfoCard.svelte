@@ -9,7 +9,7 @@
   type Variant = 'default' | 'primary' | 'danger' | 'warning';
 
   type Props = {
-    /** Icon snippet (typically a lucide-svelte icon sized 16). Wrapped
+    /** Icon snippet (typically an @lucide/svelte icon sized 16). Wrapped
      *  in a tinted color span keyed off `variant`. */
     icon?: Snippet;
     title: string;

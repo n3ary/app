@@ -2,7 +2,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { AlertTriangle, Heart, MapPin, Search, X } from 'lucide-svelte';
+  import { TriangleExclamationPoint, Heart, MapPin, Search, X } from '@lucide/svelte';
   import {
     Box, Button, Card, CardContent, FavoritesCard, IconButton,
     InfoCard, NoLocationCard, SelectFeedCard, Spinner, Stack, StationCard,
@@ -591,7 +591,7 @@
       {/if}
       {#if boardsError}
         <InfoCard variant="danger" title="Failed to load nearby stations">
-          {#snippet icon()}<AlertTriangle size={16} />{/snippet}
+          {#snippet icon()}<TriangleExclamationPoint size={16} />{/snippet}
           {#snippet body()}{boardsError}{/snippet}
         </InfoCard>
       {:else if !boards}

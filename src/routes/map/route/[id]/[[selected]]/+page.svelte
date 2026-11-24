@@ -1,7 +1,7 @@
 <!-- By-route, by-direction map. URL (path only): /map/route/[id] (multi, not yet), /map/route/[id]_0|[id]_1 (single), /map/route/[id]_0|[id]_1/[v] (vehicle highlighted). Renders the shape polyline, every stop along the representative trip, the user's current GPS, and one marker per active trip positioned by domain prediction (linear interpolation between consecutive stops at reactive nowMin). Schedule-only / not-yet-active vehicles are dimmed; vehicles past their terminus drop off. Direction-swap and zoom controls live in the header card to match the schedule view's chrome. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ArrowRightLeft, Bus, Calendar, Heart, Maximize2, Minus, Plus } from 'lucide-svelte';
+  import { ArrowRightLeft, Bus, Calendar, Heart, Maximize2, Minus, Plus } from '@lucide/svelte';
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, RouteMap,
     SelectFeedCard, Spinner, Stack, Typography, tagIcon,

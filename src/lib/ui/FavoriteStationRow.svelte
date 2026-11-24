@@ -1,7 +1,7 @@
 <!-- FavoriteStationRow: plain tappable station row used by the search overlay (with optional distance) and /favorites. Tapping the row navigates to /station/[id] where the marker dropdown lives via the StationCard avatar. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { Bus } from 'lucide-svelte';
+  import { Bus } from '@lucide/svelte';
   import type { Route } from '#lib/domain/types.ts';
   import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
   import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';

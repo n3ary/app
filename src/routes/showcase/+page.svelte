@@ -17,9 +17,7 @@
   import { statusBus } from '#lib/stores/statusBus.svelte.ts';
   import { userPrefs, type Theme } from '#lib/stores/userPrefs.svelte.ts';
   import { favoritesStore, type StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
-  import {
-    Bus, Locate, MapPin, RefreshCw, Search, Sun, Moon,
-  } from 'lucide-svelte';
+  import { Bus, Locate, MapPin, RefreshCw, Search, Sun, Moon } from '@lucide/svelte';
 
   // Interactive state
   let switchOn = $state(true);

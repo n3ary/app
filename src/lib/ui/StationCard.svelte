@@ -8,10 +8,7 @@
   fighting the card.
 -->
 <script lang="ts">
-  import {
-    ArrowDownLeft, ArrowUpRight, AlertTriangle, Bus, ChevronDown, Clock,
-    MapPin, type Icon as LucideIcon,
-  } from 'lucide-svelte';
+  import { ArrowDownLeft, ArrowUpRight, TriangleExclamationPoint, Bus, ChevronDown, Clock, MapPin, type LucideIcon } from '@lucide/svelte';
   import type { Route, Station, Vehicle } from '#lib/domain/types.ts';
   import { compareRouteShortName } from '#lib/domain/types.ts';
   import {
@@ -343,12 +340,12 @@
   // section render with, so the eye reads them as one. Lives here
   // because it's purely visual mapping; the bucket itself and its
   // human-readable label are still the domain's call.
-  const BUCKET_META: Record<ArrivalBucket, { icon: typeof LucideIcon; accent: 'success' | 'danger' | 'warning' | 'muted' }> = {
+  const BUCKET_META: Record<ArrivalBucket, { icon: LucideIcon; accent: 'success' | 'danger' | 'warning' | 'muted' }> = {
     'at-station': { icon: MapPin,         accent: 'success' },
     incoming:     { icon: Clock,          accent: 'success' },
     'drop-off':   { icon: ArrowDownLeft,  accent: 'danger' },
     departed:     { icon: ArrowUpRight,   accent: 'danger' },
-    'off-route':  { icon: AlertTriangle,  accent: 'warning' },
+    'off-route':  { icon: TriangleExclamationPoint,  accent: 'warning' },
   };
   const ACCENT_FG: Record<'success' | 'danger' | 'warning' | 'muted', string> = {
     success: 'text-[color:var(--color-success)]',
