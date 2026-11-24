@@ -18,6 +18,7 @@ import {
   pickContrastingText,
   type Route,
 } from '#lib/domain/types.ts';
+import { stationUrl } from '#lib/domain/stationUrl.ts';
 
 /** Render-ready vehicle for the current nowMin. Mirrors the shape
  *  produced by useRouteMapView's `markers` derivation. Kept here too
@@ -221,7 +222,7 @@ export function stopPopupHtml(
   return `<div style="font:13px/1.3 ui-sans-serif,system-ui;min-width:160px;">
     <div style="display:flex;align-items:center;gap:5px;">
       <span style="font-weight:600;flex:1;min-width:0;">${escapeHtml(name)}</span>
-      <a href="/station/${stopId}" title="Open station" aria-label="Open station ${escapeHtml(name)}" style="
+      <a href="${stationUrl(stopId)}" title="Open station" aria-label="Open station ${escapeHtml(name)}" style="
         display:inline-flex;align-items:center;justify-content:center;
         color:#555;text-decoration:none;flex-shrink:0;">
         ${EXTERNAL_LINK_SVG}
