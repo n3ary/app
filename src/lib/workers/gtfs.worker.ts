@@ -213,6 +213,7 @@ const api: GtfsRepo = {
       stopId,
       nowMs,
       windowMinutes,
+      state.currentFeedHasFrequencies,
     );
   },
   async getStationBoardsNear(lat, lon, radiusMeters, maxStations, nowMs, windowMinutes) {
@@ -225,6 +226,7 @@ const api: GtfsRepo = {
       maxStations,
       nowMs,
       windowMinutes,
+      state.currentFeedHasFrequencies,
     );
   },
 
@@ -237,6 +239,7 @@ const api: GtfsRepo = {
       localDate,
       fromMin,
       windowMinutes,
+      state.currentFeedHasFrequencies,
     );
   },
   async getActiveRouteIdsInWindow(localDate, nowMin, windowMinutes) {
@@ -245,6 +248,7 @@ const api: GtfsRepo = {
       localDate,
       nowMin,
       windowMinutes,
+      state.currentFeedHasFrequencies,
     );
   },
   async getStopsAlongTrip(tripId) {
@@ -257,7 +261,7 @@ const api: GtfsRepo = {
     return getShapeForRouteDir(await ensureDb(), routeId, directionId);
   },
   async getWeeklySchedule(routeId, directionId) {
-    return getWeeklySchedule(await ensureDb(), routeId, directionId);
+    return getWeeklySchedule(await ensureDb(), routeId, directionId, state.currentFeedHasFrequencies);
   },
   async getRouteDirectionEndpoints(routeId, directionId) {
     return getRouteDirectionEndpoints(await ensureDb(), routeId, directionId);
@@ -271,6 +275,7 @@ const api: GtfsRepo = {
       localMin,
       lookbackMin,
       lookaheadMin,
+      state.currentFeedHasFrequencies,
     );
   },
 
