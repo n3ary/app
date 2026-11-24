@@ -1,6 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { SvelteKitPWA } from '@vite-pwa/sveltekit';
+import { LegacySvelteKitPWA } from '@vite-pwa/sveltekit/legacy';
 import { defineConfig } from 'vite';
 import { readFileSync } from 'node:fs';
 
@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     sveltekit(),
-    SvelteKitPWA({
+    LegacySvelteKitPWA({
       // The DevPlugin's `transformIndexHtml` injects a registration
       // script in dev that calls `navigator.serviceWorker.register`
       // against `/service-worker.js`. In dev that file is the raw
@@ -32,15 +32,21 @@ export default defineConfig({
       // and the `define` is applied), and src/routes/+layout.svelte
       // registers the SW in production anyway -- so the dev script
       // is pure overhead in dev.
-      strategies: 'injectManifest',
+      // @vite-pwa/sveltekit 2.x renamed the `injectManifest` strategy
+      // to `buildSW` and no longer infers the SW entry point: the
+      // source has to be named explicitly via `swSrc`.
+      strategies: 'buildSW',
       // the plugin generates a final SW with the precache manifest
-      // injected. The default srcDir is 'src' which is where our SW
-      // lives, so we don't override it.
-      // Vite's `define` injects the version at build time. The SW
-      // reads it as `__APP_VERSION__`. We can't import package.json
-      // from the SW because the SW is built by a separate Vite pass
-      // whose module graph doesn't include it.
-      injectManifest: {
+      // injected. Our SW lives at src/service-worker.ts.
+      // The SW is built by a separate Vite pass whose module graph
+      // doesn't include package.json, so the version has to be handed
+      // to that pass explicitly through `define` -- the SW reads it as
+      // `__APP_VERSION__`.
+      buildSW: {
+        swSrc: 'src/service-worker.ts',
+        define: {
+          __APP_VERSION__: JSON.stringify(VERSION),
+        },
         globPatterns: [
           // Precache the SvelteKit-emitted shell. The plugin's
           // default glob also picks up `client/**` from
