@@ -8,7 +8,7 @@
  * selected). Feed-agnostic — works for any published feed registry.
  */
 
-import type { Feed } from '$lib/data/feeds';
+import type { Feed } from '#lib/data/feeds.ts';
 
 /** Approximate great-circle distance in km between two lat/lon pairs.
  *  Coarse enough for a "you're ~300 km from this feed" message;

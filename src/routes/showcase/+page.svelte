@@ -10,13 +10,13 @@
     StationCard, StationMarkerBadge, StationMarkerBadges, StationMarkerDropdown,
     StatusBar, StatusDot, Switch, Tabs, TextField, ToggleGroup,
     Tooltip, TripStopList, Typography, TypeBadge, VehicleCard,
-  } from '$lib/ui';
-  import type { Route, Station, Vehicle, VehicleType } from '$lib/domain/types';
-  import type { ScheduleTripStop, StopWithDistance } from '$lib/data/gtfs/types';
-  import type { BoardRow } from '$lib/domain/stationBoard';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
-  import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
-  import { favoritesStore, type StationMarker } from '$lib/stores/favoritesStore.svelte';
+  } from '#lib/ui/index.ts';
+  import type { Route, Station, Vehicle, VehicleType } from '#lib/domain/types.ts';
+  import type { ScheduleTripStop, StopWithDistance } from '#lib/data/gtfs/types.ts';
+  import type { BoardRow } from '#lib/domain/stationBoard.ts';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+  import { userPrefs, type Theme } from '#lib/stores/userPrefs.svelte.ts';
+  import { favoritesStore, type StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
   import {
     Bus, Locate, MapPin, RefreshCw, Search, Sun, Moon,
   } from 'lucide-svelte';
@@ -192,7 +192,7 @@
   <header>
     <Typography variant="h2">UI primitives</Typography>
     <Typography variant="body2" class="text-[color:var(--color-fg-muted)]">
-      Every primitive in <code>$lib/ui</code>, exercised. Header / status bar / bottom nav now
+      Every primitive in <code>#lib/ui/index.ts</code>, exercised. Header / status bar / bottom nav now
       live in the global layout; theme switching is in
       <a href="/settings" class="underline">Settings</a>.
     </Typography>

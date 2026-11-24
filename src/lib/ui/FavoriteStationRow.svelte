@@ -2,10 +2,10 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { Bus } from 'lucide-svelte';
-  import type { Route } from '$lib/domain/types';
-  import type { StopWithDistance } from '$lib/data/gtfs/types';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { STATION_MARKER_ICONS, STATION_MARKER_ACCENT } from '$lib/stores/favoritesStore.svelte';
+  import type { Route } from '#lib/domain/types.ts';
+  import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { STATION_MARKER_ICONS, STATION_MARKER_ACCENT } from '#lib/stores/favoritesStore.svelte.ts';
   import Avatar from './Avatar.svelte';
   import RouteChipsRow from './RouteChipsRow.svelte';
   import StationMarkerDropdown from './StationMarkerDropdown.svelte';

@@ -25,14 +25,14 @@
 //   neary.setLocation(<lat>, <lon>)        // pin a mock GPS fix
 //   neary.clearLocation()                  // resume real GPS
 
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
-import { favoritesStore } from '$lib/stores/favoritesStore.svelte';import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-import { refreshBus } from '$lib/stores/refreshBus.svelte';
-import { stationsViewStore } from '$lib/stores/stationsViewStore.svelte';
-import { statusBus } from '$lib/stores/statusBus.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+import { reconciledVehiclesStore } from '#lib/stores/reconciledVehiclesStore.svelte.ts';
+import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+import { stationsViewStore } from '#lib/stores/stationsViewStore.svelte.ts';
+import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
 export function useLayoutSideEffects(): void {
   // Theme: reflect on <html data-theme>.

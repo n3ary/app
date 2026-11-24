@@ -3,19 +3,19 @@
   import { page } from '$app/state';
   import {
     Card, CardContent, SelectFeedCard, Spinner, Stack, StationCard, Typography,
-  } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import { getUpcomingStops, getUpcomingStopsForRouteDir } from '$lib/data/gtfs/upcomingStops';
-  import { createStationBoardsController } from '$lib/data/stationBoardsController.svelte';
-  import type { StationBoardInput } from '$lib/data/stationBoardsController.svelte';
-  import { DEFAULT_CONFIG } from '$lib/domain/config';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { feedConfigStore } from '$lib/stores/feedConfigStore.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import type { StationMarker } from '$lib/stores/favoritesStore.svelte';
-  import { refreshBus } from '$lib/stores/refreshBus.svelte';
-  import { stationsViewStore } from '$lib/stores/stationsViewStore.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
+  } from '#lib/ui/index.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import { getUpcomingStops, getUpcomingStopsForRouteDir } from '#lib/data/gtfs/upcomingStops.ts';
+  import { createStationBoardsController } from '#lib/data/stationBoardsController.svelte.ts';
+  import type { StationBoardInput } from '#lib/data/stationBoardsController.svelte.ts';
+  import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { feedConfigStore } from '#lib/stores/feedConfigStore.svelte.ts';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+  import type { StationMarker } from '#lib/stores/favoritesStore.svelte.ts';
+  import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+  import { stationsViewStore } from '#lib/stores/stationsViewStore.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
   // Arrivals window owned by DEFAULT_CONFIG (shared with the
   // Stations / home view). 18 h from any wall-clock time covers

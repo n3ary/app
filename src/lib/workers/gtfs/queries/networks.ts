@@ -1,5 +1,5 @@
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Network } from '$lib/domain/types';
+import type { Network } from '#lib/domain/types.ts';
 import { selectAll } from '../sqlHelpers';
 
 /** Fallback for blobs built before network_color was added to the pipeline. */

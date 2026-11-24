@@ -41,15 +41,15 @@
 
 import { untrack } from 'svelte';
 import * as Comlink from 'comlink';
-import { BOOT_BIND_STALL_MS } from '$lib/sw/bootWatchdog';
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
-import { scheduleTilePrefetch } from '$lib/map/offlineTiles';
-import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-import { stationsViewStore } from '$lib/stores/stationsViewStore.svelte';
-import { statusBus } from '$lib/stores/statusBus.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
+import { BOOT_BIND_STALL_MS } from '#lib/sw/bootWatchdog.ts';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+import { scheduleTilePrefetch } from '#lib/map/offlineTiles.ts';
+import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { reconciledVehiclesStore } from '#lib/stores/reconciledVehiclesStore.svelte.ts';
+import { stationsViewStore } from '#lib/stores/stationsViewStore.svelte.ts';
+import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
 
 export function useGtfsBind(): {
   bumpEpoch: () => void;

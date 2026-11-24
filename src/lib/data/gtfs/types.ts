@@ -6,10 +6,10 @@
  * types so it stays trivially shareable between worker and main thread.
  */
 
-import type { Feed } from '$lib/data/feeds';
-import type { Network, Route, RouteTag, Station, Vehicle } from '$lib/domain/types';
-import type { NearyFeedConfig } from '$lib/workers/gtfs/queries/feedConfig';
-import type { ReconcileStats } from '$lib/domain/reconcile';
+import type { Feed } from '#lib/data/feeds.ts';
+import type { Network, Route, RouteTag, Station, Vehicle } from '#lib/domain/types.ts';
+import type { NearyFeedConfig } from '#lib/workers/gtfs/queries/feedConfig.ts';
+import type { ReconcileStats } from '#lib/domain/reconcile.ts';
 
 export interface StopWithDistance extends Station {
   /** Meters from the query coordinate. Optional because the by-id
@@ -220,7 +220,7 @@ export interface GtfsRepo {
   getRoutesThroughStations(filter: {
     /** Mode filter: only routes whose GTFS route_type matches this
      *  VehicleType. undefined = no mode filter. */
-    modes?: import('$lib/domain/types').VehicleType;
+    modes?: import('#lib/domain/types.ts').VehicleType;
     /** Network filter: only routes carrying this single network id
      *  (1:1 per route — school / normal for the cluj feed). undefined
      *  = no network filter. */
@@ -553,7 +553,7 @@ export interface RouteMapTrip {
 /** One round-trip payload backing the route-map view. */
 export interface RouteMapView {
   /** The route as `Route` (same shape served elsewhere). */
-  route: import('$lib/domain/types').Route;
+  route: import('#lib/domain/types.ts').Route;
   /** Representative polyline for the direction. May be empty if the
    *  feed doesn't carry shapes.txt for this route. */
   shape: Array<{ lat: number; lon: number }>;

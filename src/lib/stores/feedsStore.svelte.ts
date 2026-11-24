@@ -1,6 +1,6 @@
 // Singleton for the feed registry. One fetch per app session; everyone reads through `feedsStore.feeds`. raw.githubusercontent.com's ~5-min edge cache + browser cache handle repeat-load latency.
 
-import { fetchFeeds, type Feed } from '$lib/data/feeds';
+import { fetchFeeds, type Feed } from '#lib/data/feeds.ts';
 
 class FeedsStore {
   feeds = $state<Feed[] | null>(null);

@@ -1,6 +1,6 @@
 // Resolve live observations against the static-trip index. Pure: no IO. Caller owns the active-trips snapshot.
 
-import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
+import type { LiveVehicleObservation } from '#lib/data/live/gtfsRtClient.ts';
 import { minutesToTime } from './pipeline/timeUtils';
 import type { Vehicle } from './types';
 

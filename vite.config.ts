@@ -1,92 +1,163 @@
-import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { withPwa } from '@vite-pwa/sveltekit';
 import tailwindcss from '@tailwindcss/vite';
-import { LegacySvelteKitPWA } from '@vite-pwa/sveltekit/legacy';
 import { defineConfig } from 'vite';
 import { readFileSync } from 'node:fs';
 
+/** Single source of truth for the app version. Bumped on every PR by the
+ *  auto-version GitHub Action — see docs/specs/ci-and-versioning.md. The
+ *  runtime client polls `_app/version.json` carrying this string; UI code
+ *  reads the same value via `import { version } from '$app/env'`.
+ *
+ *  Read at config-load time on purpose: the auto-bump action rewrites
+ *  package.json before every deploy, so the string baked into the bundle
+ *  (and into the service worker) has to come from the file, not from a
+ *  hardcoded literal. */
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
 const VERSION = pkg.version as string;
 
 export default defineConfig({
   plugins: [
     tailwindcss(),
-    sveltekit(),
-    LegacySvelteKitPWA({
-      // The DevPlugin's `transformIndexHtml` injects a registration
-      // script in dev that calls `navigator.serviceWorker.register`
-      // against `/service-worker.js`. In dev that file is the raw
-      // `src/service-worker.ts` (Vite serves it as-is), which still
-      // contains the literal `__APP_VERSION__` reference -- Vite's
-      // `define` only runs at build time, not in the dev SW import
-      // pass. The browser then throws "Can't find variable:
-      // __APP_VERSION__" inside the SW and the registration promise
-      // rejects. SvelteKit surfaces that as an unhandled rejection
-      // on every page load in dev.
-      //
-      // Suppressing the script from inside SvelteKitPWA's options
-      // turns out to be unreliable across versions -- `disable` and
-      // `injectRegister: null` are both no-ops on the dev-injection
-      // code path. Stripping the script out of the dev HTML with a
-      // post-transform is the only knob that sticks. The script is
-      // only useful in production (where the SW is properly built
-      // and the `define` is applied), and src/routes/+layout.svelte
-      // registers the SW in production anyway -- so the dev script
-      // is pure overhead in dev.
-      // @vite-pwa/sveltekit 2.x renamed the `injectManifest` strategy
-      // to `buildSW` and no longer infers the SW entry point: the
-      // source has to be named explicitly via `swSrc`.
-      strategies: 'buildSW',
-      // the plugin generates a final SW with the precache manifest
-      // injected. Our SW lives at src/service-worker.ts.
-      // The SW is built by a separate Vite pass whose module graph
-      // doesn't include package.json, so the version has to be handed
-      // to that pass explicitly through `define` -- the SW reads it as
-      // `__APP_VERSION__`.
-      buildSW: {
-        swSrc: 'src/service-worker.ts',
-        define: {
-          __APP_VERSION__: JSON.stringify(VERSION),
+    // SvelteKit 3 no longer supports svelte.config.js — every project
+    // option now lives on the sveltekit() plugin instead. withPwa() is
+    // the SvelteKit 3 entry point of @vite-pwa/sveltekit: it wraps
+    // sveltekit() itself (so the PWA build runs before the adapter copies
+    // the client output into build/) and takes the SvelteKit config as
+    // its first argument.
+    withPwa(
+      {
+        preprocess: vitePreprocess(),
+        // Static adapter because this is a pure PWA with no server
+        // runtime. All routes prerendered; data lives in OPFS / IndexedDB.
+        // Hosting is just a static bucket (Cloudflare Pages).
+        adapter: adapter({
+          pages: 'build',
+          assets: 'build',
+          fallback: 'index.html',
+          precompress: false,
+          strict: true,
+        }),
+        // Without this, SvelteKit auto-generates an inline
+        // `navigator.serviceWorker.register()` call in app.html that has NO
+        // updateViaCache option -- the browser caches the SW for up to 24 h
+        // and never checks for a fresh copy on revisit. The layout's own
+        // register() (with updateViaCache:'none') fires later from the JS
+        // bundle, but the browser may have already stored the first
+        // registration and ignore the second. Setting it here once means
+        // every render of app.html gets the correct option baked in.
+        serviceWorker: {
+          register: true,
+          options: { updateViaCache: 'none' },
         },
-        globPatterns: [
-          // Precache the SvelteKit-emitted shell. The plugin's
-          // default glob also picks up `client/**` from
-          // .svelte-kit/output, which is what we want.
-          // `wasm` is load-bearing: the GTFS worker fetches
-          // sqlite3.wasm at init; without a precache entry an
-          // offline open dies whenever the browser HTTP cache
-          // has evicted it.
-          'client/**/*.{js,css,html,svg,png,ico,webmanifest,wasm}',
-        ],
-        // version.json is NOT precached. It's emitted to build/_app/
-        // by the static adapter after the SW is built, so the glob
-        // can't reach it from .svelte-kit/output/. The version
-        // polling in $app/state still works online; offline it
-        // fails silently and the user keeps running the cached
-        // shell, which is what we want anyway.
+        // Lets clients detect new deploys. The client polls
+        // `_app/version.json` every `pollInterval` ms; when the string
+        // doesn't match the one it booted with, `updated.current` from
+        // `$app/state` flips to true, and the Settings page surfaces
+        // the "Update available" state (src/routes/settings/+page.svelte).
+        // The reload itself is service-worker-driven, not driven by
+        // `updated.current` -- see src/lib/composables/usePwa.svelte.ts.
+        // Bound to 60 s — enough to catch a fresh deploy within a few
+        // minutes for a PWA the user comes back to, infrequent enough
+        // to not show up in network panels or burn battery. SvelteKit 3
+        // defaults this to one hour, so the 60 s bound is pinned
+        // explicitly rather than inherited.
+        version: {
+          name: VERSION,
+          pollInterval: 60 * 1000,
+        },
       },
-      // Manifest comes from static/manifest.json. The plugin picks
-      // it up by default; we just override a few fields that the
-      // spec wants locked.
-      manifest: {
-        name: 'Neary',
-        short_name: 'Neary',
-        description: 'Real-time transit companion',
-        theme_color: '#4F46E5',
-        background_color: '#4F46E5',
-        display: 'standalone',
-        start_url: '/',
-        scope: '/',
-        icons: [
-          { src: 'https://branding.n3ary.com/neary-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: 'https://branding.n3ary.com/neary-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'https://branding.n3ary.com/neary-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
+      {
+        // The DevPlugin's `transformIndexHtml` injects a registration
+        // script in dev that calls `navigator.serviceWorker.register`
+        // against `/service-worker.js`. In dev that file is the raw
+        // `src/service-worker/index.ts` (Vite serves it as-is), which still
+        // contains the literal `__APP_VERSION__` reference -- Vite's
+        // `define` only runs at build time, not in the dev SW import
+        // pass. The browser then throws "Can't find variable:
+        // __APP_VERSION__" inside the SW and the registration promise
+        // rejects. SvelteKit surfaces that as an unhandled rejection
+        // on every page load in dev.
+        //
+        // Suppressing the script from inside SvelteKitPWA's options
+        // turns out to be unreliable across versions -- `disable` and
+        // `injectRegister: null` are both no-ops on the dev-injection
+        // code path. Stripping the script out of the dev HTML with a
+        // post-transform is the only knob that sticks. The script is
+        // only useful in production (where the SW is properly built
+        // and the `define` is applied), and src/routes/+layout.svelte
+        // registers the SW in production anyway -- so the dev script
+        // is pure overhead in dev.
+        // @vite-pwa/sveltekit 2.x renamed the `injectManifest` strategy
+        // to `buildSW` and no longer infers the SW entry point: the
+        // source has to be named explicitly via `swSrc`.
+        strategies: 'buildSW',
+        // The built SW must land at /service-worker.js -- that is the
+        // path both the app.html inline registration and the layout's
+        // own register() point at. The plugin otherwise derives the
+        // output name from the source file's basename, which would be
+        // `index.js` now that the SW lives in its own directory.
+        filename: 'service-worker.js',
+        // SvelteKit 3 registers the service worker as an ES module
+        // (the inline register() in app.html carries `type: "module"`),
+        // so the bundle has to be one. A classic script would still
+        // parse as a module, but `swType: 'module'` emits a real one
+        // and keeps the two registrations (app.html's inline one and
+        // the layout's own) pointing at the same kind of worker.
+        swType: 'module',
+        // the plugin generates a final SW with the precache manifest
+        // injected. Our SW lives at src/service-worker/index.ts.
+        // The SW is built by a separate Vite pass whose module graph
+        // doesn't include package.json, so the version has to be handed
+        // to that pass explicitly through `define` -- the SW reads it as
+        // `__APP_VERSION__`.
+        buildSW: {
+          swSrc: 'src/service-worker/index.ts',
+          define: {
+            __APP_VERSION__: JSON.stringify(VERSION),
+          },
+          globPatterns: [
+            // Precache the SvelteKit-emitted shell. The plugin's
+            // default glob also picks up `client/**` from
+            // .svelte-kit/output, which is what we want.
+            // `wasm` is load-bearing: the GTFS worker fetches
+            // sqlite3.wasm at init; without a precache entry an
+            // offline open dies whenever the browser HTTP cache
+            // has evicted it.
+            'client/**/*.{js,css,html,svg,png,ico,webmanifest,wasm}',
+          ],
+          // version.json is NOT precached. It's emitted to build/_app/
+          // by the static adapter after the SW is built, so the glob
+          // can't reach it from .svelte-kit/output/. The version
+          // polling in $app/state still works online; offline it
+          // fails silently and the user keeps running the cached
+          // shell, which is what we want anyway.
+        },
+        // Manifest comes from static/manifest.json. The plugin picks
+        // it up by default; we just override a few fields that the
+        // spec wants locked.
+        manifest: {
+          name: 'Neary',
+          short_name: 'Neary',
+          description: 'Real-time transit companion',
+          theme_color: '#4F46E5',
+          background_color: '#4F46E5',
+          display: 'standalone',
+          start_url: '/',
+          scope: '/',
+          icons: [
+            { src: 'https://branding.n3ary.com/neary-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: 'https://branding.n3ary.com/neary-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: 'https://branding.n3ary.com/neary-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+        },
       },
-    }),
+    ),
     // Dev-only post-transform: SvelteKitPWA's DevPlugin emits a
     // <script> that calls `navigator.serviceWorker.register` against
     // the dev /service-worker.js. The dev SW is the raw
-    // src/service-worker.ts (Vite serves it as-is, so the literal
+    // src/service-worker/index.ts (Vite serves it as-is, so the literal
     // `__APP_VERSION__` is un-replaced and the browser throws
     // "Can't find variable: __APP_VERSION__" during evaluation,
     // surfacing as an unhandled promise rejection on every page
@@ -107,7 +178,7 @@ export default defineConfig({
       configureServer(server) {
         // Intercept requests for /service-worker.js in dev and
         // return a no-op SW. The SvelteKitPWA plugin serves the
-        // raw src/service-worker.ts at that path in dev, which
+        // raw src/service-worker/index.ts at that path in dev, which
         // still references the literal `__APP_VERSION__` (Vite's
         // `define` only runs at build time). The browser evaluates
         // it, throws "Can't find variable: __APP_VERSION__", and
@@ -127,7 +198,7 @@ export default defineConfig({
       },
     },
   ],
-  // __APP_VERSION__ is read by src/service-worker.ts to namespace
+  // __APP_VERSION__ is read by src/service-worker/index.ts to namespace
   // the precache bucket. Without `define` here, the SW would have
   // an undefined VERSION at runtime.
   define: {

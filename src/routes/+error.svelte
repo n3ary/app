@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import { Button, Stack, Typography } from '$lib/ui';
+  import { Button, Stack, Typography } from '#lib/ui/index.ts';
 
   const status = $derived(page.status);
   const message = $derived(page.error?.message ?? 'Something went wrong.');

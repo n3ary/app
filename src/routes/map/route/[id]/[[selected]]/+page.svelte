@@ -5,12 +5,12 @@
   import {
     BackButton, Card, CardContent, Chip, IconButton, RouteBadge, RouteMap,
     SelectFeedCard, Spinner, Stack, Typography, tagIcon,
-  } from '$lib/ui';
-  import { useRouteMapView } from '$lib/composables/useRouteMapView.svelte';
-  import { useOtherDirectionExists } from '$lib/data/gtfs/otherDirectionExists.svelte';
-  import { favoritesStore } from '$lib/stores/favoritesStore.svelte';
-  import { userPrefs } from '$lib/stores/userPrefs.svelte';
-  import { pickContrastingText } from '$lib/domain/types';
+  } from '#lib/ui/index.ts';
+  import { useRouteMapView } from '#lib/composables/useRouteMapView.svelte.ts';
+  import { useOtherDirectionExists } from '#lib/data/gtfs/otherDirectionExists.svelte.ts';
+  import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';
+  import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
+  import { pickContrastingText } from '#lib/domain/types.ts';
 
   const m = useRouteMapView();
   const otherDirection = useOtherDirectionExists(
@@ -27,7 +27,7 @@
     const target = restoreTrip
       ? `/map/route/${m.routeId}_${otherDir}/${restoreTrip}`
       : `/map/route/${m.routeId}_${otherDir}`;
-    goto(target, { replaceState: true });
+    goto(target, { replace: true });
   }
 
   // Map control wrappers — thin closures over Leaflet's imperative

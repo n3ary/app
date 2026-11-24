@@ -5,8 +5,8 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Route } from '$lib/domain/types';
-import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '$lib/domain/types';
+import type { Route } from '#lib/domain/types.ts';
+import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '#lib/domain/types.ts';
 import { selectAll } from '../sqlHelpers';
 import { getRoutesWithSchedule } from './routesWithSchedule';
 

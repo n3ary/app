@@ -1,8 +1,8 @@
 # PWA
 
 Reasoning behind the PWA setup. Implementation:
-[svelte.config.js](../../svelte.config.js), [vite.config.ts](../../vite.config.ts),
-[src/service-worker.ts](../../src/service-worker.ts),
+[vite.config.ts](../../vite.config.ts),
+[src/service-worker/index.ts](../../src/service-worker/index.ts),
 [src/routes/+layout.svelte](../../src/routes/+layout.svelte),
 [static/manifest.json](../../static/manifest.json).
 
@@ -23,13 +23,13 @@ this". It's:
 
 - Bumped on every PR by the auto-version GitHub Action — see
   [ci-and-versioning.md](ci-and-versioning.md).
-- Read at build time in [svelte.config.js](../../svelte.config.js) and passed
-  to SvelteKit as `kit.version.name`.
+- Read at build time in [vite.config.ts](../../vite.config.ts) and passed
+  to SvelteKit as `version.name`.
 - Emitted into `build/_app/version.json` (e.g. `{"version":"1.5.20"}`).
-- Read by [src/service-worker.ts](../../src/service-worker.ts) via the
+- Read by [src/service-worker/index.ts](../../src/service-worker/index.ts) via the
   Vite `define` (`__APP_VERSION__`) and used to namespace the
   precache bucket so old shells can be dropped on activate.
-- Available to UI code via `import { version } from '$app/environment'` —
+- Available to UI code via `import { version } from '$app/env'` —
   use it anywhere a version string needs to be displayed.
 
 > [!IMPORTANT]
@@ -43,7 +43,7 @@ Two layers, both keyed on the same `package.json` version.
 
 ### Service worker (primary)
 
-The SW in [src/service-worker.ts](../../src/service-worker.ts) precaches
+The SW in [src/service-worker/index.ts](../../src/service-worker/index.ts) precaches
 the app shell + manifest in a bucket named `precache-v<version>`.
 On `activate`, every other `precache-v*` bucket is dropped, so an
 outdated shell never gets served from cache. `skipWaiting` +
@@ -58,7 +58,10 @@ Belt-and-suspenders. The root layout
 ([src/routes/+layout.svelte](../../src/routes/+layout.svelte)) subscribes
 to `updated.current` from `$app/state`. SvelteKit's client polls
 `/_app/version.json` every 60 s; on mismatch it flips `updated.current`
-to true. The layout never reloads a tab the rider is reading
+to true. Since SvelteKit 3 it also flips `updated.current` when the tab
+regains focus or becomes visible, so the update is noticed on the way
+back into the app rather than only on the poll tick. The layout never
+reloads a tab the rider is reading
 ([src/lib/sw/appUpdate.ts](../../src/lib/sw/appUpdate.ts)): a hidden
 tab reloads immediately; a visible tab gets an "Update available"
 banner with a Reload button, and the first backgrounding applies the
@@ -85,8 +88,8 @@ Two guards keep the banner honest:
   matter how often the user updates.
 
 ```js
-// svelte.config.js
-kit: {
+// vite.config.ts -- the sveltekit() plugin options
+{
   version: {
     name: pkg.version,         // package.json version
     pollInterval: 60 * 1000,   // 60 s
@@ -100,7 +103,7 @@ minutes.
 
 ## Service worker details
 
-[src/service-worker.ts](../../src/service-worker.ts) is hand-rolled (not
+[src/service-worker/index.ts](../../src/service-worker/index.ts) is hand-rolled (not
 workbox). It's ~100 lines and easy to audit. Two strategies:
 
 ### Precache (build-time)

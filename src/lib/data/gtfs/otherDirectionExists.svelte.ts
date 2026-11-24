@@ -19,7 +19,7 @@
  *     and lands on the destination view's own empty state.
  */
 import { getGtfsRepo } from './repo';
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
 
 export interface OtherDirectionGate {
   /** `true` when the opposite direction has trips; `false` when it

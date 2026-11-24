@@ -8,9 +8,9 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Vehicle } from '$lib/domain/types';
-import { scanSchedule, type ScheduleRow } from '$lib/domain/pipeline/scheduleScanner';
-import { serviceContextFor, serviceWindowsFor } from '$lib/domain/pipeline/serviceDay';
+import type { Vehicle } from '#lib/domain/types.ts';
+import { scanSchedule, type ScheduleRow } from '#lib/domain/pipeline/scheduleScanner.ts';
+import { serviceContextFor, serviceWindowsFor } from '#lib/domain/pipeline/serviceDay.ts';
 import { activeServicesOn } from '../activeServices';
 import { selectAll } from '../sqlHelpers';
 

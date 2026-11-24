@@ -1,9 +1,9 @@
 import { measurePolyline, projectOnPolyline } from '@n3ary/gtfs-spec/shape';
-import { deadReckonGpsAlongShape } from '$lib/domain/predictPosition';
-import { predictArrivalAlongShape } from '$lib/domain/predictArrivalAlongShape';
-import { DEFAULT_FEED_SPEED_CONFIG, type FeedSpeedConfig } from '$lib/domain/speedCascade';
-import { clockToBucket, DEFAULT_TOD_PROFILE, type TodProfile } from '$lib/domain/timeOfDay';
-import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
+import { deadReckonGpsAlongShape } from '#lib/domain/predictPosition.ts';
+import { predictArrivalAlongShape } from '#lib/domain/predictArrivalAlongShape.ts';
+import { DEFAULT_FEED_SPEED_CONFIG, type FeedSpeedConfig } from '#lib/domain/speedCascade.ts';
+import { clockToBucket, DEFAULT_TOD_PROFILE, type TodProfile } from '#lib/domain/timeOfDay.ts';
+import { minSinceMidnightInTz } from '#lib/domain/pipeline/timeUtils.ts';
 import { getGtfsRepo } from './repo';
 import type { ScheduleTripStop } from './types';
 

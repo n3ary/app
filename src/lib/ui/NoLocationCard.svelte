@@ -1,9 +1,9 @@
 <!-- Shared surface for the "we can't get your location" state. Lives in the home-page denied-GPS stack (dismissible) and the settings privacy section (non-dismissible, replaces the lying toggle when location can't be enabled). Dismissal flag shared via `noLocationCardDismissedStore` so dismiss in one place persists in the other. When not dismissible, the consumer is expected to gate its own render based on the relevant GPS state. -->
 <script lang="ts">
   import { MapPin, X } from 'lucide-svelte';
-  import { Button, Card, CardContent, IconButton, Stack, Typography } from '$lib/ui';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { noLocationCardDismissedStore } from '$lib/stores/gps/noLocationCardDismissedStore.svelte';
+  import { Button, Card, CardContent, IconButton, Stack, Typography } from '#lib/ui/index.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { noLocationCardDismissedStore } from '#lib/stores/gps/noLocationCardDismissedStore.svelte.ts';
 
   type Props = {
     /** Show a dismiss X in the top-right. Dismissal persists across

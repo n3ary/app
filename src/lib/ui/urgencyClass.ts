@@ -5,7 +5,7 @@
  * without redeclaring the palette.
  */
 
-import type { Urgency } from '$lib/domain/buckets';
+import type { Urgency } from '#lib/domain/buckets.ts';
 
 export const URGENCY_CLASS: Record<Urgency | 'none', string> = {
   go: 'font-bold text-[color:var(--color-success)]',

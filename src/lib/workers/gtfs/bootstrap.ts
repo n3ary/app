@@ -17,7 +17,7 @@ import sqlite3InitModule, {
   type Sqlite3Static,
 } from '@sqlite.org/sqlite-wasm';
 
-import type { Feed } from '$lib/data/feeds';
+import type { Feed } from '#lib/data/feeds.ts';
 import { feedDbFiles, opfsFileFor, pruneStaleFeedFiles } from '../opfsFilenames';
 import { shapeCache } from './shapeCache';
 import { ensureLiveTimer, resetLiveSnapshot, stopLiveTimer } from './livePipeline';

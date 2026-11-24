@@ -1,6 +1,6 @@
 // Merge live GPS observations into a scheduled vehicle list. Match key: (routeId, directionId, tripStartMin) with adaptive tolerance — not trip_id, because some operators publish static + RT from independent dispatch pipelines and trip_ids drift by ±1 run / ±a few minutes HHMM. Spec: docs/specs/live-data-pipeline.md. Pure. No DOM, no stores, no I/O.
 
-import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
+import type { LiveVehicleObservation } from '#lib/data/live/gtfsRtClient.ts';
 import type { Vehicle } from './types';
 import { minSinceMidnightInTz, timeToMinutes } from './pipeline/timeUtils';
 import { observationTimeOffsetMin, serviceContextFor } from './pipeline/serviceDay';

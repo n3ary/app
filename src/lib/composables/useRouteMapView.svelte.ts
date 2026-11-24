@@ -21,18 +21,18 @@
 // the page and the map component need; nothing imperative about
 // Leaflet crosses this boundary.
 
-import { feedsStore } from '$lib/stores/feedsStore.svelte';
-import { feedConfigStore } from '$lib/stores/feedConfigStore.svelte';
-import { nowTicker } from '$lib/stores/nowTicker.svelte';
-import { reconciledVehiclesStore } from '$lib/stores/reconciledVehiclesStore.svelte';
-import { refreshBus } from '$lib/stores/refreshBus.svelte';
-import { userPrefs } from '$lib/stores/userPrefs.svelte';
-import { parseRouteIdWithDirection } from '$lib/data/gtfs/parseRouteIdWithDirection';
-import { getGtfsRepo } from '$lib/data/gtfs/repo';
-import type { Network, Route, RouteTag } from '$lib/domain/types';
-import { vehicleTypeLabel } from '$lib/domain/types';
-import { minSinceMidnightInTz } from '$lib/domain/pipeline/timeUtils';
-import { clockToBucket } from '$lib/domain/timeOfDay';
+import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+import { feedConfigStore } from '#lib/stores/feedConfigStore.svelte.ts';
+import { nowTicker } from '#lib/stores/nowTicker.svelte.ts';
+import { reconciledVehiclesStore } from '#lib/stores/reconciledVehiclesStore.svelte.ts';
+import { refreshBus } from '#lib/stores/refreshBus.svelte.ts';
+import { userPrefs } from '#lib/stores/userPrefs.svelte.ts';
+import { parseRouteIdWithDirection } from '#lib/data/gtfs/parseRouteIdWithDirection.ts';
+import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+import type { Network, Route, RouteTag } from '#lib/domain/types.ts';
+import { vehicleTypeLabel } from '#lib/domain/types.ts';
+import { minSinceMidnightInTz } from '#lib/domain/pipeline/timeUtils.ts';
+import { clockToBucket } from '#lib/domain/timeOfDay.ts';
 import {
   buildTripShapePlan,
   deadReckonGpsAlongShape,
@@ -40,12 +40,12 @@ import {
   predictPositionOnShape,
   predictPositionFromGps,
   type TripShapePlan,
-} from '$lib/domain/predictPosition';
-import { predictArrivalFromGps } from '$lib/domain/predictArrivalAlongShape';
+} from '#lib/domain/predictPosition.ts';
+import { predictArrivalFromGps } from '#lib/domain/predictArrivalAlongShape.ts';
 import { haversineMeters, measurePolyline, projectOnPolyline, bearingBetween } from '@n3ary/gtfs-spec/shape';
 import { page } from '$app/state';
-import type { RouteMapView } from '$lib/data/gtfs/types';
-import type { VehicleMarker } from '$lib/map/routeMapPopupHtml';
+import type { RouteMapView } from '#lib/data/gtfs/types.ts';
+import type { VehicleMarker } from '#lib/map/routeMapPopupHtml.ts';
 
 const START_VEHICLE_RADIUS_M = 200;
 const CIRCULAR_MAX_M = 200;

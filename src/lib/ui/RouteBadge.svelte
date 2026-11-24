@@ -14,8 +14,8 @@
   fought with route identity. The bare badge is the right answer.
 -->
 <script lang="ts">
-  import type { Route } from '$lib/domain/types';
-  import { pickContrastingText } from '$lib/domain/types';
+  import type { Route } from '#lib/domain/types.ts';
+  import { pickContrastingText } from '#lib/domain/types.ts';
   import { cn } from './cn';
 
   type Size = 'small' | 'medium' | 'large';

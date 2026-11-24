@@ -4,7 +4,7 @@
 // only edits this file. The component itself imports naturalFit
 // and comfortableCap; it does not compute widths inline.
 
-import type { Route } from '$lib/domain/types';
+import type { Route } from '#lib/domain/types.ts';
 
 /** Tailwind `gap-1`. */
 const GAP_PX = 4;

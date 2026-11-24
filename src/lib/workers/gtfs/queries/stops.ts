@@ -3,9 +3,9 @@
 import type { Database } from '@sqlite.org/sqlite-wasm';
 import { haversineMeters } from '@n3ary/gtfs-spec/shape';
 import { DAY_KEY_COLS } from '@n3ary/gtfs-spec/spec';
-import { timeToMinutes } from '$lib/domain/pipeline/timeUtils';
-import { MISSING_ROUTE_COLOR } from '$lib/domain/types';
-import type { StopWithDistance, UpcomingDeparture } from '$lib/data/gtfs/types';
+import { timeToMinutes } from '#lib/domain/pipeline/timeUtils.ts';
+import { MISSING_ROUTE_COLOR } from '#lib/domain/types.ts';
+import type { StopWithDistance, UpcomingDeparture } from '#lib/data/gtfs/types.ts';
 import { selectAll } from '../sqlHelpers';
 
 /** Stops within `radiusMeters` of (lat, lon). Bounding-box prefilter

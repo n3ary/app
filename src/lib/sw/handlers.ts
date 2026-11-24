@@ -1,6 +1,6 @@
 /**
  * sw/handlers.ts — Service Worker fetch handler logic, extracted from
- * service-worker.ts so each strategy is unit-testable in isolation.
+ * service-worker/index.ts so each strategy is unit-testable in isolation.
  *
  * Why a separate file: the SW is a top-level module with side
  * effects (self.addEventListener at module load), which makes it

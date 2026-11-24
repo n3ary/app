@@ -13,7 +13,7 @@
  * forever for any user whose first install pre-dated the new build.
  */
 
-import type { Feed } from '$lib/data/feeds';
+import type { Feed } from '#lib/data/feeds.ts';
 
 /** Minimal slice of the SQLite-WASM SAHPoolUtil we depend on. Lets
  *  unit tests pass a hand-rolled stub without pulling in the wasm. */

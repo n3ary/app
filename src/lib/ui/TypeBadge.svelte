@@ -29,8 +29,8 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import type { VehicleType } from '$lib/domain/types';
-  import { pickContrastingText, vehicleTypeLabel } from '$lib/domain/types';
+  import type { VehicleType } from '#lib/domain/types.ts';
+  import { pickContrastingText, vehicleTypeLabel } from '#lib/domain/types.ts';
   import { cn } from './cn';
 
   type Size = 'small' | 'medium' | 'large';

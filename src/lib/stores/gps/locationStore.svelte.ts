@@ -1,7 +1,7 @@
 // GPS singleton for the header dot and Stations proximity query. Lazy: watchPosition only starts on `start()` (idempotent) or `enable()`. Cadence (poll, watch maxAge, ticker) all come from NearyConfig.
 
 import { userPrefs } from '../userPrefs.svelte';
-import { DEFAULT_CONFIG } from '$lib/domain/config';
+import { DEFAULT_CONFIG } from '#lib/domain/config.ts';
 import { writeLastKnownPosition } from './lastKnownPosition';
 
 export type FreshState = 'off' | 'idle' | 'ok' | 'stale' | 'error';

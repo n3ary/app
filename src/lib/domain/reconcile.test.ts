@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeTolerance, parseLiveStartMin, reconcileWithLive } from './reconcile';
-import type { LiveVehicleObservation } from '$lib/data/live/gtfsRtClient';
+import type { LiveVehicleObservation } from '#lib/data/live/gtfsRtClient.ts';
 import type { Route, Vehicle } from './types';
 
 const r14: Route = { id: '14', shortName: '25', color: '#ff0000' };

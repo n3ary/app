@@ -14,9 +14,9 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import type { Route, VehicleType } from '$lib/domain/types';
-import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '$lib/domain/types';
-import type { StopWithDistance } from '$lib/data/gtfs/types';
+import type { Route, VehicleType } from '#lib/domain/types.ts';
+import { MISSING_ROUTE_COLOR, vehicleTypeFromGtfs } from '#lib/domain/types.ts';
+import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
 import { haversineMeters } from '@n3ary/gtfs-spec/shape';
 import { selectAll } from '../sqlHelpers';
 import { getRoutesWithSchedule } from './routesWithSchedule';

@@ -1,21 +1,21 @@
 <!-- User preferences. Theme picker, behavior toggles, feed selector (sources feeds.json from gtfs binaries branch on GitHub), and a tiny Advanced section with the app version + first-seen date. A dedicated /settings/advanced view will land alongside storage / debug toggles in a later phase. -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { version } from '$app/environment';
+  import { version } from '$app/env';
   import { updated } from '$app/state';
   import { Bug, Circle, CircleDot, ExternalLink, Locate, Map, MapPin, Moon, RefreshCw, Sun, Trash2 } from 'lucide-svelte';
   import {
     Box, Button, Card, CardContent, Chip, Dialog, DialogContent, DialogTitle,
     IconButton, InfoCard, NoLocationCard, Spinner, Stack, Switch, ToggleGroup, Tooltip, Typography,
     formatBytes, formatWhen,
-  } from '$lib/ui';
-  import { getGtfsRepo } from '$lib/data/gtfs/repo';
-  import { deleteTileCache, getTileCacheStatus } from '$lib/map/offlineTiles';
-  import type { Feed } from '$lib/data/feeds';
-  import { feedsStore } from '$lib/stores/feedsStore.svelte';
-  import { locationStore } from '$lib/stores/gps/locationStore.svelte';
-  import { statusBus } from '$lib/stores/statusBus.svelte';
-  import { userPrefs, type Theme } from '$lib/stores/userPrefs.svelte';
+  } from '#lib/ui/index.ts';
+  import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
+  import { deleteTileCache, getTileCacheStatus } from '#lib/map/offlineTiles.ts';
+  import type { Feed } from '#lib/data/feeds.ts';
+  import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
+  import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
+  import { statusBus } from '#lib/stores/statusBus.svelte.ts';
+  import { userPrefs, type Theme } from '#lib/stores/userPrefs.svelte.ts';
 
   /** localStorage key for tracking when this client first saw the current
    *  app version. Stored as `{ version, at }` so a version bump resets the

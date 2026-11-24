@@ -21,9 +21,9 @@
  */
 
 import type { Database } from '@sqlite.org/sqlite-wasm';
-import { assembleLiveVehicles } from '$lib/domain/stationBoard';
-import type { Vehicle } from '$lib/domain/types';
-import type { ReconciledSnapshot } from '$lib/data/gtfs/types';
+import { assembleLiveVehicles } from '#lib/domain/stationBoard.ts';
+import type { Vehicle } from '#lib/domain/types.ts';
+import type { ReconciledSnapshot } from '#lib/data/gtfs/types.ts';
 
 import { getShapesForTrips } from './shapes';
 import { getStopDistancesForTrips } from './routeStops';
