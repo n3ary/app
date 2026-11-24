@@ -21,7 +21,7 @@
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/svelte": "^5.2.10",
     "@types/node": "^26.1.0",
-    "@vite-pwa/sveltekit": "^1.1.0",
+    "@vite-pwa/sveltekit": "^2.0.4",
     "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^29.1.1",
     "svelte": "^5.42.6",
