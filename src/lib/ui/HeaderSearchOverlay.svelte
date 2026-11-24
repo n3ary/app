@@ -6,7 +6,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { Dialog as Bits } from 'bits-ui';
-  import { Search, X } from 'lucide-svelte';
+  import { Search, X } from '@lucide/svelte';
   import { getGtfsRepo } from '#lib/data/gtfs/repo.ts';
   import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
   import type { Route } from '#lib/domain/types.ts';

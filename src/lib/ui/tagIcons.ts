@@ -1,4 +1,4 @@
-import { GraduationCap, MapPin, Moon, Music, Plane, Star, Zap } from 'lucide-svelte';
+import { GraduationCap, MapPin, Moon, EighthNotes, Plane, Star, Zap } from '@lucide/svelte';
 
 type IconComponent = typeof Moon;
 
@@ -10,7 +10,7 @@ type IconComponent = typeof Moon;
 // strings; this registry maps them to actual lucide components.
 //
 // Why a registry (vs. a wider `Record<string, IconComponent>` that
-// wraps the whole lucide-svelte module): lucide-svelte ships 1000+
+// wraps the whole @lucide/svelte module): @lucide/svelte ships 2000+
 // icons, the app uses 5. Shipping a hand-picked registry keeps the
 // bundle small AND pinpoints where the icon set lives — adding a
 // new tag icon = one entry in CATEGORIES + one entry here, with
@@ -22,12 +22,12 @@ const ICONS: Record<string, IconComponent> = {
   moon: Moon,
   'map-pin': MapPin,
   graduation: GraduationCap, // reserved for any future "education" tag
-  music: Music,
+  music: EighthNotes,
   plane: Plane,
   zap: Zap,
 };
 
-/** Return the lucide-svelte component for a tag's `icon` slug, or
+/** Return the @lucide/svelte component for a tag's `icon` slug, or
  *  the `Star` default for unknown / missing icons. The app
  *  deliberately doesn't fall back to a `tag.id` lookup — the
  *  adapter owns the slug, not the id. */

@@ -8,7 +8,7 @@
 //   `{stopId: marker, ...}` (feed-qualified key).
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { Briefcase, Crosshair, Heart, Home } from 'lucide-svelte';
+import { Briefcase, Crosshair, Heart, House } from '@lucide/svelte';
 
 const STORAGE_KEY_ROUTES = 'neary:favoriteRoutes';
 const STORAGE_KEY_MARKERS_PREFIX = 'neary:stationMarkers:';
@@ -25,7 +25,7 @@ export const STATION_MARKERS: readonly StationMarker[] = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _markerIcons: Record<StationMarker, any> = {
   favorite: Heart,
-  home: Home,
+  home: House,
   work: Briefcase,
   cityCenter: Crosshair,
 };

@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { version } from '$app/env';
   import { updated } from '$app/state';
-  import { Bug, Circle, CircleDot, ExternalLink, Locate, Map, MapPin, Moon, RefreshCw, Sun, Trash2 } from 'lucide-svelte';
+  import { Bug, Circle, CircleDot, ExternalLink, Locate, Map, MapPin, Moon, RefreshCw, Sun, Trash } from '@lucide/svelte';
   import {
     Box, Button, Card, CardContent, Chip, Dialog, DialogContent, DialogTitle,
     IconButton, InfoCard, NoLocationCard, Spinner, Stack, Switch, ToggleGroup, Tooltip, Typography,
@@ -578,7 +578,7 @@
                         aria-label={`Delete local data for ${f.name}`}
                         onclick={() => (confirmingDelete = f)}
                       >
-                        <Trash2 size={16} />
+                        <Trash size={16} />
                       </IconButton>
                     </Tooltip>
                   {/if}
@@ -638,7 +638,7 @@
                     });
                   }}
                 >
-                  <Trash2 size={16} />
+                  <Trash size={16} />
                 </IconButton>
               </Tooltip>
             {/if}

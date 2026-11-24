@@ -26,6 +26,9 @@ importers:
 
   .:
     dependencies:
+      '@lucide/svelte':
+        specifier: ^1.78.0
+        version: 1.78.0(svelte@5.59.1)
       '@n3ary/gtfs-spec':
         specifier: ^0.7.5
         version: 0.7.5
@@ -50,9 +53,6 @@ importers:
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
-      lucide-svelte:
-        specifier: ^1.0.1
-        version: 1.0.1(svelte@5.59.1)
     devDependencies:
       '@playwright/test':
         specifier: ^1.65.1
@@ -240,6 +240,11 @@ packages:
   '@jsdoc/salty@0.2.12':
     resolution: {integrity: sha512-TuB0x50EoAvEX/UEWITd8Mkn3WhiTjSvbTMCLj0BhsQEl5iUzjXdA0bETEVpTk+5TGTLR6QktI9H4hLviVeaAQ==}
     engines: {node: '>=v12.0.0'}
+
+  '@lucide/svelte@1.78.0':
+    resolution: {integrity: sha512-j/UQMuE3o/JU4oq3DAUlQpmTCG5JsLi4LxEpNS7mIGqVxfmV8wozq3MeOSNHcsk07dHC0RZtUfpBrxyEMelOHA==}
+    peerDependencies:
+      svelte: ^5
 
   '@n3ary/gtfs-spec@0.7.5':
     resolution: {integrity: sha512-b7EvFa9P8Nwlvftz398nzWvzPssp8DMGLy78rInI9h3AVsXDFtdRLBDXiUh3Sgxfze7cbjRG10QK/azZZaS/sw==, tarball: https://npm.pkg.github.com/download/@n3ary/gtfs-spec/0.7.5/8be1e4aafc10efe8ca7928d6947d95b44db65892}
@@ -1073,12 +1078,6 @@ packages:
     resolution: {integrity: sha512-RPimw/7aMdv2oqRrxKwvZXcPfwBrn/JZ2xYcY9Hus/6LaS3VOAKVWKWgNLCFSiOm1ESXinjsDlidVU7JlnCN2A==}
     engines: {node: 20 || >=22}
 
-  lucide-svelte@1.0.1:
-    resolution: {integrity: sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg==}
-    deprecated: Package deprecated. Please use @lucide/svelte instead.
-    peerDependencies:
-      svelte: ^3 || ^4 || ^5.0.0-next.42
-
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
     hasBin: true
@@ -1651,6 +1650,10 @@ snapshots:
   '@jsdoc/salty@0.2.12':
     dependencies:
       lodash: 4.18.1
+
+  '@lucide/svelte@1.78.0(svelte@5.59.1)':
+    dependencies:
+      svelte: 5.59.1
 
   '@n3ary/gtfs-spec@0.7.5':
     dependencies:
@@ -2332,10 +2335,6 @@ snapshots:
   long@5.3.2: {}
 
   lru-cache@11.5.1: {}
-
-  lucide-svelte@1.0.1(svelte@5.59.1):
-    dependencies:
-      svelte: 5.59.1
 
   lz-string@1.5.0: {}
 

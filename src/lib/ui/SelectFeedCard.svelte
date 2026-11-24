@@ -1,7 +1,7 @@
 <!-- "No feed bound" banner rendered by every view that needs one. Self-contained: reads locationStore + feedsStore + userPrefs directly so consumers don't repeat the smart-suggestion wiring. Three branches: GPS on + position inside feed's bbox (one-tap "Use {feed}" + Open Settings); GPS on + no feed covers position (softer message, Open Settings only); GPS off / feeds unloaded (generic "pick one in Settings" copy that callers can tailor via `fallbackBody`). -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { Bus } from 'lucide-svelte';
+  import { Bus } from '@lucide/svelte';
   import { findNearestFeed } from '#lib/domain/feedCoverage.ts';
   import { feedsStore } from '#lib/stores/feedsStore.svelte.ts';
   import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';

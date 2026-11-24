@@ -6,7 +6,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import { Minus, Plus } from 'lucide-svelte';
+  import { Minus, Plus } from '@lucide/svelte';
   import type { Route } from '#lib/domain/types.ts';
   import type { StopWithDistance } from '#lib/data/gtfs/types.ts';
   import { favoritesStore } from '#lib/stores/favoritesStore.svelte.ts';

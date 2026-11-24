@@ -1,6 +1,6 @@
 <!-- Fixed top bar: view title (left) + health dots + search + refresh (right). Health dot states — GPS / Schedule / Live — come from the `health` prop. Refresh button is hidden when no callback is passed. GPS dot's 'off' state opens the enable flow. Search icon shows only when a feed is bound; the overlay is rendered here so it's truly global across views. -->
 <script lang="ts">
-  import { RefreshCw, Search } from 'lucide-svelte';
+  import { RefreshCw, Search } from '@lucide/svelte';
   import { locationStore } from '#lib/stores/gps/locationStore.svelte.ts';
   import { searchOverlayStore } from '#lib/stores/searchOverlayStore.svelte.ts';
   import HeaderSearchOverlay from './HeaderSearchOverlay.svelte';

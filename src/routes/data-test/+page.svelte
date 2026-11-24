@@ -13,7 +13,7 @@
     RouteBadge, Stack, Typography,
     formatBytes,
   } from '#lib/ui/index.ts';
-  import { MapPin } from 'lucide-svelte';
+  import { MapPin } from '@lucide/svelte';
 
   // Demo "user location" — a central European city centre. Generic
   // coordinates; the page is feed-agnostic.

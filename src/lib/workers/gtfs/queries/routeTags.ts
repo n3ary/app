@@ -11,7 +11,7 @@
  * adapter that declares a `producerExtensions` entry whose
  * `feedConfigKey` resolves to a list of rows.
  *
- * The `icon` column is the lucide-svelte slug the chip renders
+ * The `icon` column is the @lucide/svelte slug the chip renders
  * (e.g. `moon`, `map-pin`, `plane`, `music`, `zap`). Owned by the
  * adapter's `TAGS` declarations, NOT hardcoded in the app — the app
  * looks the slug up in a small `tagIcons` registry keyed by icon
