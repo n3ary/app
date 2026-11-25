@@ -15,7 +15,7 @@
  *   resume  -> the worker re-opens its DB and refreshes live data, with
  *             NO re-bind, NO progress entry and NO watchdog reload
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
@@ -98,6 +98,12 @@ beforeEach(() => {
 
 type Lifecycle = { suspend: () => void; resume: () => void };
 
+// A spy that is not restored would leak into the next test in the
+// file, so restore unconditionally.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 async function mount(): Promise<Lifecycle> {
   let api!: Lifecycle;
   render(Host, { props: { onReady: (a: Lifecycle) => (api = a) } });
@@ -165,6 +171,12 @@ describe('background suspend/resume', () => {
   it('falls back to a full re-bind when the resume fails', async () => {
     const api = await mount();
 
+    // The app logs the failure before falling back. Capture the warning
+    // so it does not reach the CI log as a stderr block that reads like
+    // a failure -- and assert it here, so the log line stays pinned
+    // instead of being incidental noise.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     workerCalls.length = 0;
     resumeShouldFail = true;
     api.resume();
@@ -173,5 +185,9 @@ describe('background suspend/resume', () => {
     // The fallback re-binds - that is a boot-class operation and may
     // arm the stall watchdog itself.
     expect(workerCalls).toContain('setFeed');
+    expect(warn).toHaveBeenCalledWith(
+      '[pwa] GTFS resume failed, falling back to a full re-bind',
+      expect.any(Error),
+    );
   });
 });
