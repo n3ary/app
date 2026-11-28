@@ -43,7 +43,7 @@
     "comlink": "^4.4.2",
     "gtfs-realtime-bindings": "3.0.0",
     "leaflet": "^1.9.4",
-    "@lucide/svelte": "^1.78.0"
+    "@lucide/svelte": "^1.79.0"
   },
   "license": "PolyForm-Noncommercial-1.0.0"
 }
